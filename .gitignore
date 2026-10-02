@@ -1,0 +1,10 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.env
+
+# Scraped data and page snapshots stay local (see spec section 8)
+data/
+snapshots/
+browser-profile/
