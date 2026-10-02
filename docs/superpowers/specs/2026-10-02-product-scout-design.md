@@ -1,106 +1,109 @@
-# product-scout 设计文档
+# product-scout design
 
-日期 2026-10-02，2026-10-03 修订
-状态 待审阅
+Date: 2026-10-02, revised 2026-10-03
+Status: awaiting review
 
-流程图：https://claude.ai/artifact/4jJqCkVudUFU24kTyXsiqZ
+Flowcharts: https://claude.ai/artifact/4jJqCkVudUFU24kTyXsiqZ
 
-## 1. 目标
+## 1. Goal
 
-做一个对话式选物 agent，能帮人挑选任意品类的商品。买家挑冰箱和卖家挑线香（选品）都是它的用例。
+A conversational agent that helps pick products in any category. A buyer choosing a fridge and a seller choosing which incense to stock are both use cases.
 
-两个用途同样重要。
-- 实用。Zheyun 自己买东西、选线香时真的在用。
-- 简历。作为 AI Engineer 求职的项目，必须真实、有评估数字、能部署。
+Two purposes, equally important.
+- Practical. Zheyun really uses it for her own purchases and for incense selection.
+- CV. A project for AI Engineer job applications, so it must be real, measured and deployable.
 
-系统只负责缩小范围，最后由用户拍板。
+The system narrows the field. The user makes the final choice.
 
-## 2. 范围
+## 2. Scope
 
-### 第一版要做的
+### In v1
 
-- 四个测试品类：冰箱、线香、耳机或小电子产品、衣服或鞋。
-- 先明确用户需求，再搜索，给出几个推荐，之后可以不断追问或要求换别的，对话可以中断后继续。
-- 商品来源：Amazon、淘宝、京东、瑞典购物网站（Prisjakt、Elgiganten、Tradera、EPREL 等）。
-- 评测来源：购物网站评论、小红书、知乎、Reddit、Flashback、专业评测网站（Råd & Rön、Rtings、SweClockers 等）。
-- 文本检索用向量检索加 BM25 的混合检索。
+- Four test categories: fridge, incense, headphones or small electronics, clothes or shoes.
+- Clarify the user's needs, search, give a few top picks, then answer unlimited follow-ups or suggest alternatives. Conversations can be paused and resumed.
+- Product sources: Amazon, Taobao, JD, Swedish shops (Prisjakt, Elgiganten, Tradera, EPREL and others).
+- Review sources: shop reviews, Xiaohongshu, Zhihu, Reddit, Flashback, professional review sites (Råd & Rön, Rtings, SweClockers and others).
+- Text retrieval is hybrid: vector search plus BM25.
 
-### 第一版不做的
+### Not in v1
 
-- 视频评测（YouTube、B 站）。以后再说，难点是拿字幕，不是成本。
-- 默认的货币换算、运费、关税、moms。用户说怎么算，系统才算。
-- 推荐里列出被淘汰的商品。淘汰记录只存在数据库里。
-- 给评测打差评类型标签。以后需要计数时再加。
-- 让 LLM 通过 MCP 自己操作浏览器。抓取由代码按固定步骤完成，LLM 只读整理好的内容。
-- 复制或 fork 别人的代码。别人的项目只参考思路（例如 MediaCrawler 的登录浏览器抓取方式）。
+- Video reviews (YouTube, Bilibili). Later. The hard part is getting transcripts, not cost.
+- Default currency conversion, shipping, duty or moms. The system calculates only when the user says how.
+- Listing eliminated products in the picks. Eliminations are stored in the database only.
+- Tagging reviews with complaint types. Add later if counts are needed.
+- Letting the LLM drive a browser through MCP. Code fetches pages in fixed steps; the LLM only reads cleaned content.
+- Copying or forking other people's code. Other projects are read for ideas only (for example MediaCrawler's approach to crawling with a logged-in browser).
 
-## 3. 整体架构
+## 3. Architecture
 
-用 LangGraph 实现。每次挑选是一个对话线程，状态存在 Postgres 里。分四个阶段，追问会回到前面的阶段。
+Built with LangGraph. Each product search is one conversation thread, with state stored in Postgres. There are four phases; follow-ups lead back into earlier phases.
 
 ```
-用户：我想买冰箱，要求是……
+User: I want a fridge, my requirements are ...
    ↓
-1. 明确需求    读取品类档案（没有就由 LLM 生成，存下来，用户可改）
-               LLM 对照档案看需求是否清楚，不清楚就问用户，直到清楚
+1. Clarify needs
+   Load the category profile (if none exists, the LLM drafts one, it is saved, the user can edit it).
+   The LLM compares the user's message with the profile. If needs are unclear, ask, until they are clear.
    ↓
-2. 搜索并存数据
-               开始前检查本次要用的网站是否已登录，没登录的先提醒用户
-               需求转成各网站的搜索和筛选条件，候选按评分、销量、评测提及排队
-               逐个抓详情页并入库（见 4.4），每页都再检查登录和验证码
-               抓满 50 页或前几名已经确定就停
+2. Search and store
+   Before starting, check login for every browser-based site this search needs; ask the user to log in up front.
+   Turn needs into each site's search terms and filters; queue candidates by rating, sales and review mentions.
+   Fetch detail pages one by one and store them (see 4.4); check login and captcha again on every page.
+   Stop at 50 pages or once the top picks are settled.
    ↓
-3. 推荐        SQL 过滤加 Python 打分，取前几名（默认 5 款）
-               每一款都重新检查是否在售，下架的换成下一名
-               LLM 写推荐，引用记录编号，Python 检查编号和数字
+3. Recommend
+   SQL filter plus Python scoring; take the top picks (default 5).
+   Recheck every pick for price and availability; replace sold-out picks with the next candidate.
+   The LLM writes the picks citing record IDs; Python checks the IDs and numbers.
    ↓
-4. 追问        问某一款    → 检索后回答
-               要算账      → Python 计算并给出算式
-               不满意      → 排除被否掉的商品，重新排序回到第 3 步
-                             库里候选不够时回到第 2 步再搜
+4. Follow-up
+   Question about a pick → retrieve and answer
+   Calculation           → Python computes and shows the formula
+   Not happy             → exclude rejected picks, rerank, back to phase 3
+                           if too few candidates remain, back to phase 2 to search more
 ```
 
-## 4. 组件
+## 4. Components
 
-### 4.1 品类档案
+### 4.1 Category profile
 
-每个品类一份 YAML，描述这个品类该问什么、常用哪些条件、去哪里找。档案不需要列出这个品类的全部参数，没列的参数在用到时再抽取（见 4.4）。
+One YAML file per category, describing what to ask, which conditions are common and where to look. A profile does not list every attribute of the category. Attributes it leaves out are extracted when needed (see 4.4).
 
 ```yaml
 category: fridge
-display_name: 冰箱
-attributes:            # 常用的条件和偏好
+display_name: Fridge
+attributes:            # common conditions and preferences
   - name: height
-    label: 高度
+    label: Height
     type: number
     unit: cm
-    kind: hard        # 硬条件，用来淘汰
+    kind: hard        # hard condition, used to eliminate
   - name: noise
-    label: 噪音
+    label: Noise
     type: number
     unit: dB
-    kind: soft        # 偏好，用来排序
+    kind: soft        # preference, used to rank
 questions_for_user:
-  - 放冰箱的位置宽、高、深各多少？
-  - 预算上限？
-  - 在意噪音吗？
-complaint_types: [噪音, 结冰, 门封, 压缩机寿命, 售后]
+  - How wide, tall and deep is the space for the fridge?
+  - What is your budget?
+  - Do you care about noise?
+complaint_types: [noise, frost, door seal, compressor life, after-sales service]
 sources:
   products: [prisjakt, elgiganten, eprel]
   reviews: [prisjakt_reviews, rad_och_ron, flashback, xiaohongshu]
 ```
 
-- 参数类型可以是数字加单位、枚举、是否、文本。
-- `complaint_types` 不用来给评测打标签，只用来引导推荐：生成每款商品的差评总结时，按这些类型逐一检索。
-- **预设档案**：四个测试品类加约 10 个常见品类，评测来源靠一次性调研整理好，写进档案。
-- **新品类**：LLM 生成档案，同时用搜索找这个品类的评测来源。有适配器的来源直接用，公开页面用通用抓取，需要登录或反爬很强的列为"建议新增适配器"。
-- 用户可以修改档案，改过的版本保存下来，下次复用。
-- 抽取时如果很多商品都出现了档案里没有的同一个参数，提示用户是否加进档案。
-- 每次使用后记录各来源实际贡献了多少条匹配上的评测，贡献少的来源下次排在后面。
+- Attribute types: number with unit, enum, boolean, text.
+- `complaint_types` is not used to tag reviews. It guides the picks: when summarising each product's complaints, retrieval runs once per type.
+- **Preset profiles**: the four test categories plus about 10 common categories. Their review sources come from one-off research and are written into the profile.
+- **New categories**: the LLM drafts a profile and searches for review sources for that category. Sources with an adapter are used directly, public pages go through a generic fetcher, and sources that need login or have strong anti-bot measures are listed as "suggested new adapters".
+- The user can edit a profile. Edited versions are saved and reused.
+- If many products show the same attribute that the profile lacks, ask the user whether to add it to the profile.
+- After each use, record how many matched reviews each source contributed. Sources that contribute little move down the list next time.
 
-### 4.2 来源适配器
+### 4.2 Source adapters
 
-商品来源和评测来源用同一套接口，每个网站一个适配器。
+Product sources and review sources share one interface, with one adapter per site.
 
 ```python
 class SourceAdapter(Protocol):
@@ -109,225 +112,224 @@ class SourceAdapter(Protocol):
     access: Literal["official_api", "user_browser", "public_page"]
     rate_limit: RateLimit
 
-    def check_session(self) -> SessionStatus: ...   # 只有 user_browser 需要
+    def check_session(self) -> SessionStatus: ...   # user_browser only
     def search(self, query: SearchQuery, profile: CategoryProfile) -> list[Candidate]: ...
     def fetch(self, url: str) -> RawPage: ...
     def parse(self, page: RawPage, profile: CategoryProfile) -> list[ProductRecord] | list[ReviewRecord]: ...
 ```
 
-- `search` 尽量把硬条件转成网站自己的筛选参数（谓词下推），并且支持按评分、销量等不同方式排序。
-- 访问方式按网站来定。有官方 API 的用 API（EPREL、Tradera）。淘宝、京东、Amazon、小红书、知乎用用户自己登录过的浏览器，通过 Playwright 的持久化浏览器配置来访问，量很小，相当于用户自己在浏览。其他公开页面直接请求。
-- **浏览器类网站优先截获页面自己请求的 JSON。** 淘宝这类网站的商品数据由页面另外向接口请求，Playwright 监听网络响应就能拿到现成的字段，比解析 HTML 准，也不用调用 LLM。拿不到时再读渲染后的 DOM。
-- 每个适配器写上它的条款检查结论和检查日期。没检查过条款的适配器不启用。
+- `search` pushes hard conditions into the site's own filters where it can (predicate pushdown) and supports several sort orders, such as rating and sales.
+- Access depends on the site. Sites with an official API use it (EPREL, Tradera). Taobao, JD, Amazon, Xiaohongshu and Zhihu use the user's own logged-in browser through a persistent Playwright profile, at low volume, much like the user browsing. Other public pages are requested directly.
+- **Browser-based sites read the JSON the page itself requests.** On sites like Taobao, product data is loaded by separate API calls from the page. Playwright listens to network responses and gets ready-made fields. This is more accurate than parsing HTML and needs no LLM call. If that fails, read the rendered DOM.
+- Each adapter records its terms-of-service check and the date. Adapters without a terms check stay disabled.
 
-#### 登录和验证码
+#### Login and captcha
 
-- `check_session` 判断是否已登录：页面跳转到登录页、出现登录框、截获的 JSON 返回未登录或会话过期，任何一种都算没登录。出现验证码按同样方式处理。
-- 第 2 阶段开始前，对本次要用的所有浏览器类网站检查一次，没登录的一开始就提醒。之后每抓一个页面再检查一次，因为登录可能中途过期，验证码也可能半路出现。
-- 发现问题时，用 LangGraph 的 interrupt 暂停：在用户的浏览器里打开该网站的登录页，并在对话里提醒，例如"淘宝没有登录，已经打开登录页，登录好以后回复'好了'，也可以跳过淘宝"。用户回复后重新检查，通过就从停下的地方继续；用户选择跳过，就继续用其他网站。
-- 登录和验证码都由用户自己完成，程序不输入密码，也不绕过验证码。登录状态保存在本地 `browser-profile/`，不进 Git。
+- `check_session` decides whether the user is logged in. Any of these counts as logged out: a redirect to the login page, a login dialog on the page, or captured JSON reporting "not logged in" or "session expired". A captcha is handled the same way.
+- Before phase 2, check every browser-based site this search needs, so the user is asked up front. Check again on every page, because a session can expire or a captcha can appear mid-search.
+- On a problem, pause with a LangGraph interrupt. Open the site's login page in the user's browser and tell the user in the chat, for example: "You are not logged in to Taobao. I opened the login page. Reply 'done' after logging in, or skip Taobao." After the reply, check again and resume where it stopped. If the user skips, continue with the other sites.
+- The user always logs in and solves captchas. The program never types passwords and never bypasses captchas. Sessions are stored locally in `browser-profile/`, which is not in Git.
 
-### 4.3 搜索策略
+### 4.3 Search strategy
 
-目标是不翻无穷无尽的页面，也不让无关商品混进来。参考了以下经典方法。
+The goal is to avoid paging through endless results and to keep irrelevant products out. It draws on these classic methods.
 
-1. **谓词下推**：能让网站筛选的硬条件，都写进网站的搜索参数。
-2. **多路有序列表的 Top-k（Fagin 的 Threshold Algorithm）**：从按评分、按销量、按评测提及次数排序的几张列表同时往下读，当还没读到的商品综合分上限低于当前第 k 名时停止。
-3. **多阶段排序**：粗筛只看搜索结果列表里的标题、价格、评分、销量，去掉无关商品；只有排名靠前的商品才去抓详情页、评论和图片。
-4. **预算**：每次挑选设页面数上限，用完就停，并在推荐里说明。默认上限是 50 个详情页。如果用付费模型，再加金额上限，等第一阶段测出单次成本后再定。
+1. **Predicate pushdown**: every hard condition the site can filter on goes into the site's search parameters.
+2. **Top-k over several sorted lists (Fagin's Threshold Algorithm)**: read down lists sorted by rating, sales and review mentions in parallel. Stop when the best possible combined score of any unread product is below the current k-th product.
+3. **Multi-stage ranking**: the first pass uses only the title, price, rating and sales shown in search results, to drop irrelevant products. Only top-ranked products get their detail pages, reviews and images fetched.
+4. **Budget**: each search has a page cap. When it is used up, stop and say so in the picks. The default is 50 detail pages. If a paid model is used, add a money cap, set after phase 1 measures the cost of one search.
 
-### 4.4 抽取和入库
+### 4.4 Extraction and storage
 
-原则：**要筛选、要比较的信息才做成结构化，其他的保留原文，用检索来找。** 每个页面清理掉脚本、导航、广告以后分两路处理。
+Principle: **only information used for filtering and comparison is structured. Everything else stays as original text and is found by retrieval.** Each page is cleaned of scripts, menus and ads, then split into two paths.
 
-**结构化，只存少数字段**
+**Structured path: a few fields only**
 
-1. 读取顺序按可靠程度从高到低：截获的 JSON 或页面内嵌的结构化数据（JSON-LD），然后是 HTML 正文。
-2. 固定字段：名称、品牌、型号、价格、货币、评分、评论数、是否在售、来源链接、抓取时间。结构化数据里没有的，由 LLM 从 HTML 抽取。
-3. 结果用 Pydantic 校验。
-4. 按型号、品牌、参数判断库里是否已有这款商品，有就新增或更新 listing 和 variant，没有就新建 product。每次抓到的价格另存一条 price_history。
+1. Read in order of reliability: captured JSON or structured data embedded in the page (JSON-LD), then the HTML text.
+2. Core fields: name, brand, model, price, currency, rating, review count, in stock, source URL, fetch time. Fields missing from structured data are extracted from the HTML by the LLM.
+3. Validate with Pydantic.
+4. Match on model number, brand and specs to see whether the product is already in the database. If it is, add or update the listing and variant. If not, create a product. Every fetched price also adds a price_history row.
 
-规则：**价格只从结构化数据或 HTML 里取，不从图片里取**，因为详情图里的价格常常过时。
+Rule: **prices come only from structured data or HTML, never from images**, because prices in product images are often out of date.
 
-**原文，全部保留**
+**Text path: keep everything**
 
-1. 商品正文、描述、评测原文都切块。短评一条一块；长文按段落切，每块约 300 到 500 token，相邻块略有重叠，块前加上标题和商品名。
-2. 正文缺关键信息、只在图片里时才处理图片：先用 PaddleOCR，读不出来再用视觉模型，长图先切段。读出的文字只进原文这一路。
-3. 每块做向量和 BM25 分词（见 4.6），存进 `chunks`。
+1. Product text, descriptions and review text are all chunked. A short review is one chunk. Long text is split by paragraph into chunks of about 300 to 500 tokens with a small overlap, each prefixed with the title and product name.
+2. Images are processed only when key information is missing from the text and appears only in images. Try PaddleOCR first, then a vision model if OCR fails. Long images are cut into segments first. Text read from images only goes into the text path.
+3. Each chunk gets an embedding and BM25 tokens (see 4.6) and is stored in `chunks`.
 
-**按需抽取参数**
+**On-demand attribute extraction**
 
-用户提出档案里没存过的硬条件时（例如"高度不能超过 180"），才对每个候选检索和这个参数有关的块，由 LLM 抽出数值，写回 `attributes`，同时记下来源块编号。找不到就标为缺失，并在推荐里写明，不让模型猜。
+When the user gives a hard condition on an attribute that is not stored yet (for example "no taller than 180 cm"), retrieve the chunks about that attribute for each candidate, have the LLM extract the value, write it to `attributes` and record the source chunk ID. If nothing is found, mark it as missing and say so in the picks. The model never guesses.
 
-`attributes` 里每个值的格式：
+Format of each value in `attributes`:
 
 ```json
 {"height": {"value": 178, "unit": "cm", "raw": "1780mm", "source_chunk_id": 1234}}
 ```
 
-档案外的参数放在 `attributes.extra` 里。
+Attributes outside the profile go in `attributes.extra`.
 
-### 4.5 评测和商品匹配
+### 4.5 Reviews and product matching
 
-评测记录字段：来源链接、平台、作者类型（买家、博主、专业评测）、发布时间、对应商品或"未匹配"、原文、语言、抓取时间。
+Review fields: source URL, platform, author type (buyer, blogger, professional reviewer), publish date, matched product or "unmatched", original text, language, fetch time.
 
-社区评测常常不写型号，需要匹配到具体商品。
-1. 有型号就按型号精确匹配
-2. 没有型号就按品牌、品类、关键参数做模糊匹配
-3. 最后由 LLM 判断是不是同一款
+Community reviews often omit the model number, so they need matching to a specific product.
+1. Exact match on model number when there is one
+2. Otherwise a fuzzy match on brand, category and key specs
+3. Finally the LLM judges whether it is the same product
 
-匹配不上的评测不硬塞给某个商品，归到品牌或品类下作为一般参考。
+Reviews that cannot be matched are not forced onto a product. They are filed under the brand or category as general reference.
 
-### 4.6 文本检索
+### 4.6 Text retrieval
 
-商品描述块和评测块用同一套检索。
+Product text chunks and review chunks share one retrieval path.
 
-- **向量检索**：bge-m3，本地运行，每块 1024 维，存进 pgvector，建 HNSW 索引。中文、瑞典语、英文在同一个向量空间。
-- **BM25**：用 Python 自己实现。分词直接用 bge-m3 的分词器，三种语言共用一套代码；另外用正则把型号（例如 `RB38C7B5D22`）整个当作一个词加进去，因为子词分词会把型号切碎。
-- **合并**：两路结果用 RRF（Reciprocal Rank Fusion）合并，每条结果的分数是它在两个列表里的 `1/(60 + 名次)` 相加。
-- **过滤**：商品范围、作者类型、发布时间等条件在两路检索里都先加上。pgvector 的 HNSW 在过滤很严时可能返回不够数，要打开 pgvector 0.8 的 iterative scan。
-- 每块记录生成它的嵌入模型版本，以后换模型时知道哪些需要重新向量化。
-- 检索接口背后另有一个长上下文实现，只作为评估时的对照组。
+- **Vector search**: bge-m3, run locally, 1024 dimensions per chunk, stored in pgvector with an HNSW index. Chinese, Swedish and English share one vector space.
+- **BM25**: implemented in Python by us. Tokenisation uses the bge-m3 tokenizer, so all three languages share one code path. A regex also adds each model number (for example `RB38C7B5D22`) as a single token, because subword tokenisation splits model numbers into pieces.
+- **Merging**: the two result lists are merged with Reciprocal Rank Fusion (RRF). Each result scores the sum of `1/(60 + rank)` over the two lists.
+- **Filters**: conditions such as product scope, author type and publish date apply to both searches. With strict filters, pgvector's HNSW can return too few results, so turn on the iterative scan added in pgvector 0.8.
+- Each chunk records the embedding model version that produced it, so a model change shows which chunks need re-embedding.
+- Behind the same retrieval interface there is a long-context implementation, used only as the evaluation baseline.
 
-### 4.7 推荐
+### 4.7 Picks
 
-1. 用户的需求和本次使用的品类档案
-2. 对比表：前几名（默认 5 款）的价格、关键参数、评分，每个格子带链接
-3. 每款商品的优点和差评，注明来源类型（专业测试、买家评论、社区用户）
-4. 缺失和不确定的数据
-5. 抓取时间和是否在售
-6. 排序依据
+1. The user's needs and the category profile used
+2. Comparison table: price, key specs and rating of the top picks (default 5), each cell linked to its source
+3. Pros and complaints for each product, labelled by source type (professional test, buyer review, community user)
+4. Missing and uncertain data
+5. Fetch time and availability
+6. How the ranking was done
 
-**给用户看之前，每一款都重新检查价格和是否在售，不管抓取时间是多久之前。** 下架的换成下一名，再检查一遍。没进前几名的候选不检查。
+**Before the picks are shown, every pick is rechecked for price and availability, however recently it was fetched.** A sold-out pick is replaced with the next candidate, which is then checked too. Candidates outside the top are not rechecked.
 
-推荐用结构化输出生成，每条结论附上引用的记录编号。Python 检查编号是否存在、数字是否和记录一致，不一致就退回重写。
+The picks are generated as structured output. Every claim carries the record IDs it cites. Python checks that the IDs exist and that numbers match the records. If not, the picks go back for a rewrite.
 
-### 4.8 追问工具
+### 4.8 Follow-up tools
 
-| 工具 | 作用 |
+| Tool | Purpose |
 |---|---|
-| `query_products` | 按结构化条件查商品表，不让 LLM 直接写 SQL |
-| `search_text` | 文本检索（4.6），回答关于某款商品的问题 |
-| `extract_attribute` | 按需抽取某个参数（4.4） |
-| `exclude_and_rerank` | 用户不满意时，排除被否掉的商品，按更新后的条件重新排序；候选不够时调用 `fetch_more` |
-| `fetch_more` | 到某个来源再抓几款 |
-| `calculate` | LLM 把用户的规则翻译成结构化计算步骤，Python 执行，返回结果和算式 |
-| `recheck_availability` | 重新检查价格和是否在售 |
-| `update_profile` | 修改品类档案 |
+| `query_products` | Query the product tables with structured conditions. The LLM never writes SQL |
+| `search_text` | Text retrieval (4.6), to answer questions about a product |
+| `extract_attribute` | On-demand attribute extraction (4.4) |
+| `exclude_and_rerank` | When the user is not happy, exclude rejected products and rerank with updated conditions; call `fetch_more` if too few candidates remain |
+| `fetch_more` | Fetch a few more products from a source |
+| `calculate` | The LLM turns the user's rule into structured calculation steps; Python runs them and returns the result and the formula |
+| `recheck_availability` | Recheck price and availability |
+| `update_profile` | Edit the category profile |
 
-### 4.9 记忆
+### 4.9 Memory
 
-- 对话状态存在 LangGraph 的 Postgres 检查点里，可以中断后继续。
-- 对话里只记商品编号，需要数据时用工具查。对话太长时较早的轮次压缩成摘要。商品和评测在数据库里，不会因为压缩丢失。
-- 下次挑同一品类时直接复用库里的数据。价格和在售状态在推荐前总会重新检查（4.7），所以旧数据不会直接出现在推荐里。
+- Conversation state is stored in LangGraph's Postgres checkpointer, so a conversation can be paused and resumed.
+- The conversation holds product IDs only. Data is fetched with tools when needed. When a conversation gets long, older turns are summarised. Products and reviews live in the database and are not lost to summarisation.
+- The next search in the same category reuses stored data. Prices and availability are always rechecked before the picks (4.7), so old data never goes straight into a recommendation.
 
-### 4.10 上下文预算
+### 4.10 Context budget
 
-数据库可以一直变大，模型每一步只看完成这一步需要的部分。
+The database can keep growing. At each step, the model sees only what that step needs.
 
-| 步骤 | 给模型看的内容 | 上限 |
+| Step | What the model sees | Limit |
 |---|---|---|
-| 抽取 | 一个清理过的页面，很长的页面按段落切开分段抽取 | 一页 |
-| 筛选和排序 | 不给模型，SQL 和 Python 做 | 0 |
-| 按需抽取 | 一款商品里和这个参数有关的几块 | 每款前 5 块 |
-| 推荐 | 前几名的精简卡片（固定字段加关键参数，每张约 150 token），加每款的评测汇总 | 前 10 款 |
-| 回答问题 | 检索到的前 k 块 | k 默认 10 |
-| 追问 | 对话里只有商品编号，需要时调工具查 | 按需 |
+| Extraction | One cleaned page. Very long pages are split by paragraph and extracted in parts | One page |
+| Filtering and ranking | Nothing. SQL and Python do it | 0 |
+| On-demand extraction | The chunks about this attribute for one product | Top 5 chunks per product |
+| Picks | Short cards for the top products (core fields plus key specs, about 150 tokens each) plus each product's review summary | Top 10 products |
+| Answering a question | The retrieved top k chunks | k = 10 by default |
+| Follow-up | Only product IDs in the conversation; tools fetch data when needed | As needed |
 
-### 4.11 LLM 层
+### 4.11 LLM layer
 
-用哪家模型还没定，可能用免费额度，所以 LLM 层不绑定某一家。
+The model provider is not decided and may be a free tier, so the LLM layer is not tied to one provider.
 
-- 写一个统一的调用接口：发消息、要求结构化输出、调用工具。Gemini、Groq、OpenRouter、Ollama 都提供 OpenAI 兼容接口，一个客户端换配置就能接；Claude 用 Anthropic 官方 SDK 单独接。
-- 每一步单独配置模型。抽取是简单任务，可以用免费的小模型；写推荐和理解追问需要强一些的模型。
-- 用评估数字选模型（见第 7 节），不凭印象。
+- One calling interface: send messages, request structured output, call tools. Gemini, Groq, OpenRouter and Ollama all offer OpenAI-compatible endpoints, so one client covers them by configuration. Claude is connected separately through the official Anthropic SDK.
+- Each step has its own model setting. Extraction is simple and can use a free small model. Writing the picks and understanding follow-ups need a stronger one.
+- Models are chosen by evaluation numbers (section 7), not by impression.
 
-候选（额度经常变，注册前以官方页面为准）：
+Candidates (quotas change often; check the official pages before signing up):
 
-| 选项 | 优点 | 限制 |
+| Option | Strengths | Limits |
 |---|---|---|
-| Gemini 免费层 | 免费里最强，不用绑卡，中文好，支持结构化输出和工具调用 | Flash 系列每分钟约 10 次、每天约 1,000 到 1,500 次；免费层数据可能被 Google 用来改进产品 |
-| Groq 免费层 | 很快 | 每分钟约 6,000 token，长页面放不下 |
-| OpenRouter 免费模型 | 开源模型多，适合对比 | 限流，免费模型会变 |
-| 本地 Ollama | 免费，数据不出电脑 | 本机 RTX 3060 6GB 只能跑 7B 到 8B 量化模型，还要和 bge-m3 抢显存 |
-| Claude API | 质量最稳 | 收费 |
+| Gemini free tier | Strongest free option, no card needed, good Chinese, structured output and tool calling | Flash models about 10 requests per minute and 1,000 to 1,500 per day; free-tier data may be used by Google to improve its products |
+| Groq free tier | Very fast | About 6,000 tokens per minute, too small for long pages |
+| OpenRouter free models | Many open models, useful for comparison | Rate-limited, the free list changes |
+| Local Ollama | Free, data stays on the laptop | This laptop's RTX 3060 6 GB fits only 7B to 8B quantised models and shares memory with bge-m3 |
+| Claude API | Most consistent quality | Paid |
 
-## 5. 数据模型
+## 5. Data model
 
-一个 Postgres 数据库，装 pgvector 扩展。
+One Postgres database with the pgvector extension.
 
-| 表 | 内容 |
+| Table | Contents |
 |---|---|
-| `category_profiles` | 品类档案，带版本号，记录是预设、生成还是用户修改过的 |
-| `products` | 这款商品本身：品牌、型号、品类、`attributes` jsonb |
-| `listings` | 这款商品在某个网站上的链接、评分、评论数、抓取时间。一个 product 对应多个 listing |
-| `variants` | 尺码、颜色、容量等款式，各自的价格和库存。一个 listing 对应多个 variant |
-| `price_history` | 每次抓到的价格和是否在售 |
-| `reviews` | 评测记录，`product_id` 可为空 |
-| `chunks` | 商品描述块和评测块：原文、`vector(1024)`、BM25 词、语言、嵌入模型版本、来源编号 |
-| `source_stats` | 每个品类下每个来源的贡献统计 |
-| `fetch_log` | 每次请求的链接、时间、状态、耗时，用于限速和排查 |
-| `eliminations` | 被淘汰的商品和原因，不进推荐 |
-| LangGraph 检查点表 | 对话状态 |
+| `category_profiles` | Category profiles, versioned, marked as preset, generated or user-edited |
+| `products` | The product itself: brand, model, category, `attributes` jsonb |
+| `listings` | The product's page on one site: URL, rating, review count, fetch time. One product has many listings |
+| `variants` | Size, color, capacity and so on, each with its own price and stock. One listing has many variants |
+| `price_history` | Every fetched price and availability |
+| `reviews` | Review records; `product_id` may be empty |
+| `chunks` | Product text and review chunks: text, `vector(1024)`, BM25 tokens, language, embedding model version, source IDs |
+| `source_stats` | Contribution of each source per category |
+| `fetch_log` | URL, time, status and duration of each request, for rate limiting and debugging |
+| `eliminations` | Eliminated products and why; not shown in the picks |
+| LangGraph checkpoint tables | Conversation state |
 
-## 6. 技术选型
+## 6. Tech choices
 
-- Python 3.10，conda 环境 `product-scout`，依赖用 uv 管理
-- LangGraph，状态检查点存 Postgres
-- LLM 层不绑定某一家（4.11）
-- 嵌入模型 bge-m3，本地运行；BM25 自己实现，用 bge-m3 的分词器
-- Postgres + pgvector（0.8 或以上），用 Docker 运行
-- Playwright，持久化浏览器配置
+- Python 3.10 in the conda environment `product-scout`, dependencies managed with uv
+- LangGraph, with checkpoints in Postgres
+- Provider-neutral LLM layer (4.11)
+- bge-m3 embeddings, run locally; BM25 implemented by us on the bge-m3 tokenizer
+- Postgres + pgvector (0.8 or later), run in Docker
+- Playwright with a persistent browser profile
 - PaddleOCR
-- Langfuse 记录每次运行的调用链、成本和耗时
-- 第一版界面是命令行，之后做 FastAPI 和 Docker 部署
+- Langfuse for traces, cost and latency of every run
+- A command-line interface in v1, then FastAPI and Docker deployment
 
-## 7. 评估
+## 7. Evaluation
 
-建一个标注集：从四个品类、多个网站选大约 50 个商品页，人工记下真实价格和关键参数，同时保存页面快照，保证可以反复测。
+Build a labelled set: about 50 product pages across the four categories and several sites. Record the true price and key specs by hand, and save page snapshots so tests can be rerun.
 
-| 指标 | 测法 |
+| Metric | How it is measured |
 |---|---|
-| 价格抽取准确率 | 抽取的价格和标注完全一致的比例 |
-| 参数抽取准确率 | 按参数分别统计，包括按需抽取 |
-| 计算正确率 | Python 计算用单元测试覆盖；约 20 个例子测 LLM 把用户的话翻译成计算步骤是否正确 |
-| 来源真实率 | 数字类结论自动核对；文字类结论用 LLM 判断，人工抽查校准 |
-| 在售准确率 | 推荐里标为在售的商品，抽样人工核对 |
-| 商品匹配准确率 | 约 50 对人工标注的评测和商品 |
-| 检索质量 | 约 30 个问题，比较只用向量、只用 BM25、混合、bge-m3 稀疏输出、长上下文，看准确率、成本、耗时 |
-| 模型对比 | 同一组抽取和推荐任务，比较几个候选模型的准确率、耗时、成本，用来给每一步选模型 |
-| 搜索效率 | Threshold Algorithm 停止规则比翻完所有页少抓了多少页 |
-| 运行指标 | 每次挑选的成本和耗时（Langfuse） |
+| Price extraction accuracy | Share of extracted prices that exactly match the label |
+| Attribute extraction accuracy | Per attribute, including on-demand extraction |
+| Calculation correctness | Python calculations covered by unit tests; about 20 examples test whether the LLM turns the user's words into the right calculation steps |
+| Source faithfulness | Numeric claims checked automatically; text claims judged by an LLM, calibrated by manual spot checks |
+| Availability accuracy | Products shown as available in the picks, spot-checked by hand |
+| Product matching accuracy | About 50 hand-labelled review and product pairs |
+| Retrieval quality | About 30 questions, comparing vectors only, BM25 only, hybrid, bge-m3 sparse output and long context on accuracy, cost and latency |
+| Model comparison | The same extraction and recommendation tasks run on several candidate models, comparing accuracy, latency and cost, to choose a model per step |
+| Search efficiency | How many fewer pages the Threshold Algorithm stopping rule fetches than reading every page |
+| Run metrics | Cost and latency per search (Langfuse) |
 
-"有没有挑对"没有标准答案，不作为指标。
+"Did it pick the right product" has no ground truth and is not a metric.
 
-## 8. 条款和数据
+## 8. Terms and data
 
-- 每个来源启用前检查条款，结论写进适配器。优先用官方 API。
-- 抓取只供个人使用，量小、限速。登录和验证码由用户自己完成。
-- 抓到的页面、评测、快照和浏览器配置不进公开的 Git 仓库（已加入 `.gitignore`），公开仓库只放代码和评估结果数字。
-- 简历里的数字必须是评估实际跑出来的，并且经过 Zheyun 确认。
+- Check each source's terms before enabling it, and record the result in the adapter. Prefer official APIs.
+- Fetching is for personal use only, at low volume and rate-limited. The user handles login and captchas.
+- Fetched pages, reviews, snapshots and the browser profile stay out of the public Git repo (already in `.gitignore`). The public repo holds only code and evaluation numbers.
+- Numbers in the CV must come from evaluations that actually ran, and Zheyun must confirm them.
 
-## 9. 分阶段
+## 9. Phases
 
-项目太大，一份实施计划写不完，按阶段分别写计划。
+The project is too big for one implementation plan, so each phase gets its own plan.
 
-1. **骨架**：项目结构、Postgres + pgvector、数据表、冰箱预设档案、LLM 层（先接一个免费模型）、一个商品适配器、结构化抽取、命令行推荐，以及价格抽取的标注集和评估。
-2. **对话**：LangGraph 对话循环、检查点、明确需求的追问、追问工具、计算工具、Langfuse。
-3. **文本和检索**：切块、bge-m3 向量、BM25、RRF、评测适配器、商品匹配、按需抽取、推荐里的优缺点。
-4. **扩展来源和品类**：淘宝、京东、Amazon 的浏览器适配器（含登录检查和 JSON 截获），小红书、知乎，另外三个预设品类，新品类的档案生成。
-5. **搜索策略**：谓词下推、Threshold Algorithm、多阶段排序、预算。
-6. **完整评估**：全部指标，检索方式对比，模型对比。
-7. **部署**：FastAPI、Docker。
+1. **Skeleton**: project structure, Postgres + pgvector, tables, the fridge preset profile, the LLM layer (one free model first), one product adapter, structured extraction, command-line picks, and the labelled set and evaluation for price extraction.
+2. **Conversation**: LangGraph conversation loop, checkpoints, clarifying questions, follow-up tools, calculation tool, Langfuse.
+3. **Text and retrieval**: chunking, bge-m3 embeddings, BM25, RRF, review adapters, product matching, on-demand extraction, pros and complaints in the picks.
+4. **More sources and categories**: browser adapters for Taobao, JD and Amazon (with login checks and JSON capture), Xiaohongshu, Zhihu, the other three preset categories, profile generation for new categories.
+5. **Search strategy**: predicate pushdown, Threshold Algorithm, multi-stage ranking, budget.
+6. **Full evaluation**: all metrics, retrieval comparison, model comparison.
+7. **Deployment**: FastAPI, Docker.
 
-第一阶段第一个商品适配器选哪个网站，要等条款检查后决定。候选是 Prisjakt（价格全，条款待查）和 EPREL（官方 API，参数准但没有价格）。
+The first product adapter in phase 1 is chosen after the terms check. Candidates are Prisjakt (full prices, terms not yet checked) and EPREL (official API, accurate specs, no prices).
 
-## 10. 待确认
+## 10. Open items
 
-- 每个网站的条款检查结论。
-- 第一阶段先接哪个模型，建议先申请 Gemini 免费 key。
-- 过滤字段在 `chunks` 里冗余存一份，还是查询时和 `reviews`、`products` 做 join。
-- Langfuse 用云服务还是本地 Docker。
-- CLAUDE.md 还是只做线香的旧范围，要按这份文档更新。
-- 之前起草的简历句子里写了"the Claude API"，模型选定后再改。
-- 和瑞典居留许可有关的事项（CLAUDE.md 里写的）只影响线香的真实采购和销售，不影响这个项目的开发。
+- Terms check results for each site.
+- Which model to connect first in phase 1. Suggestion: get a free Gemini key first.
+- Store filter fields redundantly in `chunks`, or join with `reviews` and `products` at query time.
+- Langfuse cloud or self-hosted in Docker.
+- CLAUDE.md still describes the old incense-only scope and must be updated to match this document.
+- The CV line drafted earlier mentions "the Claude API". Revise it once the model is chosen.
