@@ -8,9 +8,10 @@ from typing import List, Optional
 
 import typer
 
-from scout.config import load_settings
+from scout.config import ROOT, load_settings
 from scout.crawl import crawl as run_crawl
 from scout.db.conn import connect, init_schema
+from scout.eval.prices import evaluate_prices, extract_from_snapshot, read_labels, write_template
 from scout.sources.amazon_se.adapter import AmazonSeAdapter
 from scout.sources.amazon_se.check import check_page
 from scout.sources.amazon_se.product import parse_product_page
@@ -120,3 +121,25 @@ def crawl(
         typer.echo(f"skipped {url}")
     for note in report.notes:
         typer.echo(note)
+
+
+@app.command("eval-template")
+def eval_template(out: Path = Path("data/eval/price_labels.csv")) -> None:
+    """Write a label sheet with one row per saved product snapshot."""
+    n = write_template(load_settings().snapshot_dir, out)
+    typer.echo(f"{n} rows written to {out}. Fill true_price (or none), true_currency and true_in_stock (yes or no).")
+
+
+@app.command("eval-prices")
+def eval_prices(labels: Path = Path("data/eval/price_labels.csv")) -> None:
+    """Measure price and stock extraction against your labels and save the numbers."""
+    rows = read_labels(labels)
+    result = evaluate_prices(rows, extract_from_snapshot)
+    summary = {"extractor": "selectors", "run_at": datetime.now(timezone.utc).isoformat(), **result.summary()}
+    out = ROOT / "eval" / "results" / f"prices-{datetime.now():%Y%m%d-%H%M}.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    typer.echo(json.dumps(summary, indent=2))
+    for failure in result.failures:
+        typer.echo(f"wrong: {failure}")
+    typer.echo(f"saved {out}")

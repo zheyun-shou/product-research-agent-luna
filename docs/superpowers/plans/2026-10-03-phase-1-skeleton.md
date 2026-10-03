@@ -2414,7 +2414,7 @@ Result on 2026-10-03: 11 pages fetched, all `ok`, no captcha. 10 listings saved,
   - `extract_from_snapshot(label: PriceLabel) -> ProductRecord`
   - `evaluate_prices(labels, extract: Callable[[PriceLabel], ProductRecord]) -> PriceEvalResult` with `summary() -> dict` and `failures: list[str]`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `tests/test_eval_prices.py`:
 
@@ -2500,12 +2500,12 @@ def test_evaluate_prices_counts_matches_and_lists_failures(tmp_path):
     assert len(result.failures) == 1 and "10990" in result.failures[0]
 ```
 
-- [ ] **Step 2: Run the tests to see them fail**
+- [x] **Step 2: Run the tests to see them fail**
 
 Run: `python -m pytest tests/test_eval_prices.py -v`
 Expected: FAIL with `ModuleNotFoundError`.
 
-- [ ] **Step 3: Write the evaluation module**
+- [x] **Step 3: Write the evaluation module**
 
 `src/scout/eval/__init__.py`:
 
@@ -2625,12 +2625,12 @@ def evaluate_prices(labels: list[PriceLabel], extract: Callable[[PriceLabel], Pr
     return result
 ```
 
-- [ ] **Step 4: Run the tests to see them pass**
+- [x] **Step 4: Run the tests to see them pass**
 
 Run: `python -m pytest tests/test_eval_prices.py -v`
 Expected: 4 passed.
 
-- [ ] **Step 5: Add the commands**
+- [x] **Step 5: Add the commands**
 
 Add to `src/scout/cli.py`:
 
