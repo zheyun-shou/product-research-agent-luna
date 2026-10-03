@@ -2693,6 +2693,11 @@ Result on 2026-10-03 (`eval/results/prices-20261003-2320.json`): 26 pages, price
 - One page (B0H4YNM2BL) shows a price range and no buy box. Its price label is `none` and its stock is not labelled. The parser said in stock for this page, which is doubtful.
 - One category, one day, 26 pages. Do not use this number in the CV until a larger set with out-of-stock pages exists and Zheyun confirms it.
 
+Second run on 2026-10-03 (`eval/results/prices-20261003-2333.json`): 12 more pages, found with the search filter "Inkludera slut i lager" (`rh=p_n_availability:20692910031`) on result pages 3 to 5. Total 38 pages, price 38 of 38, stock 33 of 33. The stock set now has 7 out-of-stock pages ("För närvarande inte tillgänglig"), and the parser said out of stock for all 7.
+- Claude labelled the 12 new pages from the screenshots, without the parser output. Zheyun checked the stock of B0922FW198.
+- 4 pages show "Priset är högre än vanligt". Amazon hides the price and the buy box and shows only "Visa alla köpalternativ". Price is labelled `none`, and stock is not labelled. The parser gives no price and unknown stock for these pages, which is the correct behaviour for the picks.
+- The CV rule above still applies.
+
 - [ ] **Step 8: Commit**
 
 ```bash
