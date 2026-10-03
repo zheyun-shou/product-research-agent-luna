@@ -80,6 +80,7 @@ src/scout/
     __init__.py
     verify.py                        raw-text check
     page.py                          worker extraction for one page
+    screen.py                        worker title screening of search results
   picks/
     __init__.py
     rank.py                          cards, conditions, Bayesian score
@@ -2406,7 +2407,7 @@ Open three of the products in a normal browser and compare price, stock and rati
 - Consumes: `parse_product_page` (Task 7), `product_url` (Task 4), `ProductRecord` (Task 3).
 - Produces:
   - `PriceLabel(asin: str, snapshot: Path, true_price: Decimal | None, true_currency: str | None, true_in_stock: bool | None)`
-  - `write_template(snapshot_dir: Path, out: Path) -> int` (refuses to overwrite)
+  - `write_template(snapshot_dir: Path, out: Path) -> int` (one row per product, using its latest snapshot that has a screenshot; refuses to overwrite)
   - `read_labels(path: Path) -> list[PriceLabel]` (skips rows not labelled yet; `none` means the page shows no price)
   - `extract_from_snapshot(label: PriceLabel) -> ProductRecord`
   - `evaluate_prices(labels, extract: Callable[[PriceLabel], ProductRecord]) -> PriceEvalResult` with `summary() -> dict` and `failures: list[str]`
@@ -2436,14 +2437,21 @@ def snapshot_tree(tmp_path):
         folder.mkdir(parents=True)
         shutil.copy(FIXTURES / name, folder / "20261003T101500.html")
         (folder / "20261003T101500.png").write_bytes(b"png")
+    product = tmp_path / "snapshots" / "amazon_se" / "product"
+    # a later recheck saved HTML without a screenshot
+    (product / "B0AAAAAAA1" / "20261004T090000.html").write_text("later", encoding="utf-8")
+    # a product that was never screenshotted
+    (product / "B0AAAAAAA5").mkdir()
+    (product / "B0AAAAAAA5" / "20261003T101500.html").write_text("x", encoding="utf-8")
     return tmp_path / "snapshots"
 
 
-def test_template_lists_the_latest_snapshot_per_product(tmp_path):
+def test_template_lists_the_latest_screenshotted_snapshot_per_product(tmp_path):
     out = tmp_path / "labels.csv"
     assert write_template(snapshot_tree(tmp_path), out) == 2
     rows = list(csv.DictReader(out.open(encoding="utf-8")))
     assert [r["asin"] for r in rows] == ["B0AAAAAAA1", "B0AAAAAAA2"]
+    assert rows[0]["snapshot"].endswith("20261003T101500.html")
     assert rows[0]["screenshot"].endswith(".png")
     assert rows[0]["true_price"] == ""
 
@@ -2556,13 +2564,13 @@ def write_template(snapshot_dir: Path, out: Path) -> int:
         raise FileExistsError(f"{out} exists. Labels are never overwritten; pick another file name.")
     rows = []
     for folder in sorted((snapshot_dir / "amazon_se" / "product").iterdir()):
-        pages = sorted(folder.glob("*.html"))
+        # Only snapshots with a screenshot can be labelled. Later rechecks save HTML without one.
+        pages = sorted(p for p in folder.glob("*.html") if p.with_suffix(".png").exists())
         if not pages:
             continue
         latest = pages[-1]
-        shot = latest.with_suffix(".png")
         rows.append({"asin": folder.name, "snapshot": str(latest.resolve()),
-                     "screenshot": str(shot.resolve()) if shot.exists() else ""})
+                     "screenshot": str(latest.with_suffix(".png").resolve())})
     out.parent.mkdir(parents=True, exist_ok=True)
     with out.open("w", encoding="utf-8", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=COLUMNS)
@@ -2698,7 +2706,8 @@ git commit -m "Price and stock extraction evaluation on hand-labelled amazon.se 
   - `LLMConfig(providers: dict[str, ProviderConfig], roles: dict[str, RoleConfig])`, `load_llm_config(path: Path = ROOT / "config" / "models.yaml") -> LLMConfig`
   - `RateLimiter(rpm: int, sleep=time.sleep, clock=time.monotonic).wait()`
   - `LLM(config, clients: dict[str, Any] | None = None, sleep=time.sleep, clock=time.monotonic)` with `structured(role: Literal["chat", "worker"], system: str, user: str, schema: type[T]) -> T`, `model_for(role) -> str`, `client(provider) -> OpenAI`, `calls: list[CallRecord]`
-  - `QuotaExhausted`, `LLMOutputError`, `inline_refs(schema: dict) -> dict`, `strip_fences(text: str) -> str`
+  - `QuotaExhausted` (daily quota used up, or still rate limited after every retry), `LLMOutputError`, `inline_refs(schema: dict) -> dict`, `strip_fences(text: str) -> str`
+  - If the endpoint rejects the JSON schema (HTTP 400), the call retries once in JSON mode with the schema in the system prompt.
 
 Prerequisite: Zheyun has put `GEMINI_API_KEY=...` in `.env` (free key from https://aistudio.google.com/apikey, no billing).
 
@@ -2734,7 +2743,7 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-from openai import RateLimitError
+from openai import BadRequestError, RateLimitError
 from pydantic import BaseModel, ValidationError
 
 from scout.llm.client import LLM, LLMOutputError, QuotaExhausted, inline_refs, strip_fences
@@ -2842,6 +2851,23 @@ def test_daily_limit_raises_quota_exhausted():
     llm, _, _ = make([rate_limited("GenerateRequestsPerDayPerProjectPerModel-FreeTier")])
     with pytest.raises(QuotaExhausted):
         llm.structured("worker", "sys", "user", Answer)
+
+
+def test_rate_limited_on_every_try_also_raises_quota_exhausted():
+    minute = "GenerateRequestsPerMinutePerProjectPerModel-FreeTier"
+    llm, _, _ = make([rate_limited(minute), rate_limited(minute), rate_limited(minute)])
+    with pytest.raises(QuotaExhausted, match="still rate limited"):
+        llm.structured("worker", "sys", "user", Answer)
+
+
+def test_rejected_schema_falls_back_to_json_mode():
+    bad = BadRequestError("Invalid JSON schema", response=httpx.Response(
+        400, request=httpx.Request("POST", "https://example.test/")), body=None)
+    llm, fake, _ = make([bad, '{"answer": "pong"}'])
+    assert llm.structured("worker", "sys", "user", Answer).answer == "pong"
+    retry = fake.chat.completions.requests[1]
+    assert retry["response_format"] == {"type": "json_object"}
+    assert "schema" in retry["messages"][0]["content"]
 
 
 def test_missing_key_names_the_variable(monkeypatch):
@@ -2963,12 +2989,13 @@ class RateLimiter:
 
 ```python
 """One calling interface for OpenAI-compatible endpoints (Gemini first) with structured output."""
+import json
 import os
 import time
 from dataclasses import dataclass
 from typing import Any, Literal, TypeVar
 
-from openai import OpenAI, RateLimitError
+from openai import BadRequestError, OpenAI, RateLimitError
 from pydantic import BaseModel, ValidationError
 
 from scout.llm.config import LLMConfig
@@ -3047,11 +3074,9 @@ class LLM:
     def structured(self, role: Role, system: str, user: str, schema: type[T]) -> T:
         role_cfg = self.config.roles[role]
         client = self.client(role_cfg.provider)
+        schema_dict = inline_refs(schema.model_json_schema())
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
-        response_format = {
-            "type": "json_schema",
-            "json_schema": {"name": schema.__name__, "schema": inline_refs(schema.model_json_schema())},
-        }
+        response_format = {"type": "json_schema", "json_schema": {"name": schema.__name__, "schema": schema_dict}}
         last_error = ""
         for attempt in range(1, self.MAX_ATTEMPTS + 1):
             self._limiters[role].wait()
@@ -3067,6 +3092,15 @@ class LLM:
                     ) from exc
                 last_error = "rate limited"
                 self._sleep(15 * attempt)
+                continue
+            except BadRequestError as exc:
+                if response_format["type"] == "json_object":
+                    raise
+                # Some endpoints reject parts of a JSON schema. Fall back to JSON mode with the schema in the prompt.
+                response_format = {"type": "json_object"}
+                messages = [{"role": "system", "content": f"{system}\n\nReply with JSON that matches this "
+                                                          f"schema:\n{json.dumps(schema_dict)}"}] + messages[1:]
+                last_error = str(exc)
                 continue
             text = response.choices[0].message.content or ""
             usage = getattr(response, "usage", None)
@@ -3085,6 +3119,8 @@ class LLM:
                     {"role": "user", "content": f"That reply did not match the JSON schema: {exc.errors()[:3]}. "
                                                 "Reply again with JSON only."},
                 ]
+        if last_error == "rate limited":
+            raise QuotaExhausted(f"{role_cfg.model} is still rate limited after {self.MAX_ATTEMPTS} tries.")
         raise LLMOutputError(
             f"{role_cfg.model} gave no valid {schema.__name__} after {self.MAX_ATTEMPTS} tries: {last_error}"
         )
@@ -3106,13 +3142,18 @@ from scout.llm.client import LLM
 from scout.llm.config import load_llm_config
 
 
+class _PingItem(BaseModel):
+    name: str
+    value: str | None = None
+
+
 class _Ping(BaseModel):
-    answer: str
+    items: list[_PingItem]
 
 
 @app.command("llm-ping")
 def llm_ping() -> None:
-    """Check the API key, list the flash models it can use, and make one tiny call per role."""
+    """Check the API key, list the flash models it can use, and make one small structured call per role."""
     load_settings()  # loads .env
     config = load_llm_config()
     llm = LLM(config)
@@ -3120,12 +3161,14 @@ def llm_ping() -> None:
         ids = sorted(model.id for model in llm.client(name).models.list())
         typer.echo(f"{name}: " + ", ".join(i for i in ids if "flash" in i))
     for role in ("chat", "worker"):
-        reply = llm.structured(role, "Reply in JSON.", "Set answer to the word pong.", _Ping)
-        typer.echo(f"{role} ({llm.model_for(role)}): {reply.answer}")
+        # Nested models and an optional field, the same shapes the extraction and picks schemas use.
+        reply = llm.structured(role, "Reply in JSON.",
+                               "Return two items: name ping with value pong, and name empty with value null.", _Ping)
+        typer.echo(f"{role} ({llm.model_for(role)}): {[(i.name, i.value) for i in reply.items]}")
 ```
 
 Run: `scout llm-ping`
-Expected: a list of available flash models, then `chat (...): pong` and `worker (...): pong`.
+Expected: a list of available flash models, then for each role `[('ping', 'pong'), ('empty', None)]`. If Gemini rejects the JSON schema, the client falls back to JSON mode on its own, so this still passes.
 If the model names in `config/models.yaml` are not in the list, replace them with the current Flash and Flash-Lite names (without the `models/` prefix). Set each role's `rpm` to the free-tier limit shown at https://ai.google.dev/gemini-api/docs/rate-limits or in AI Studio. Run `scout llm-ping` again.
 
 - [ ] **Step 7: Commit**
@@ -3322,15 +3365,17 @@ git commit -m "Fridge category profile and profile loader"
 
 ---
 
-### Task 13: Worker extraction with raw-text checks
+### Task 13: Worker title screening and extraction with raw-text checks
 
 **Files:**
-- Create: `src/scout/extract/__init__.py`, `src/scout/extract/verify.py`, `src/scout/extract/page.py`, `tests/test_extract.py`
-- Modify: `tests/fakes.py` (add `FakeLLM`), `src/scout/crawl.py` (stop calling the enricher after `QuotaExhausted`), `tests/test_crawl.py` (quota test), `src/scout/cli.py` (`crawl --no-llm`, `eval-prices --llm`)
+- Create: `src/scout/extract/__init__.py`, `src/scout/extract/verify.py`, `src/scout/extract/page.py`, `src/scout/extract/screen.py`, `tests/test_extract.py`, `tests/test_screen.py`
+- Modify: `tests/fakes.py` (add `FakeLLM`), `src/scout/db/store.py` (add `stored_attributes`), `tests/test_store.py`, `src/scout/crawl.py` (title screening, reuse stored attributes, LLM errors), `tests/test_crawl.py`, `src/scout/cli.py` (`crawl --no-llm`, `eval-prices --llm`)
 
 **Interfaces:**
-- Consumes: `ProductRecord` (Task 3), `to_decimal`, `parse_price` (Task 3), `LLM.structured`, `QuotaExhausted` (Task 11), `CategoryProfile`, `ProfileAttribute` (Task 12), `crawl` (Task 9).
-- Produces: `verify_raw(raw: str, source: str) -> bool`; `NamedValue(name, value: str | None, raw: str | None)`; `PageExtraction(values: list[NamedValue])`; `enrich_record(rec, profile, llm) -> tuple[ProductRecord, bool]`. Stored attribute format: `{"value": ..., "unit": ..., "raw": ..., "source_url": ...}` (the spec's `source_chunk_id` arrives with chunks in phase 3).
+- Consumes: `ProductRecord`, `Candidate` (Task 3), `to_decimal`, `parse_price` (Task 3), `LLM.structured`, `QuotaExhausted`, `LLMOutputError` (Task 11), `CategoryProfile`, `ProfileAttribute` (Task 12), `crawl` (Task 9).
+- Produces: `verify_raw(raw: str, source: str) -> bool`; `NamedValue(name, value: str | None, raw: str | None)`; `PageExtraction(values: list[NamedValue])`; `enrich_record(rec, profile, llm) -> tuple[ProductRecord, bool]`; `screen_titles(cands: list[Candidate], profile, llm) -> list[Candidate]`; `store.stored_attributes(conn, source, source_id) -> dict`; `crawl(..., screen: Screener | None = None)` with `Screener = Callable[[list[Candidate]], list[Candidate]]` and a new `CrawlReport.off_topic: int`. Stored attribute format: `{"value": ..., "unit": ..., "raw": ..., "source_url": ...}` (the spec's `source_chunk_id` arrives with chunks in phase 3).
+
+Why title screening is here and not in phase 5: a search for "kylskåp" also returns thermometers, shelves and door seals. Without a relevance filter, `picks` with no conditions could rank a well-reviewed accessory first. One worker call per crawl reads all candidate titles and keeps only the product itself, which also saves detail-page fetches. This is the first pass of the spec's multi-stage ranking (4.3), brought forward.
 
 - [ ] **Step 1: Add the fake LLM**
 
@@ -3455,12 +3500,84 @@ def test_quota_running_out_keeps_storing_without_the_llm(db, tmp_path):
     assert report.saved == 3
     assert len(calls) == 1
     assert any("quota" in note for note in report.notes)
+
+
+def test_bad_llm_output_on_one_page_does_not_stop_the_crawl(db, tmp_path):
+    from scout.llm.client import LLMOutputError
+
+    def enrich(rec):
+        if rec.source_id == "B0AAAAAAA1":
+            raise LLMOutputError("no valid PageExtraction after 3 tries")
+        return rec, True
+
+    report = crawl(db, AmazonSeAdapter(site(), tmp_path), "fridge", "kylskåp",
+                   on_problem=never_called, enrich=enrich)
+    assert (report.saved, report.llm_pages) == (3, 2)
+    assert any("B0AAAAAAA1" in note for note in report.notes)
+
+
+def test_stored_attributes_are_not_extracted_again(db, tmp_path):
+    seen = []
+
+    def enrich(rec):
+        seen.append(dict(rec.attributes))
+        return rec.model_copy(update={"attributes": {"height": {"value": 203.0}}}), True
+
+    crawl(db, AmazonSeAdapter(site(), tmp_path), "fridge", "kylskåp", on_problem=never_called, enrich=enrich)
+    seen.clear()
+    crawl(db, AmazonSeAdapter(site(), tmp_path), "fridge", "kylskåp", on_problem=never_called, enrich=enrich)
+    assert all("height" in attrs for attrs in seen)
+
+
+def test_screening_drops_off_topic_candidates_before_fetching(db, tmp_path):
+    browser = site()
+    report = crawl(db, AmazonSeAdapter(browser, tmp_path), "fridge", "kylskåp", on_problem=never_called,
+                   screen=lambda cands: [c for c in cands if c.source_id != "B0AAAAAAA3"])
+    assert (report.off_topic, report.saved) == (1, 2)
+    assert product_url("B0AAAAAAA3") not in browser.fetched
+```
+
+Append to `tests/test_store.py`:
+
+```python
+from scout.db.store import stored_attributes
+
+
+def test_stored_attributes(db):
+    rec = record().model_copy(update={"attributes": {"height": {"value": 203.0, "unit": "cm", "raw": "203 cm"}}})
+    save_record(db, rec, "fridge")
+    assert stored_attributes(db, "amazon_se", "B0AAAAAAA1")["height"]["value"] == 203.0
+    assert stored_attributes(db, "amazon_se", "B0NOTSTORED") == {}
+```
+
+`tests/test_screen.py`:
+
+```python
+from scout.extract.screen import Keep, screen_titles
+from scout.profiles import load_profile
+from scout.sources.base import Candidate
+from tests.fakes import FakeLLM
+
+
+def cand(n, title):
+    return Candidate(source="amazon_se", source_id=f"B0AAAAAAA{n}", url=f"https://www.amazon.se/dp/B0AAAAAAA{n}",
+                     title=title)
+
+
+def test_keeps_only_the_numbers_the_worker_returns():
+    cands = [cand(1, "Samsung kyl/frys"), cand(2, "Kylskåpstermometer"), cand(3, "Bosch kylskåp")]
+    llm = FakeLLM([Keep(keep=[0, 2, 9])])
+    kept = screen_titles(cands, load_profile("fridge"), llm)
+    assert [c.source_id for c in kept] == ["B0AAAAAAA1", "B0AAAAAAA3"]
+    role, prompt = llm.requests[0]
+    assert role == "worker"
+    assert "1: Kylskåpstermometer" in prompt and "Fridge" in prompt
 ```
 
 - [ ] **Step 3: Run the tests to see them fail**
 
-Run: `python -m pytest tests/test_extract.py tests/test_crawl.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'scout.extract'`; the quota test fails because `QuotaExhausted` propagates.
+Run: `python -m pytest tests/test_extract.py tests/test_screen.py tests/test_crawl.py tests/test_store.py -v`
+Expected: FAIL with `ModuleNotFoundError: No module named 'scout.extract'`; the new crawl and store tests fail because `screen`, `stored_attributes` and the error handling do not exist yet.
 
 - [ ] **Step 4: Write the extraction code**
 
@@ -3584,25 +3701,90 @@ def enrich_record(rec: ProductRecord, profile: CategoryProfile, llm) -> tuple[Pr
     return rec.model_copy(update={**updates, "attributes": attributes, "llm_fields": llm_fields}), True
 ```
 
-In `src/scout/crawl.py`, add the import and replace the enrich block inside the detail loop:
+`src/scout/extract/screen.py`:
 
 ```python
-from scout.llm.client import QuotaExhausted
+"""Keep only search results that are the product itself, judged from the titles in one worker call."""
+from pydantic import BaseModel
+
+from scout.profiles import CategoryProfile
+from scout.sources.base import Candidate
+
+SYSTEM = """You sort search results from amazon.se for a shopper.
+Keep only items that are the product the shopper is looking for itself.
+Drop accessories, spare parts, covers, cleaning products and unrelated items.
+When unsure, keep the item."""
+
+
+class Keep(BaseModel):
+    keep: list[int]
+
+
+def screen_titles(cands: list[Candidate], profile: CategoryProfile, llm) -> list[Candidate]:
+    lines = "\n".join(f"{n}: {c.title}" for n, c in enumerate(cands))
+    user = f"The shopper wants: {profile.display_name}\n\nResults:\n{lines}\n\nReturn the numbers to keep."
+    wanted = set(llm.structured("worker", SYSTEM, user, Keep).keep)
+    return [c for n, c in enumerate(cands) if n in wanted]
 ```
+
+Add to `src/scout/db/store.py`:
+
+```python
+def stored_attributes(conn: psycopg.Connection, source: str, source_id: str) -> dict:
+    """Attributes already stored for this listing's product, so they are not extracted again."""
+    row = conn.execute(
+        """SELECT p.attributes FROM listings l JOIN products p ON p.id = l.product_id
+           WHERE l.source = %s AND l.source_id = %s""",
+        (source, source_id),
+    ).fetchone()
+    return dict(row["attributes"]) if row else {}
+```
+
+In `src/scout/crawl.py`:
+
+1. Change the imports and add the screener type:
+
+```python
+from scout.db.store import log_fetch, save_record, stored_attributes
+from scout.llm.client import LLMOutputError, QuotaExhausted
+from scout.sources.base import Candidate, ProductRecord, RawPage, SessionStatus
+
+Screener = Callable[[list[Candidate]], list[Candidate]]
+```
+
+2. Add `off_topic: int = 0` to `CrawlReport`, and `screen: Screener | None = None` as the last keyword argument of `crawl`.
+
+3. Right after the budget filter, before the detail loop:
+
+```python
+    if screen is not None and candidates:
+        try:
+            kept = screen(candidates)
+            report.off_topic = len(candidates) - len(kept)
+            candidates = kept
+        except (QuotaExhausted, LLMOutputError) as exc:
+            report.notes.append(f"Title screening skipped: {exc}")
+```
+
+4. Replace the enrich block inside the detail loop:
 
 ```python
         if enrich is not None:
+            stored = stored_attributes(conn, rec.source, rec.source_id)
+            rec = rec.model_copy(update={"attributes": {**stored, **rec.attributes}})
             try:
                 rec, called = enrich(rec)
                 report.llm_pages += int(called)
             except QuotaExhausted as exc:
                 report.notes.append(f"{exc} The remaining pages are stored without LLM extraction.")
                 enrich = None
+            except LLMOutputError as exc:
+                report.notes.append(f"{cand.url}: {exc}. Stored without LLM extraction.")
 ```
 
 - [ ] **Step 5: Run the tests to see them pass**
 
-Run: `python -m pytest tests/test_extract.py tests/test_crawl.py -v`
+Run: `python -m pytest tests/test_extract.py tests/test_screen.py tests/test_crawl.py tests/test_store.py -v`
 Expected: all passed.
 
 - [ ] **Step 6: Use the worker in `crawl` and `eval-prices`**
@@ -3611,22 +3793,31 @@ In `src/scout/cli.py`, add imports:
 
 ```python
 from scout.extract.page import enrich_record
+from scout.extract.screen import screen_titles
 from scout.profiles import load_profile
 ```
 
-Change the `crawl` command: add the option `no_llm: bool = typer.Option(False, "--no-llm")`, build the enricher before the `with` block, pass it to `run_crawl`, and print the LLM usage at the end:
+Change the `crawl` command: add the option `no_llm: bool = typer.Option(False, "--no-llm")`, build the screener and enricher before the `with` block, pass them to `run_crawl`, and print the screening result and LLM usage at the end:
 
 ```python
-    enrich, llm = None, None
+    enrich, screen, llm = None, None, None
     if not no_llm:
         profile = load_profile(category)
         llm = LLM(load_llm_config())
         enrich = lambda rec: enrich_record(rec, profile, llm)  # noqa: E731
+        screen = lambda cands: screen_titles(cands, profile, llm)  # noqa: E731
 ```
 
 ```python
         report = run_crawl(conn, adapter, category, query, on_problem=ask_user, max_pages=pages,
-                           max_details=details, budget=budget_sek, enrich=enrich)
+                           max_details=details, budget=budget_sek, enrich=enrich, screen=screen)
+```
+
+Replace the line that prints `pages that needed an LLM call` with:
+
+```python
+    typer.echo(f"dropped as off topic by title: {report.off_topic}")
+    typer.echo(f"pages sent to the worker model: {report.llm_pages} of {report.detail_pages}")
 ```
 
 ```python
@@ -3653,7 +3844,7 @@ Change the `eval-prices` command: add `llm: bool = typer.Option(False, "--llm")`
 - [ ] **Step 7: Real run**
 
 Run: `scout crawl fridge "kylskåp" --details 5`
-Expected: the report shows `pages that needed an LLM call` and the LLM call and token counts. Check the stored attributes:
+Expected: the report shows how many results were dropped as off topic, how many pages went to the worker, and the LLM call and token counts. Look at the search screenshot or the search page in a normal browser and check that the dropped ones really are accessories. Check the stored attributes:
 
 ```bash
 docker compose exec db psql -U scout product_scout -c "SELECT left(name, 40) AS name, attributes FROM products ORDER BY id DESC LIMIT 5;"
@@ -3667,8 +3858,8 @@ Expected: a second results file with extractor `selectors+worker:...`, so the tw
 - [ ] **Step 8: Commit**
 
 ```bash
-git add src/scout/extract src/scout/crawl.py src/scout/cli.py tests/fakes.py tests/test_extract.py tests/test_crawl.py eval/results
-git commit -m "Worker extraction of missing fields and profile attributes, with raw-text checks and quota fallback"
+git add src/scout/extract src/scout/db/store.py src/scout/crawl.py src/scout/cli.py tests/fakes.py tests/test_extract.py tests/test_screen.py tests/test_crawl.py tests/test_store.py eval/results
+git commit -m "Worker title screening and extraction with raw-text checks; reuse stored attributes; quota and output-error fallbacks"
 ```
 
 ---
@@ -3972,6 +4163,11 @@ def test_model_number_in_the_summary_is_not_treated_as_numbers():
     assert check_picks(picks("The RB38C7B5D22 is a solid choice.", []), cards()) == []
 
 
+def test_the_rating_scale_is_not_a_claim():
+    text = picks("Rated 4.5/5, that is 4.5 out of 5.", [("rating", "4.5")])
+    assert check_picks(text, cards()) == []
+
+
 def test_write_picks_retries_with_the_errors_then_succeeds():
     bad = picks("Rated 4.9.", [("rating", "4.9")])
     good = picks("Rated 4.5.", [("rating", "4.5")])
@@ -4064,6 +4260,7 @@ Rules:
 - Write in {language}."""
 
 SUMMARY_NUMBER = re.compile(r"\d{1,3}(?:[\u00a0\u202f ]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?")
+RATING_SCALE = re.compile(r"(?:/|\bout of|\bav|\bof)\s*5\b", re.IGNORECASE)  # the "5" in "4.5/5" is not a claim
 
 
 class Claim(BaseModel):
@@ -4128,7 +4325,7 @@ def check_picks(text: PicksText, cards: dict[int, Card]) -> list[str]:
                 errors.append(f"{pick.listing_id}: {claim.field} is {facts[claim.field]}, not {claim.value}")
                 continue
             claimed.add(value)
-        summary = pick.summary
+        summary = RATING_SCALE.sub("", pick.summary)
         if card.model:
             summary = re.sub(re.escape(card.model), "", summary, flags=re.IGNORECASE)
         for raw in SUMMARY_NUMBER.findall(summary):
