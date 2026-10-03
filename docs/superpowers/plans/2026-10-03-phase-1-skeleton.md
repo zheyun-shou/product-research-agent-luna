@@ -107,7 +107,7 @@ tests/
 **Interfaces:**
 - Produces: `scout.config.ROOT: Path`, `scout.config.Settings` (fields `database_url: str`, `test_database_url: str`, `browser_profile_dir: Path`, `snapshot_dir: Path`, `data_dir: Path`), `scout.config.load_settings() -> Settings`, `scout.cli.app: typer.Typer`.
 
-- [ ] **Step 1: Write `pyproject.toml`**
+- [x] **Step 1: Write `pyproject.toml`**
 
 ```toml
 [project]
@@ -145,12 +145,12 @@ testpaths = ["tests"]
 markers = ["db: needs the Postgres container (docker compose up -d)"]
 ```
 
-- [ ] **Step 2: Install**
+- [x] **Step 2: Install**
 
 Run: `uv pip install -e ".[dev]"`
 Expected: uv installs the packages into the active conda env (uv shows the python path of the env). You do not need a browser download, because Playwright uses the installed Chrome.
 
-- [ ] **Step 3: Write the failing tests**
+- [x] **Step 3: Write the failing tests**
 
 `tests/test_config.py`:
 
@@ -188,12 +188,12 @@ def test_version_command():
     assert "product-scout 0.1.0" in result.output
 ```
 
-- [ ] **Step 4: Run the tests to see them fail**
+- [x] **Step 4: Run the tests to see them fail**
 
 Run: `python -m pytest tests/test_config.py tests/test_cli.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'scout'` or missing names.
 
-- [ ] **Step 5: Write the code**
+- [x] **Step 5: Write the code**
 
 `src/scout/__init__.py`:
 
@@ -267,12 +267,12 @@ DATABASE_URL=postgresql://scout:scout@localhost:5433/product_scout
 TEST_DATABASE_URL=postgresql://scout:scout@localhost:5433/product_scout_test
 ```
 
-- [ ] **Step 6: Run the tests to see them pass**
+- [x] **Step 6: Run the tests to see them pass**
 
 Run: `python -m pytest tests/test_config.py tests/test_cli.py -v`
 Expected: 3 passed.
 
-- [ ] **Step 7: Rewrite `CLAUDE.md` for the new scope**
+- [x] **Step 7: Rewrite `CLAUDE.md` for the new scope**
 
 ```markdown
 # product-scout
@@ -308,7 +308,7 @@ product-scout is a conversational agent. It helps to select products in any cate
 - The repository stays private until she says otherwise.
 ```
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add pyproject.toml .env.example src/scout tests CLAUDE.md
@@ -327,7 +327,7 @@ git commit -m "Project skeleton, settings, CLI entry point; CLAUDE.md for the pr
 - Consumes: `load_settings()` from Task 1.
 - Produces: `scout.db.conn.connect(url: str) -> psycopg.Connection` (rows as dicts), `scout.db.conn.init_schema(conn) -> None`, pytest fixture `db` (a connection to the test database with empty tables).
 
-- [ ] **Step 1: Write the Docker files**
+- [x] **Step 1: Write the Docker files**
 
 `docker-compose.yml`:
 
@@ -354,12 +354,12 @@ volumes:
 CREATE DATABASE product_scout_test;
 ```
 
-- [ ] **Step 2: Start the container**
+- [x] **Step 2: Start the container**
 
 Run: `docker compose up -d` then `docker compose ps`
 Expected: the service `db` runs and port 5433 is mapped. (Docker Desktop must run.)
 
-- [ ] **Step 3: Write the failing tests**
+- [x] **Step 3: Write the failing tests**
 
 `tests/conftest.py`:
 
@@ -412,12 +412,12 @@ def test_init_schema_can_run_twice(db):
     init_schema(db)
 ```
 
-- [ ] **Step 4: Run the tests to see them fail**
+- [x] **Step 4: Run the tests to see them fail**
 
 Run: `python -m pytest tests/test_db_schema.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'scout.db'`.
 
-- [ ] **Step 5: Write the schema and connection code**
+- [x] **Step 5: Write the schema and connection code**
 
 `src/scout/db/__init__.py`:
 
@@ -523,7 +523,7 @@ def db_init() -> None:
     typer.echo("Tables are ready.")
 ```
 
-- [ ] **Step 6: Run the tests to see them pass**
+- [x] **Step 6: Run the tests to see them pass**
 
 Run: `python -m pytest tests/test_db_schema.py -v`
 Expected: 3 passed.
@@ -531,7 +531,7 @@ Expected: 3 passed.
 Run: `scout db-init`
 Expected: `Tables are ready.`
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add docker-compose.yml db src/scout/db src/scout/cli.py tests/conftest.py tests/test_db_schema.py
@@ -553,7 +553,7 @@ git commit -m "Postgres with pgvector in Docker, phase 1 tables, db-init command
   - `ProductRecord(...)` with `missing_core() -> list[str]` over `("title", "brand", "model", "price", "in_stock")`
   - `numbers.NUMBER: re.Pattern`, `to_decimal(text) -> Decimal | None`, `parse_price(text) -> tuple[Decimal | None, str | None]`, `parse_rating(text) -> Decimal | None`, `parse_count(text) -> int | None`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `tests/test_numbers.py`:
 
@@ -644,12 +644,12 @@ def test_missing_core_lists_empty_core_fields():
     assert rec.missing_core() == ["brand", "model"]
 ```
 
-- [ ] **Step 2: Run the tests to see them fail**
+- [x] **Step 2: Run the tests to see them fail**
 
 Run: `python -m pytest tests/test_numbers.py tests/test_base.py -v`
 Expected: FAIL with `ModuleNotFoundError`.
 
-- [ ] **Step 3: Write the code**
+- [x] **Step 3: Write the code**
 
 `src/scout/sources/__init__.py`:
 
@@ -799,12 +799,12 @@ def parse_count(text: str) -> int | None:
     return int(re.sub(r"\D", "", number))
 ```
 
-- [ ] **Step 4: Run the tests to see them pass**
+- [x] **Step 4: Run the tests to see them pass**
 
 Run: `python -m pytest tests/test_numbers.py tests/test_base.py -v`
 Expected: all passed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/scout/sources tests/test_numbers.py tests/test_base.py
@@ -825,7 +825,7 @@ git commit -m "Records for adapters and storage; Swedish price, rating and count
   - `check.check_page(page: RawPage) -> SessionStatus`
   - `snapshots.save_html(page: RawPage, base: Path, source: str, kind: str, key: str) -> Path`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `tests/test_amazon_urls.py`:
 
@@ -921,12 +921,12 @@ def test_save_html_makes_unsafe_keys_safe(tmp_path):
     assert path.parent.name == "a_b_c_d"
 ```
 
-- [ ] **Step 2: Run the tests to see them fail**
+- [x] **Step 2: Run the tests to see them fail**
 
 Run: `python -m pytest tests/test_amazon_urls.py tests/test_amazon_check.py tests/test_snapshots.py -v`
 Expected: FAIL with `ModuleNotFoundError`.
 
-- [ ] **Step 3: Write the code**
+- [x] **Step 3: Write the code**
 
 `src/scout/sources/amazon_se/urls.py`:
 
@@ -1009,12 +1009,12 @@ def save_html(page: RawPage, base: Path, source: str, kind: str, key: str) -> Pa
     return path
 ```
 
-- [ ] **Step 4: Run the tests to see them pass**
+- [x] **Step 4: Run the tests to see them pass**
 
 Run: `python -m pytest tests/test_amazon_urls.py tests/test_amazon_check.py tests/test_snapshots.py -v`
 Expected: all passed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/scout/sources tests/test_amazon_urls.py tests/test_amazon_check.py tests/test_snapshots.py
@@ -1033,7 +1033,7 @@ git commit -m "amazon.se URLs, captcha and sign-in detection, local snapshots"
 - Consumes: `RawPage` (Task 3), `check_page`, `snapshot_key`, `page_kind`, `save_html` (Task 4), `load_settings` (Task 1).
 - Produces: `PoliteTimer(min_delay=4.0, max_delay=9.0, rng=random.random, sleep=time.sleep, clock=time.monotonic)` with `wait() -> None`; `BrowserSession(profile_dir: Path, timer: PoliteTimer | None = None)` used as a context manager, with `fetch(url) -> RawPage`, `screenshot(path: Path) -> Path`, `show(url) -> None`.
 
-- [ ] **Step 1: Write the failing test for the timer**
+- [x] **Step 1: Write the failing test for the timer**
 
 `tests/test_browser_timer.py`:
 
@@ -1084,12 +1084,12 @@ def test_no_sleep_after_a_long_gap():
     assert clock.slept == []
 ```
 
-- [ ] **Step 2: Run the test to see it fail**
+- [x] **Step 2: Run the test to see it fail**
 
 Run: `python -m pytest tests/test_browser_timer.py -v`
 Expected: FAIL with `ModuleNotFoundError`.
 
-- [ ] **Step 3: Write the browser module**
+- [x] **Step 3: Write the browser module**
 
 `src/scout/sources/browser.py`:
 
@@ -1181,12 +1181,12 @@ class BrowserSession:
         self._page.bring_to_front()
 ```
 
-- [ ] **Step 4: Run the timer test to see it pass**
+- [x] **Step 4: Run the timer test to see it pass**
 
 Run: `python -m pytest tests/test_browser_timer.py -v`
 Expected: 3 passed.
 
-- [ ] **Step 5: Add the `browser` and `snap` commands**
+- [x] **Step 5: Add the `browser` and `snap` commands**
 
 Add to `src/scout/cli.py`:
 
@@ -1236,7 +1236,7 @@ Run `scout browser "https://www.amazon.se/s?k=kylsk%C3%A5p"`. From the results, 
 
 Expected: four lines that start with `ok`, each with a path under `snapshots/amazon_se/`. Open the `.png` files. Make sure that they show the real pages and not a captcha. If a line shows `captcha`, solve the captcha with `scout browser` and run `snap` again.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/scout/sources/browser.py src/scout/cli.py tests/test_browser_timer.py
@@ -1255,7 +1255,7 @@ git commit -m "Dedicated Chrome profile session with polite timing; browser and 
 - Consumes: `Candidate` (Task 3), `parse_price`, `parse_rating`, `parse_count` (Task 3), `SOURCE`, `product_url` (Task 4).
 - Produces: `parse_search_page(html: str) -> list[Candidate]` (page order, no duplicates, sponsored cards flagged), `has_next_page(html: str) -> bool`.
 
-- [ ] **Step 1: Write the fixture**
+- [x] **Step 1: Write the fixture**
 
 `tests/fixtures/amazon_se/search_basic.html` (structure written by hand, invented products):
 
@@ -1288,7 +1288,7 @@ git commit -m "Dedicated Chrome profile session with polite timing; browser and 
 </body></html>
 ```
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 `tests/test_amazon_search.py`:
 
@@ -1337,12 +1337,12 @@ def test_has_next_page():
     assert not has_next_page("<html></html>")
 ```
 
-- [ ] **Step 3: Run the tests to see them fail**
+- [x] **Step 3: Run the tests to see them fail**
 
 Run: `python -m pytest tests/test_amazon_search.py -v`
 Expected: FAIL with `ModuleNotFoundError`.
 
-- [ ] **Step 4: Write the parser**
+- [x] **Step 4: Write the parser**
 
 `src/scout/sources/amazon_se/search.py`:
 
@@ -1407,7 +1407,7 @@ def _is_sponsored(card: Tag) -> bool:
     return any(span.get_text(strip=True) in ("Sponsrad", "Sponsored") for span in card.select("span"))
 ```
 
-- [ ] **Step 5: Run the tests to see them pass**
+- [x] **Step 5: Run the tests to see them pass**
 
 Run: `python -m pytest tests/test_amazon_search.py -v`
 Expected: 5 passed.
@@ -1437,7 +1437,7 @@ Expected: one JSON line for each result card on the screenshot. The titles, pric
 
 If a field is wrong or empty, open the snapshot in a text editor and find the element of that card. Change the selector in `search.py`. Add the same structure to `search_basic.html`, written by hand with invented text. Add a test for it. Run again until the tests and the real snapshot agree. In the commit message, write which selectors changed.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/scout/sources/amazon_se/search.py src/scout/cli.py tests/fixtures tests/test_amazon_search.py
@@ -1456,7 +1456,7 @@ git commit -m "amazon.se search result parser, checked against a real snapshot"
 - Consumes: `ProductRecord` (Task 3), number parsers (Task 3), `SOURCE`, `product_url`, `asin_from_url` (Task 4).
 - Produces: `parse_product_page(html: str, url: str, fetched_at: datetime) -> ProductRecord`. Raises `ValueError` if the URL and the page have no ASIN. Fills `text` with the cleaned page text (title, byline, price block, availability, `key: value` spec lines, bullets, description; 12,000 characters maximum).
 
-- [ ] **Step 1: Write the fixtures**
+- [x] **Step 1: Write the fixtures**
 
 `tests/fixtures/amazon_se/product_full.html`:
 
@@ -1515,7 +1515,7 @@ git commit -m "amazon.se search result parser, checked against a real snapshot"
 </body></html>
 ```
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 `tests/test_amazon_product.py`:
 
@@ -1579,12 +1579,12 @@ def test_page_without_asin_is_refused():
         parse_product_page("<html></html>", "https://www.amazon.se/gp/help", NOW)
 ```
 
-- [ ] **Step 3: Run the tests to see them fail**
+- [x] **Step 3: Run the tests to see them fail**
 
 Run: `python -m pytest tests/test_amazon_product.py -v`
 Expected: FAIL with `ModuleNotFoundError`.
 
-- [ ] **Step 4: Write the parser**
+- [x] **Step 4: Write the parser**
 
 `src/scout/sources/amazon_se/product.py`:
 
@@ -1747,7 +1747,7 @@ def _page_text(soup: BeautifulSoup, specs: dict[str, str], bullets: list[str]) -
     return "\n".join(line for line in lines if line)[:MAX_TEXT]
 ```
 
-- [ ] **Step 5: Run the tests to see them pass**
+- [x] **Step 5: Run the tests to see them pass**
 
 Run: `python -m pytest tests/test_amazon_product.py -v`
 Expected: 5 passed.
@@ -1778,7 +1778,7 @@ Expected: the title, price, rating, review count and stock are the same as on th
 
 If a field is wrong, find the element in the snapshot and repair the selector. Add the structure to a fixture, written by hand with invented text. Add a test and run again. In the commit message, write the selectors that changed.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/scout/sources/amazon_se/product.py src/scout/cli.py tests/fixtures tests/test_amazon_product.py
@@ -1798,7 +1798,7 @@ git commit -m "amazon.se product page parser with specs, stock and page text, ch
 
 Matching rule. If `(source, source_id)` is the same, update the existing listing. If not, use a product with the same category, brand and model (case-insensitive, both known). If there is no such product, make a new product. Phase 1 stores one variant for each listing, with the ASIN as its key.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `tests/test_store.py`:
 
@@ -1880,12 +1880,12 @@ def test_log_fetch(db):
     assert (row["status"], row["http_status"], row["duration_ms"]) == ("captcha", 503, 1200)
 ```
 
-- [ ] **Step 2: Run the tests to see them fail**
+- [x] **Step 2: Run the tests to see them fail**
 
 Run: `python -m pytest tests/test_store.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'scout.db.store'`.
 
-- [ ] **Step 3: Write the store**
+- [x] **Step 3: Write the store**
 
 `src/scout/db/store.py`:
 
@@ -1985,12 +1985,12 @@ def log_fetch(
     conn.commit()
 ```
 
-- [ ] **Step 4: Run the tests to see them pass**
+- [x] **Step 4: Run the tests to see them pass**
 
 Run: `python -m pytest tests/test_store.py -v`
 Expected: 7 passed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/scout/db/store.py tests/test_store.py
@@ -2016,7 +2016,7 @@ git commit -m "Store product records as products, listings, variants and price h
   - `CrawlReport` fields `search_pages, candidates, over_budget, detail_pages, saved, llm_pages: int`, `skipped: list[str]`, `missing: Counter`, `notes: list[str]`
   - `tests/fakes.py: FakeBrowser(pages: dict[str, list[str]])`
 
-- [ ] **Step 1: Write the test fake**
+- [x] **Step 1: Write the test fake**
 
 `tests/fakes.py`:
 
@@ -2048,7 +2048,7 @@ class FakeBrowser:
         return path
 ```
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 `tests/test_crawl.py`:
 
@@ -2151,12 +2151,12 @@ def test_adapter_without_terms_check_is_refused(db, tmp_path):
 
 Also make an empty `tests/__init__.py`, so that `from tests.fakes import FakeBrowser` works.
 
-- [ ] **Step 3: Run the tests to see them fail**
+- [x] **Step 3: Run the tests to see them fail**
 
 Run: `python -m pytest tests/test_crawl.py -v`
 Expected: FAIL with `ModuleNotFoundError`.
 
-- [ ] **Step 4: Write the adapter and the crawl**
+- [x] **Step 4: Write the adapter and the crawl**
 
 `src/scout/sources/amazon_se/adapter.py`:
 
@@ -2315,12 +2315,12 @@ def crawl(
     return report
 ```
 
-- [ ] **Step 5: Run the tests to see them pass**
+- [x] **Step 5: Run the tests to see them pass**
 
 Run: `python -m pytest tests/test_crawl.py -v`
 Expected: 7 passed.
 
-- [ ] **Step 6: Add the `crawl` command**
+- [x] **Step 6: Add the `crawl` command**
 
 Add to `src/scout/cli.py`:
 
@@ -2367,12 +2367,12 @@ def crawl(
         typer.echo(note)
 ```
 
-- [ ] **Step 7: Run the whole test suite**
+- [x] **Step 7: Run the whole test suite**
 
 Run: `python -m pytest -v`
 Expected: all passed.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/scout/sources/amazon_se/adapter.py src/scout/crawl.py src/scout/cli.py tests/__init__.py tests/fakes.py tests/test_crawl.py
