@@ -367,5 +367,4 @@ Shop reviews (phase 2d in section 3) come in build phase 3. Taobao, external sou
 - Which professional review sites to use, and their terms checks. Decide before build phase 3.
 - Keep the filter fields twice in `chunks`, or join with `reviews` and `products` during the query.
 - Langfuse cloud, or Langfuse in Docker on our computer.
-- CLAUDE.md still describes the old scope (incense only). We must update it to agree with this document.
 - The CV line from before mentions "the Claude API". Change it when we select the model.
