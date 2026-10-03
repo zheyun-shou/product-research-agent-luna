@@ -6,11 +6,13 @@ from typing import Callable
 
 import psycopg
 
-from scout.db.store import log_fetch, save_record
-from scout.sources.base import ProductRecord, RawPage, SessionStatus
+from scout.db.store import log_fetch, save_record, stored_attributes
+from scout.llm.client import LLMOutputError, QuotaExhausted
+from scout.sources.base import Candidate, ProductRecord, RawPage, SessionStatus
 
 OnProblem = Callable[[SessionStatus, str], bool]
 Enricher = Callable[[ProductRecord], "tuple[ProductRecord, bool]"]
+Screener = Callable[[list[Candidate]], list[Candidate]]
 MAX_ATTEMPTS = 3
 
 
@@ -19,6 +21,8 @@ class CrawlReport:
     search_pages: int = 0
     candidates: int = 0
     over_budget: int = 0
+    off_topic: int = 0
+    dropped: list[Candidate] = field(default_factory=list)
     detail_pages: int = 0
     saved: int = 0
     llm_pages: int = 0
@@ -63,6 +67,7 @@ def crawl(
     max_details: int = 20,
     budget: Decimal | None = None,
     enrich: Enricher | None = None,
+    screen: Screener | None = None,
 ) -> CrawlReport:
     if not getattr(adapter, "terms_check", ""):
         raise RuntimeError(f"Adapter {adapter.name} has no terms check recorded, so it stays disabled.")
@@ -87,6 +92,14 @@ def crawl(
         within = [c for c in candidates if c.price is None or c.price <= budget]
         report.over_budget = len(candidates) - len(within)
         candidates = within
+    if screen is not None and candidates:
+        try:
+            kept = screen(candidates)
+            report.off_topic = len(candidates) - len(kept)
+            report.dropped = [c for c in candidates if c not in kept]
+            candidates = kept
+        except (QuotaExhausted, LLMOutputError) as exc:
+            report.notes.append(f"Title screening skipped: {exc}")
     for cand in candidates[:max_details]:
         page = fetch_checked(adapter, conn, cand.url, on_problem, report.notes)
         if page is None:
@@ -100,8 +113,16 @@ def crawl(
             report.notes.append(str(exc))
             continue
         if enrich is not None:
-            rec, called = enrich(rec)
-            report.llm_pages += int(called)
+            stored = stored_attributes(conn, rec.source, rec.source_id)
+            rec = rec.model_copy(update={"attributes": {**stored, **rec.attributes}})
+            try:
+                rec, called = enrich(rec)
+                report.llm_pages += int(called)
+            except QuotaExhausted as exc:
+                report.notes.append(f"{exc} The remaining pages are stored without LLM extraction.")
+                enrich = None
+            except LLMOutputError as exc:
+                report.notes.append(f"{cand.url}: {exc}. Stored without LLM extraction.")
         save_record(conn, rec, category)
         report.saved += 1
         report.missing.update(rec.missing_core())

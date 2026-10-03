@@ -1,10 +1,11 @@
 """Read amazon.se product pages with hand-written selectors."""
 import re
 from datetime import datetime
+from decimal import Decimal
 
 from bs4 import BeautifulSoup, Tag
 
-from scout.sources.amazon_se.numbers import parse_count, parse_price, parse_rating
+from scout.sources.amazon_se.numbers import parse_count, parse_price, parse_rating, to_decimal
 from scout.sources.amazon_se.urls import SOURCE, asin_from_url, product_url
 from scout.sources.base import ProductRecord
 
@@ -30,6 +31,11 @@ UNAVAILABLE = (
 )
 BYLINE = (r"Varumärke:\s*(.+)", r"Besök (.+?)-butiken", r"Visit the (.+?) Store", r"Brand:\s*(.+)")
 MAX_TEXT = 12_000
+# Amazon's size line, e.g. "80D x 45B x 48H centimeter": D is depth, B is width (bredd), H is height.
+SIZE_LINE = re.compile(r"^\s*(\d[\d.,]*\s*[DBH]\s*x\s*){2}\d[\d.,]*\s*[DBH]\s+(?P<unit>[^\W\d_]+)\s*$")
+SIZE_PART = re.compile(r"(\d[\d.,]*)\s*([DBH])")
+SIZE_NAMES = {"H": "height", "B": "width", "D": "depth"}
+SIZE_UNITS = {"millimeter": "0.1", "mm": "0.1", "centimeter": "1", "cm": "1", "meter": "100", "m": "100"}
 _MARKS = dict.fromkeys(map(ord, "\u200e\u200f"), None)
 
 
@@ -61,6 +67,7 @@ def parse_product_page(html: str, url: str, fetched_at: datetime) -> ProductReco
             _text(el) for el in soup.select('[id^="variation_"] .selection, .inline-twister-dim-title-value')
         ),
         specs=specs,
+        attributes=_sizes(specs, product_url(asin)),
         bullets=bullets,
         text=_page_text(soup, specs, bullets),
     )
@@ -96,6 +103,25 @@ def _specs(soup: BeautifulSoup) -> dict[str, str]:
         if key and value:
             specs.setdefault(key, value)
     return specs
+
+
+def _sizes(specs: dict[str, str], url: str) -> dict[str, dict]:
+    """Height, width and depth in cm from the product size line. The package size is not read."""
+    for key, value in specs.items():
+        low = key.casefold()
+        if "mått" not in low or "förpackning" in low or "paket" in low:
+            continue
+        line = SIZE_LINE.match(value)
+        factor = SIZE_UNITS.get(line.group("unit").casefold()) if line else None
+        parts = SIZE_PART.findall(value)
+        if factor is None or sorted(letter for _, letter in parts) != ["B", "D", "H"]:
+            continue
+        return {
+            SIZE_NAMES[letter]: {"value": float(to_decimal(number) * Decimal(factor)), "unit": "cm",
+                                 "raw": value, "source_url": url}
+            for number, letter in parts
+        }
+    return {}
 
 
 def _first(specs: dict[str, str], keys: tuple[str, ...]) -> str | None:

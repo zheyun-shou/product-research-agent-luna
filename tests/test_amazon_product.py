@@ -89,3 +89,23 @@ def test_variant_label_from_inline_twister():
         '<div id="inline-twister-dim-title-size_name"><span class="inline-twister-dim-title-value">40 L</span></div>'
     )
     assert parse_product_page(html, "https://www.amazon.se/dp/B0AAAAAAA8", NOW).variant_label == "Röd / 40 L"
+
+
+@pytest.mark.parametrize("line, sizes", [
+    ("80D x 45B x 48H centimeter", (48.0, 45.0, 80.0)),
+    ("650D x 600B x 1850H millimeter", (185.0, 60.0, 65.0)),
+])
+def test_size_line_gives_height_width_depth_in_cm(line, sizes):
+    html = (
+        '<span id="productTitle">X</span><table class="a-keyvalue prodDetTable">'
+        f"<tr><th>Produktens mått</th><td>{line}</td></tr></table>"
+    )
+    attrs = parse_product_page(html, "https://www.amazon.se/dp/B0AAAAAAA9", NOW).attributes
+    assert tuple(attrs[name]["value"] for name in ("height", "width", "depth")) == sizes
+    assert attrs["height"]["raw"] == line
+    assert attrs["height"]["unit"] == "cm"
+
+
+def test_size_line_without_letters_is_not_read():
+    # "65,8 x 59,5 x 203 cm" does not say which number is the height.
+    assert parse("product_full.html", "https://www.amazon.se/dp/B0AAAAAAA1").attributes == {}

@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from scout.crawl import crawl
+from scout.llm.client import LLMOutputError, QuotaExhausted
 from scout.sources.amazon_se.adapter import AmazonSeAdapter
 from scout.sources.amazon_se.urls import product_url, search_url
 from tests.fakes import FakeBrowser
@@ -117,3 +118,51 @@ def test_failed_search_page_is_reported(db, tmp_path):
                    on_problem=lambda status, url: False)
     assert (report.search_pages, report.saved) == (0, 0)
     assert any("search stopped at page 1" in note for note in report.notes)
+
+
+def test_quota_running_out_keeps_storing_without_the_llm(db, tmp_path):
+    calls = []
+
+    def enrich(rec):
+        calls.append(rec.source_id)
+        raise QuotaExhausted("The free daily quota for light-model is used up. It resets tomorrow.")
+
+    report = crawl(db, AmazonSeAdapter(site(), tmp_path), "fridge", "kylskåp",
+                   on_problem=never_called, enrich=enrich)
+    assert report.saved == 3
+    assert len(calls) == 1
+    assert any("quota" in note for note in report.notes)
+
+
+def test_bad_llm_output_on_one_page_does_not_stop_the_crawl(db, tmp_path):
+    def enrich(rec):
+        if rec.source_id == "B0AAAAAAA1":
+            raise LLMOutputError("no valid PageExtraction after 3 tries")
+        return rec, True
+
+    report = crawl(db, AmazonSeAdapter(site(), tmp_path), "fridge", "kylskåp",
+                   on_problem=never_called, enrich=enrich)
+    assert (report.saved, report.llm_pages) == (3, 2)
+    assert any("B0AAAAAAA1" in note for note in report.notes)
+
+
+def test_stored_attributes_are_not_extracted_again(db, tmp_path):
+    seen = []
+
+    def enrich(rec):
+        seen.append(dict(rec.attributes))
+        return rec.model_copy(update={"attributes": {"height": {"value": 203.0}}}), True
+
+    crawl(db, AmazonSeAdapter(site(), tmp_path), "fridge", "kylskåp", on_problem=never_called, enrich=enrich)
+    seen.clear()
+    crawl(db, AmazonSeAdapter(site(), tmp_path), "fridge", "kylskåp", on_problem=never_called, enrich=enrich)
+    assert all("height" in attrs for attrs in seen)
+
+
+def test_screening_drops_off_topic_candidates_before_fetching(db, tmp_path):
+    browser = site()
+    report = crawl(db, AmazonSeAdapter(browser, tmp_path), "fridge", "kylskåp", on_problem=never_called,
+                   screen=lambda cands: [c for c in cands if c.source_id != "B0AAAAAAA3"])
+    assert (report.off_topic, report.saved) == (1, 2)
+    assert [c.source_id for c in report.dropped] == ["B0AAAAAAA3"]
+    assert product_url("B0AAAAAAA3") not in browser.fetched

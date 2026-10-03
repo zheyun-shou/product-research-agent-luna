@@ -3390,7 +3390,7 @@ git commit -m "Fridge category profile and profile loader"
 
 Why title screening is in this task and not in phase 5. A search for "kylskåp" also shows thermometers, shelves and door seals. Without a relevance filter, `picks` with no conditions can put a well-reviewed accessory first. One worker call for each crawl reads all candidate titles and keeps only the real products. This also prevents unnecessary fetches of detail pages. This is the first pass of the multi-stage ranking in the spec (4.3), moved forward.
 
-- [ ] **Step 1: Add the fake LLM**
+- [x] **Step 1: Add the fake LLM**
 
 Append to `tests/fakes.py`:
 
@@ -3413,7 +3413,7 @@ class FakeLLM:
         return f"fake-{role}"
 ```
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 `tests/test_extract.py`:
 
@@ -3587,12 +3587,12 @@ def test_keeps_only_the_numbers_the_worker_returns():
     assert "1: Kylskåpstermometer" in prompt and "Fridge" in prompt
 ```
 
-- [ ] **Step 3: Run the tests to see them fail**
+- [x] **Step 3: Run the tests to see them fail**
 
 Run: `python -m pytest tests/test_extract.py tests/test_screen.py tests/test_crawl.py tests/test_store.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'scout.extract'`. The new crawl and store tests fail, because `screen`, `stored_attributes` and the error handling do not exist yet.
 
-- [ ] **Step 4: Write the extraction code**
+- [x] **Step 4: Write the extraction code**
 
 `src/scout/extract/__init__.py`:
 
@@ -3795,12 +3795,12 @@ Screener = Callable[[list[Candidate]], list[Candidate]]
                 report.notes.append(f"{cand.url}: {exc}. Stored without LLM extraction.")
 ```
 
-- [ ] **Step 5: Run the tests to see them pass**
+- [x] **Step 5: Run the tests to see them pass**
 
 Run: `python -m pytest tests/test_extract.py tests/test_screen.py tests/test_crawl.py tests/test_store.py -v`
 Expected: all passed.
 
-- [ ] **Step 6: Use the worker in `crawl` and `eval-prices`**
+- [x] **Step 6: Use the worker in `crawl` and `eval-prices`**
 
 In `src/scout/cli.py`, add imports:
 
@@ -3854,7 +3854,7 @@ Change the `eval-prices` command. Add `llm: bool = typer.Option(False, "--llm")`
     summary = {"extractor": extractor, "run_at": datetime.now(timezone.utc).isoformat(), **result.summary()}
 ```
 
-- [ ] **Step 7: Real run**
+- [x] **Step 7: Real run**
 
 Run: `scout crawl fridge "kylskåp" --details 5`
 Expected: the report shows how many results the screening removed as off topic, how many pages went to the worker, and the counts of LLM calls and tokens. Look at the search screenshot, or at the search page in a normal browser. Make sure that the removed results are really accessories. Check the stored attributes:
@@ -3868,7 +3868,20 @@ Each attribute has a `raw` value that you can find on the product page.
 Run: `scout eval-prices --llm`
 Expected: a second results file with the extractor `selectors+worker:...`. You can then compare the two runs.
 
-- [ ] **Step 8: Commit**
+Changes from the code above, made during the real run on 2026-10-04:
+
+- The screening prompt drops every item outside the target category, not only accessories.
+- `CrawlReport.dropped` keeps the dropped candidates, and `crawl` prints their titles. Without the titles, nobody can check the screening.
+- `shows_value` in `page.py` checks that the raw text shows the value, not only that it is on the page. The first real run gave raw texts such as "56" and "E", which are on almost every page. It also stored energy class A from the raw text "A+" (the old EU scale). Now a number needs a unit word in its raw text, and the check converts mm and m to cm. An enum value must be a whole token, and the raw text must be longer than the value. A brand or model must be in its raw text.
+- The product parser reads Amazon's size line ("80D x 45B x 48H centimeter") into height, width and depth in cm. The worker copied only part of this line, so the check dropped most widths and depths. The parser reads the line on 31 of 38 saved pages.
+
+Result on 2026-10-04 (`gemini-3.5-flash-lite`):
+
+- Crawl of "kylskåp", 1 search page: 59 candidates, 27 dropped as off topic, 5 detail pages, 6 LLM calls, about 11,400 tokens in. All 27 dropped titles were not fridges (water filters, whiteboards, thermometers, egg holders, cleaning kits, a book), except two borderline items: a cosmetics mini fridge and a 12 V car cool box. Nothing clearly off topic was kept. But the borderline items are not treated the same: other car fridges, wine coolers and 5 L cosmetics fridges were kept. The clarify step must ask what kind of fridge the user wants.
+- `eval-prices --llm` on the 38 labelled pages: 38 of 38 prices, 33 of 33 stock, the same as the selectors alone. The worker did not add a price to any out-of-stock page. This run measures only price and stock, not the attributes.
+- Seller data is sometimes wrong, and the raw-text check cannot catch that. Two Bomann fridges give "10D x 10B x 10H millimeter". Two colours of one FOHERE fridge give 48 cm and 80 cm as the height. The picks need a plausibility check (for example size against volume) before they use a size as a hard filter.
+
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/scout/extract src/scout/db/store.py src/scout/crawl.py src/scout/cli.py tests/fakes.py tests/test_extract.py tests/test_screen.py tests/test_crawl.py tests/test_store.py eval/results

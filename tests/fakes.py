@@ -23,3 +23,21 @@ class FakeBrowser:
     def screenshot(self, path: Path) -> Path:
         path.write_bytes(b"png")
         return path
+
+
+class FakeLLM:
+    """Returns queued replies (or raises queued exceptions) and records the prompts."""
+
+    def __init__(self, replies):
+        self.replies = list(replies)
+        self.requests = []
+
+    def structured(self, role, system, user, schema):
+        self.requests.append((role, user))
+        reply = self.replies.pop(0)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
+
+    def model_for(self, role):
+        return f"fake-{role}"

@@ -12,9 +12,12 @@ from pydantic import BaseModel
 from scout.config import ROOT, load_settings
 from scout.crawl import crawl as run_crawl
 from scout.db.conn import connect, init_schema
+from scout.extract.page import enrich_record
+from scout.extract.screen import screen_titles
 from scout.eval.prices import evaluate_prices, extract_from_snapshot, read_labels, write_template
 from scout.llm.client import LLM
 from scout.llm.config import load_llm_config
+from scout.profiles import load_profile
 from scout.sources.amazon_se.adapter import AmazonSeAdapter
 from scout.sources.amazon_se.check import check_page
 from scout.sources.amazon_se.product import parse_product_page
@@ -108,22 +111,36 @@ def crawl(
     details: int = 20,
     budget: Optional[float] = None,
     screenshots: bool = False,
+    no_llm: bool = typer.Option(False, "--no-llm"),
 ) -> None:
     """Search amazon.se, fetch detail pages and store them. QUERY is in Swedish, e.g. kylskåp."""
     settings = load_settings()
     budget_sek = Decimal(str(budget)) if budget is not None else None
+    enrich, screen, llm = None, None, None
+    if not no_llm:
+        profile = load_profile(category)
+        llm = LLM(load_llm_config())
+        enrich = lambda rec: enrich_record(rec, profile, llm)  # noqa: E731
+        screen = lambda cands: screen_titles(cands, profile, llm)  # noqa: E731
     with connect(settings.database_url) as conn, BrowserSession(settings.browser_profile_dir) as session:
         adapter = AmazonSeAdapter(session, settings.snapshot_dir, screenshots=screenshots)
         report = run_crawl(conn, adapter, category, query, on_problem=ask_user,
-                           max_pages=pages, max_details=details, budget=budget_sek)
+                           max_pages=pages, max_details=details, budget=budget_sek, enrich=enrich, screen=screen)
     typer.echo(f"search pages {report.search_pages}, candidates {report.candidates}, "
                f"over budget {report.over_budget}, detail pages {report.detail_pages}, saved {report.saved}")
-    typer.echo(f"pages that needed an LLM call: {report.llm_pages} of {report.detail_pages}")
+    typer.echo(f"dropped as off topic by title: {report.off_topic}")
+    for cand in report.dropped:
+        typer.echo(f"  dropped {cand.source_id} {cand.title[:90]}")
+    typer.echo(f"pages sent to the worker model: {report.llm_pages} of {report.detail_pages}")
     typer.echo(f"fields the selectors missed: {dict(report.missing) or 'none'}")
     for url in report.skipped:
         typer.echo(f"skipped {url}")
     for note in report.notes:
         typer.echo(note)
+    if llm is not None:
+        tokens_in = sum(c.input_tokens for c in llm.calls)
+        tokens_out = sum(c.output_tokens for c in llm.calls)
+        typer.echo(f"LLM calls {len(llm.calls)}, tokens in {tokens_in}, out {tokens_out}")
 
 
 @app.command("eval-template")
@@ -134,11 +151,22 @@ def eval_template(out: Path = Path("data/eval/price_labels.csv")) -> None:
 
 
 @app.command("eval-prices")
-def eval_prices(labels: Path = Path("data/eval/price_labels.csv")) -> None:
+def eval_prices(
+    labels: Path = Path("data/eval/price_labels.csv"),
+    llm: bool = typer.Option(False, "--llm"),
+    category: str = "fridge",
+) -> None:
     """Measure price and stock extraction against your labels and save the numbers."""
     rows = read_labels(labels)
-    result = evaluate_prices(rows, extract_from_snapshot)
-    summary = {"extractor": "selectors", "run_at": datetime.now(timezone.utc).isoformat(), **result.summary()}
+    extract, extractor = extract_from_snapshot, "selectors"
+    if llm:
+        load_settings()
+        worker = LLM(load_llm_config())
+        profile = load_profile(category)
+        extract = lambda label: enrich_record(extract_from_snapshot(label), profile, worker)[0]  # noqa: E731
+        extractor = f"selectors+worker:{worker.model_for('worker')}"
+    result = evaluate_prices(rows, extract)
+    summary = {"extractor": extractor, "run_at": datetime.now(timezone.utc).isoformat(), **result.summary()}
     out = ROOT / "eval" / "results" / f"prices-{datetime.now():%Y%m%d-%H%M}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(summary, indent=2), encoding="utf-8")

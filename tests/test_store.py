@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from scout.db.store import log_fetch, save_record
+from scout.db.store import log_fetch, save_record, stored_attributes
 from scout.sources.amazon_se.product import parse_product_page
 
 pytestmark = pytest.mark.db
@@ -79,3 +79,10 @@ def test_generic_brand_does_not_join_products(db):
     a = record(asin="B0AAAAAAA1").model_copy(update={"brand": "Generic", "model": "1"})
     b = record(asin="B0AAAAAAA8").model_copy(update={"brand": "generic", "model": "1"})
     assert save_record(db, a, "incense").product_id != save_record(db, b, "incense").product_id
+
+
+def test_stored_attributes(db):
+    rec = record().model_copy(update={"attributes": {"height": {"value": 203.0, "unit": "cm", "raw": "203 cm"}}})
+    save_record(db, rec, "fridge")
+    assert stored_attributes(db, "amazon_se", "B0AAAAAAA1")["height"]["value"] == 203.0
+    assert stored_attributes(db, "amazon_se", "B0NOTSTORED") == {}

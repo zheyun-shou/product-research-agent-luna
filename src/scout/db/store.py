@@ -95,3 +95,13 @@ def log_fetch(
         (source, url, status, http_status, duration_ms, note),
     )
     conn.commit()
+
+
+def stored_attributes(conn: psycopg.Connection, source: str, source_id: str) -> dict:
+    """Attributes already stored for this listing's product, so they are not extracted again."""
+    row = conn.execute(
+        """SELECT p.attributes FROM listings l JOIN products p ON p.id = l.product_id
+           WHERE l.source = %s AND l.source_id = %s""",
+        (source, source_id),
+    ).fetchone()
+    return dict(row["attributes"]) if row else {}
