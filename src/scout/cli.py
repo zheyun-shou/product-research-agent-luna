@@ -1,6 +1,7 @@
 """Command line for product-scout."""
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List
 
@@ -9,8 +10,9 @@ import typer
 from scout.config import load_settings
 from scout.db.conn import connect, init_schema
 from scout.sources.amazon_se.check import check_page
+from scout.sources.amazon_se.product import parse_product_page
 from scout.sources.amazon_se.search import has_next_page, parse_search_page
-from scout.sources.amazon_se.urls import BASE_URL, SOURCE, page_kind, snapshot_key
+from scout.sources.amazon_se.urls import BASE_URL, SOURCE, page_kind, product_url, snapshot_key
 from scout.sources.browser import BrowserSession
 from scout.sources.snapshots import save_html
 
@@ -70,3 +72,13 @@ def parse_search_cmd(path: Path) -> None:
     for c in parse_search_page(html):
         typer.echo(json.dumps(c.model_dump(mode="json"), ensure_ascii=False))
     typer.echo(f"next page: {has_next_page(html)}")
+
+
+@app.command("parse-product")
+def parse_product_cmd(path: Path) -> None:
+    """Print what the parser reads from a saved product page. The folder name is the ASIN."""
+    fetched_at = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+    rec = parse_product_page(path.read_text(encoding="utf-8"), product_url(path.parent.name), fetched_at)
+    shown = rec.model_dump(mode="json", exclude={"text"})
+    typer.echo(json.dumps(shown, ensure_ascii=False, indent=2))
+    typer.echo(f"missing: {rec.missing_core()}")

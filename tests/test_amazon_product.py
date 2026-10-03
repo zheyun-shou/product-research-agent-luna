@@ -1,0 +1,57 @@
+from datetime import datetime, timezone
+from decimal import Decimal
+from pathlib import Path
+
+import pytest
+
+from scout.sources.amazon_se.product import parse_product_page
+
+FIXTURES = Path(__file__).parent / "fixtures" / "amazon_se"
+NOW = datetime(2026, 10, 3, 10, 15, tzinfo=timezone.utc)
+
+
+def parse(name, url):
+    return parse_product_page((FIXTURES / name).read_text(encoding="utf-8"), url, NOW)
+
+
+def test_full_page():
+    rec = parse("product_full.html", "https://www.amazon.se/Samsung/dp/B0AAAAAAA1/ref=sr_1_1?k=x")
+    assert rec.source_id == "B0AAAAAAA1"
+    assert rec.url == "https://www.amazon.se/dp/B0AAAAAAA1"
+    assert rec.title == "Samsung RB38C7B5D22/EF kyl/frys, 203 cm, 390 liter"
+    assert (rec.brand, rec.model) == ("Samsung", "RB38C7B5D22/EF")
+    assert (rec.price, rec.currency) == (Decimal("8990.00"), "SEK")
+    assert (rec.rating, rec.review_count) == (Decimal("4.5"), 1234)
+    assert rec.in_stock is True
+    assert rec.variant_label == "Svart"
+    assert rec.specs["Produktmått"] == "65,8 x 59,5 x 203 cm"
+    assert rec.bullets == ["Höjd 203 cm, bredd 59,5 cm", "Ljudnivå 35 dB"]
+    assert "Produktmått: 65,8 x 59,5 x 203 cm" in rec.text
+    assert "Ljudnivå 35 dB" in rec.text
+    assert rec.missing_core() == []
+
+
+def test_unavailable_page_has_no_price_and_is_out_of_stock():
+    rec = parse("product_unavailable.html", "https://www.amazon.se/dp/B0AAAAAAA2")
+    assert rec.in_stock is False
+    assert rec.price is None
+    assert (rec.brand, rec.model) == ("Bosch", "KGN39VLEB")
+    assert rec.missing_core() == ["price"]
+
+
+def test_price_split_into_parts_and_brand_from_byline():
+    rec = parse("product_parts_price.html", "https://www.amazon.se/dp/B0AAAAAAA3")
+    assert (rec.price, rec.currency) == (Decimal("5499.00"), "SEK")
+    assert rec.brand == "Electrolux"
+    assert rec.in_stock is True
+    assert (rec.rating, rec.review_count, rec.model) == (None, None, None)
+
+
+def test_brand_from_store_link():
+    html = '<span id="productTitle">X</span><a id="bylineInfo">Besök Samsung-butiken</a>'
+    assert parse_product_page(html, "https://www.amazon.se/dp/B0AAAAAAA4", NOW).brand == "Samsung"
+
+
+def test_page_without_asin_is_refused():
+    with pytest.raises(ValueError):
+        parse_product_page("<html></html>", "https://www.amazon.se/gp/help", NOW)
