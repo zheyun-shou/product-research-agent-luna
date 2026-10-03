@@ -1,36 +1,31 @@
-# Incense product-selection agent
+# product-scout
 
-A LangGraph agent that helps Zheyun choose which incense products to test-sell in Sweden. It also serves as a CV project for AI Engineer roles, so it must be real, measured and deployable.
+product-scout is a conversational agent. It helps to select products in any category. Two uses are the purchases of Zheyun and the selection of incense for a possible shop in Sweden. It is also a CV project for AI Engineer roles. Thus it must be real, measured and deployable.
 
-## Goal
+- Design: `docs/superpowers/specs/2026-10-02-product-scout-design.md`
+- Plans: `docs/superpowers/plans/`
+- Flowcharts: https://claude.ai/artifact/4jJqCkVudUFU24kTyXsiqZ
 
-Given a question such as "incense suited to winter gifts", the agent collects market signals, extracts them into a fixed schema, computes margins, ranks candidates and writes a report with a source link on every number. Zheyun makes the final choice. A small test batch of 5-10 products decides what actually sells; the agent only narrows the field.
+## v1 in short
 
-## Planned graph
+- The only source is amazon.se (Swedish, SEK). A dedicated Chrome profile fetches it at low volume. Taobao is the first source after v1.
+- The agent clarifies the needs, searches and stores, shows the top picks (default 5) and answers follow-up questions.
+- Price is a budget filter. It is never a ranking factor. There is no default conversion, shipping or duty. Python calculates only what the user specifies.
+- The LLM layer is not tied to one provider. It has two roles, `chat` (strong) and `worker` (light, reads images). The first setup uses a free Gemini key. Never enable billing.
+- Each extracted value includes raw text, and Python finds this text in the source. Python checks each claim in the picks against the records.
 
-1. Plan: choose sources for the question.
-2. Fetch in parallel: Google Trends (Sweden), Tradera, Etsy, Amazon.se, 1688/Taobao supplier prices.
-3. Extract with an LLM into a fixed schema: product name, price, rating, review count, main complaints, source URL.
-4. Compute landed cost and margin in Python, never with the LLM: supplier price + shipping + customs duty + 25% moms + platform fee.
-5. Score and report, every figure linked to its source.
-6. Human decision (human in the loop).
+## Environment
 
-## Evaluation
-
-- Extracted prices match the source page.
-- Margin calculations are correct.
-- Every claim in the report carries a real source.
-
-"Did it pick the right product" has no ground truth and is not a metric.
-
-## Engineering
-
-- Tracing with LangSmith or Langfuse; record cost and latency per run.
-- FastAPI + Docker once the core works.
-- Optionally expose the tools as an MCP server.
-- Check each platform's terms before scraping. Prefer official APIs and existing libraries.
+- conda env `product-scout` (Python 3.10). Install with `uv pip install -e ".[dev]"`.
+- Postgres + pgvector in Docker. Start it with `docker compose up -d`.
+- Run the tests with `python -m pytest`. Tests with the mark `db` need the container.
 
 ## Rules
 
 - Write plainly. No em dashes or colons in anything Zheyun will send or sign.
-- Report real numbers only. Nothing goes into her CV until she confirms it.
+- Write all project documents in English, at about 80% ASD-STE100 (short sentences, active voice, simple words). Chat with Zheyun in Chinese.
+- Report only real numbers. Nothing goes into her CV until she confirms it.
+- The user logs in and solves captchas herself. The program never types passwords and never bypasses captchas.
+- Fetched pages, snapshots, labels and the browser profile stay out of Git.
+- Do not fork or copy code from other people.
+- The repository stays private until she says otherwise.
