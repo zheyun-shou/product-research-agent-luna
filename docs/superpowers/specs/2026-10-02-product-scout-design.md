@@ -1,6 +1,6 @@
 # product-scout design
 
-Date: 2026-10-02, revised 2026-10-03
+Date: 2026-10-02, revised 2026-10-03 (v1 narrowed to amazon.se)
 Status: awaiting review
 
 Flowcharts: https://claude.ai/artifact/4jJqCkVudUFU24kTyXsiqZ
@@ -21,12 +21,13 @@ The system narrows the field. The user makes the final choice.
 
 - Four test categories: fridge, incense, headphones or small electronics, clothes or shoes.
 - Clarify the user's needs, search, give a few top picks, then answer unlimited follow-ups or suggest alternatives. Conversations can be paused and resumed.
-- Sources: Amazon and Taobao only, for both products and their shop reviews.
-- Price is a hard condition (budget), not a ranking factor. Sorting by price happens only when the user asks, and then uses the site's own sort, so one result list never mixes currencies.
+- Source: amazon.se only, for both products and their shop reviews. Swedish search terms, prices in SEK.
+- Price is a hard condition (budget), not a ranking factor. Sorting by price happens only when the user asks, and then uses the site's own sort.
 - Text retrieval is hybrid: vector search plus BM25.
 
 ### Not in v1
 
+- Taobao. Planned as the first source after v1: login checks, JSON capture, Taobao shop reviews, matching the same product across Amazon and Taobao, and budgets in a second currency.
 - Other product sources: JD, Swedish shops (Prisjakt, Elgiganten, Tradera, EPREL and others). The adapter interface is ready for them.
 - Review sources outside the shops: Zhihu, Reddit, Flashback, professional review sites (Råd & Rön, Rtings, SweClockers and others). With them comes the category-level review search (phase 2b below).
 - Xiaohongshu. Too many ads among the posts to trust as reviews.
@@ -47,13 +48,11 @@ User: I want a fridge, my requirements are ...
 1. Clarify needs
    Load the category profile (if none exists, the LLM drafts one, it is saved, the user can edit it).
    The LLM compares the user's message with the profile. If needs are unclear, ask, until they are clear.
-   If the budget is in a currency a site does not use (for example SEK for Taobao), ask for the budget in that
-   site's currency. The system never converts on its own.
    ↓
 2. Search and store
-   Before starting, check login for every browser-based site this search needs; ask the user to log in up front.
-   a. Search Amazon and Taobao, each in its own language, with the user's filters and budget pushed down.
-      The result lists give rating and sales per candidate.
+   Before starting, check login for every site this search needs that requires it; ask the user to log in up front.
+   a. Search amazon.se in Swedish, with the user's filters and budget pushed down.
+      The result lists give rating and review count per candidate.
    b. (After v1) Search external review sources at category level and count how often each model is mentioned.
    c. Fetch detail pages in Threshold Algorithm order over the sorted lists (see 4.3) and store them (see 4.4).
       Stop at 50 detail pages or when no unread candidate can reach the top 10.
@@ -99,14 +98,14 @@ questions_for_user:
   - Do you care about noise?
 complaint_types: [noise, frost, door seal, compressor life, after-sales service]
 sources:
-  products: [amazon, taobao]
-  reviews: [amazon_reviews, taobao_reviews]   # external sources added after v1
+  products: [amazon_se]
+  reviews: [amazon_se_reviews]   # Taobao and external sources added after v1
 ```
 
 - Attribute types: number with unit, enum, boolean, text.
 - `complaint_types` is not used to tag reviews. It guides the picks: when summarising each product's complaints, retrieval runs once per type.
 - **Preset profiles**: the four test categories in v1, about 10 common categories later. When external review sources are added after v1, each preset's review sources come from one-off research and are written into the profile.
-- **New categories**: the LLM drafts a profile. In v1 it uses Amazon and Taobao. After v1 it also searches for review sources for the category: sources with an adapter are used directly, public pages go through a generic fetcher, and sources that need login or have strong anti-bot measures are listed as "suggested new adapters".
+- **New categories**: the LLM drafts a profile. In v1 it uses amazon.se. After v1 it also searches for review sources for the category: sources with an adapter are used directly, public pages go through a generic fetcher, and sources that need login or have strong anti-bot measures are listed as "suggested new adapters".
 - The user can edit a profile. Edited versions are saved and reused.
 - If many products show the same attribute that the profile lacks, ask the user whether to add it to the profile.
 - After each use, record how many matched reviews each source contributed. Sources that contribute little move down the list next time.
@@ -129,16 +128,19 @@ class SourceAdapter(Protocol):
 ```
 
 - `search` pushes hard conditions into the site's own filters where it can (predicate pushdown) and supports several sort orders, such as rating and sales.
-- Access depends on the site. In v1 both Amazon and Taobao use the user's own browser through a persistent Playwright profile, at low volume, much like the user browsing. Amazon works without login; Taobao needs it. Later sources with an official API use it (EPREL, Tradera), and other public pages are requested directly.
-- Each site is searched in its own language (Chinese for Taobao, the store's language for Amazon). The LLM writes the per-site search terms from the user's needs.
-- **Browser-based sites read the JSON the page itself requests.** On sites like Taobao, product data is loaded by separate API calls from the page. Playwright listens to network responses and gets ready-made fields. This is more accurate than parsing HTML and needs no LLM call. If that fails, read the rendered DOM.
+- Access depends on the site. In v1 amazon.se is fetched in the user's own browser at low volume, much like the user browsing. Later sources with an official API use it (EPREL, Tradera), and other public pages are requested directly.
+- **The browser is a dedicated Chrome profile**, not the user's everyday window. Playwright cannot open a profile that a running Chrome has locked, and recent Chrome refuses automation on the default profile. The profile lives in `browser-profile/`; the user logs in there once and the session is kept.
+- Product and search pages on amazon.se work without login. Amazon shows only a few reviews on the product page and puts the full review pages behind login, so fetching shop reviews (build phase 3) needs the user logged in to amazon.se in that profile.
+- Each site is searched in its own language. The LLM writes the per-site search terms from the user's needs, Swedish for amazon.se.
+- **Amazon pages are read with hand-written selectors.** Amazon has no reliable JSON-LD, so the adapter reads title, price, rating, review count, stock and variants with CSS selectors, on search result cards and detail pages. The LLM is called only for fields the selectors miss, and every selector miss is logged so a broken selector shows up quickly.
+- **After v1, browser sites like Taobao read the JSON the page itself requests.** Product data there is loaded by separate API calls from the page. Playwright listens to network responses and gets ready-made fields, with no LLM call. If that fails, read the rendered DOM.
 - Each adapter records its terms-of-service check and the date. Adapters without a terms check stay disabled.
 
 #### Login and captcha
 
 - `check_session` decides whether the user is logged in. Any of these counts as logged out: a redirect to the login page, a login dialog on the page, or captured JSON reporting "not logged in" or "session expired". A captcha is handled the same way.
-- Before phase 2, check every browser-based site this search needs, so the user is asked up front. Check again on every page, because a session can expire or a captcha can appear mid-search. The per-page check inspects the page just fetched and sends no extra request. Availability rechecks in phase 3 go through the same check.
-- On a problem, pause with a LangGraph interrupt. Open the site's login page in the user's browser and tell the user in the chat, for example: "You are not logged in to Taobao. I opened the login page. Reply 'done' after logging in, or skip Taobao." After the reply, check again and resume where it stopped. If the user skips, continue with the other sites.
+- Before phase 2, check every site this search needs that requires login, so the user is asked up front. In v1 that is amazon.se once shop reviews are fetched. Check again on every page, because a session can expire or a captcha can appear mid-search. The per-page check inspects the page just fetched and sends no extra request. Availability rechecks in phase 3 go through the same check.
+- On a problem, pause with a LangGraph interrupt. Open the site's login page in the user's browser and tell the user in the chat, for example: "You are not logged in to amazon.se. I opened the login page. Reply 'done' after logging in, or skip the reviews." After the reply, check again and resume where it stopped. If the user skips, continue without what needed the login.
 - The user always logs in and solves captchas. The program never types passwords and never bypasses captchas. Sessions are stored locally in `browser-profile/`, which is not in Git.
 
 ### 4.3 Search strategy
@@ -146,8 +148,9 @@ class SourceAdapter(Protocol):
 The goal is to avoid paging through endless results and to keep irrelevant products out. It draws on these classic methods.
 
 1. **Predicate pushdown**: every hard condition the site can filter on goes into the site's search parameters.
-2. **Top-k over several sorted lists (Fagin's Threshold Algorithm)**: the lists must all be available before any detail page is fetched. In v1 they are rating and sales (or review count where a site shows no sales) from the search results. After v1, review mentions from the category-level review search (phase 2b) become a third list. Read down the lists in parallel, fetching the detail page of each newly seen candidate. Stop when the best possible combined list score of any unread candidate is below the current k-th candidate (k = 10). The final ranking in phase 3 also uses detail-page data, so this stopping rule decides only which detail pages are worth fetching.
-3. **Multi-stage ranking**: the first pass uses only the title, price, rating and sales shown in search results, to drop irrelevant products and those over budget. Only candidates that pass get detail pages fetched, and only the top 10 after ranking get reviews and images.
+2. **Top-k over several sorted lists (Fagin's Threshold Algorithm)**: the lists must all be available before any detail page is fetched. In v1 they are amazon.se's own sort orders, by customer rating and by popularity (or review count); the first task of build phase 5 checks which sorts amazon.se actually offers. After v1, review mentions from the category-level review search (phase 2b) become a third list. Read down the lists in parallel, fetching the detail page of each newly seen candidate. Stop when the best possible combined list score of any unread candidate is below the current k-th candidate (k = 10). The combined list score shrinks the rating toward the category average by review count (a Bayesian average), so a 5.0 rating from 2 reviews does not outrank 4.6 from 3,000. The final ranking in phase 3 also uses detail-page data, so this stopping rule decides only which detail pages are worth fetching.
+   On amazon.se every search card already shows both rating and review count, so looking up a candidate's value in the other list is free. The algorithm's main saving here is how many result pages to read per list. Its full benefit comes after v1, when the review-mentions list is expensive to look up.
+3. **Multi-stage ranking**: the first pass uses only the title, price, rating and review count shown in search results, to drop irrelevant products and those over budget. Only candidates that pass get detail pages fetched, and only the top 10 after ranking get reviews and images.
 4. **Budget**: each search has page caps. When one is used up, stop and say so in the picks. Defaults: 50 detail pages and 30 review pages. If a paid model is used, add a money cap, set after phase 1 measures the cost of one search.
 
 ### 4.4 Extraction and storage
@@ -156,8 +159,8 @@ Principle: **only information used for filtering and comparison is structured. E
 
 **Structured path: a few fields only**
 
-1. Read in order of reliability: captured JSON or structured data embedded in the page (JSON-LD), then the HTML text.
-2. Core fields: name, brand, model, price, currency, rating, review count, in stock, source URL, fetch time. Also extract the attributes listed in the profile and any attribute the user's current conditions use, since they are needed for ranking anyway. Fields missing from structured data are extracted from the HTML by the LLM, in one call per page.
+1. Read in order of reliability: captured JSON or structured data embedded in the page (JSON-LD), then site-specific selectors (amazon.se in v1), then the HTML text through the LLM.
+2. Core fields: name, brand, model, price, currency, rating, review count, in stock, source URL, fetch time. Also extract the attributes listed in the profile and any attribute the user's current conditions use, since they are needed for ranking anyway. Fields missing after the steps above are extracted from the HTML by the LLM, in one call per page.
 3. Validate with Pydantic.
 4. Match on model number, brand and specs to see whether the product is already in the database. If it is, add or update the listing and variant. If not, create a product. Every fetched price also adds a price_history row.
 
@@ -166,7 +169,7 @@ Rule: **prices come only from structured data or HTML, never from images**, beca
 **Text path: keep everything**
 
 1. Product text, descriptions and review text are all chunked. A short review is one chunk. Long text is split by paragraph into chunks of about 300 to 500 tokens with a small overlap, each prefixed with the title and product name.
-2. Images are processed only when key information is missing from the text and appears only in images. Try PaddleOCR first, then a vision model if OCR fails. Long images are cut into segments first. Text read from images only goes into the text path.
+2. Images are processed only when key information is missing from the text and appears only in images. They are read by PaddleOCR-VL, a 0.9B vision-language model from the PaddleOCR team, run locally. It turns text, tables and charts in an image into markdown in one step, and that markdown goes into the text path like any other text. Stored this way, image text is found again by later questions and by BM25, with no second look at the image. If PaddleOCR-VL returns nothing usable (heavily designed ad images, for example), the worker model reads the image instead (4.11). Long images are cut into segments first. Plain OCR such as PP-OCRv6 was considered and not chosen: it returns lines of text and loses table structure, so an LLM would still have to rebuild the tables.
 3. Each chunk gets an embedding and BM25 tokens (see 4.6) and is stored in `chunks`.
 
 **On-demand attribute extraction**
@@ -187,7 +190,7 @@ Attributes outside the profile go in `attributes.extra`.
 
 Review fields: source URL, platform, author type (buyer, blogger, professional reviewer), publish date, matched product or "unmatched", original text, language, fetch time.
 
-In v1 all reviews are shop reviews, already attached to a listing, so no matching is needed. External sources after v1 bring community reviews, which often omit the model number and need matching to a specific product.
+In v1 all reviews are amazon.se shop reviews, already attached to a listing, so no matching is needed. External sources after v1 bring community reviews, which often omit the model number and need matching to a specific product.
 1. Exact match on model number when there is one
 2. Otherwise a fuzzy match on brand, category and key specs
 3. Finally the LLM judges whether it is the same product
@@ -216,7 +219,7 @@ Product text chunks and review chunks share one retrieval path.
 
 **Which price to show.** A product with variants shows the price of the variant that fits the user's needs (size, color, capacity). If that is unknown, it shows the price range across variants. The budget check uses the lowest price among the fitting variants.
 
-**Price and currency.** Price is used only for the budget, checked per site in that site's currency. It does not affect the score, so picks from Amazon and Taobao can sit side by side without conversion. Each price is shown in its own currency. If the user asks to sort by price, use the site's own sort within one site, or ask the user how to compare across sites (section 2).
+**Price and currency.** Price is used only for the budget. It does not affect the score. In v1 every price is in SEK. After v1, with Taobao, the budget is checked per site in that site's currency, picks from both sites sit side by side with each price in its own currency, and the system never converts on its own. If the user asks to sort by price, use the site's own sort within one site, or ask the user how to compare across sites.
 
 **Before the picks are shown, every pick is rechecked for price and availability, however recently it was fetched.** A sold-out pick is replaced with the next candidate, which is then checked too. Candidates outside the top are not rechecked.
 
@@ -259,9 +262,18 @@ The database can keep growing. At each step, the model sees only what that step 
 The model provider is not decided and may be a free tier, so the LLM layer is not tied to one provider.
 
 - One calling interface: send messages, request structured output, call tools. Gemini, Groq, OpenRouter and Ollama all offer OpenAI-compatible endpoints, so one client covers them by configuration. Claude is connected separately through the official Anthropic SDK.
-- Each step has its own model setting. Extraction is simple and can use a free small model. Writing the picks and understanding follow-ups need a stronger one.
+- **Two model roles.** Each step uses one of two roles by default, and any step can be pointed at another model for evaluation.
+
+| Role | Steps | Calls per search |
+|---|---|---|
+| `chat`, a strong model | Draft a category profile; compare the user's message with the profile and ask questions; write the per-site search terms; write the picks; read follow-ups, choose tools, answer questions, turn calculation rules into steps | About 10 to 30 |
+| `worker`, a light multimodal model | Extract fields the selectors miss; on-demand attribute extraction; read images PaddleOCR-VL could not; after v1, judge whether two listings are the same product | Tens to about 200 |
+
+- Search terms get the strong model because they are few and poor terms spoil every candidate after them. The worker must accept images, so no third model is needed. bge-m3 (embeddings) and PaddleOCR-VL (images) run locally and are not part of this layer.
+- The judge for source faithfulness (section 7) must not be the model being judged, so the full evaluation may add a third model used only there.
+- First setup: one free Gemini key for both roles, a Flash model as `chat` and a Flash-Lite model as `worker`, since the worker makes most calls and Flash-Lite has the larger daily quota. Exact models and quotas are checked on the official pages at setup.
 - Models are chosen by evaluation numbers (section 7), not by impression.
-- The layer has its own rate limiter and retries, set per provider. Free tiers are slow: at 10 requests per minute, 50 pages that all need an LLM call take at least 5 minutes. JSON capture and JSON-LD keep most pages away from the LLM, and the share of pages that needed an LLM call is logged per search.
+- The layer has its own rate limiter and retries, set per provider. Free tiers are slow: at 10 requests per minute, 50 pages that all need an LLM call take at least 5 minutes. Selectors, JSON-LD and (after v1) JSON capture keep most pages away from the LLM, and the share of pages that needed an LLM call is logged per search.
 
 Candidates (quotas change often; check the official pages before signing up):
 
@@ -270,7 +282,7 @@ Candidates (quotas change often; check the official pages before signing up):
 | Gemini free tier | Strongest free option, no card needed, good Chinese, structured output and tool calling | Flash models about 10 requests per minute and 1,000 to 1,500 per day; free-tier data may be used by Google to improve its products |
 | Groq free tier | Very fast | About 6,000 tokens per minute, too small for long pages |
 | OpenRouter free models | Many open models, useful for comparison | Rate-limited, the free list changes |
-| Local Ollama | Free, data stays on the laptop | This laptop's RTX 3060 6 GB fits only 7B to 8B quantised models and shares memory with bge-m3 |
+| Local Ollama | Free, data stays on the laptop | This laptop's RTX 3060 6 GB fits only 7B to 8B quantised models and shares memory with bge-m3 and PaddleOCR-VL. Used only as a comparison in evaluation |
 | Claude API | Most consistent quality | Paid |
 
 ## 5. Data model
@@ -298,14 +310,14 @@ One Postgres database with the pgvector extension.
 - Provider-neutral LLM layer (4.11)
 - bge-m3 embeddings, run locally; BM25 implemented by us on the bge-m3 tokenizer
 - Postgres + pgvector (0.8 or later), run in Docker
-- Playwright with a persistent browser profile
-- PaddleOCR
+- Playwright with a dedicated persistent Chrome profile
+- PaddleOCR-VL for images, run locally
 - Langfuse for traces, cost and latency of every run
 - A command-line interface in v1, then FastAPI and Docker deployment
 
 ## 7. Evaluation
 
-Build a labelled set: about 50 product pages across the four categories, split between Amazon and Taobao. Record the true price and key specs by hand, and save page snapshots so tests can be rerun. For browser-based sites a snapshot includes the captured JSON responses as well as the HTML.
+Build a labelled set: about 50 amazon.se product pages across the four categories. Record the true price and key specs by hand, and save page snapshots so tests can be rerun. After v1, Taobao snapshots also include the captured JSON responses.
 
 | Metric | How it is measured |
 |---|---|
@@ -314,9 +326,10 @@ Build a labelled set: about 50 product pages across the four categories, split b
 | Calculation correctness | Python calculations covered by unit tests; about 20 examples test whether the LLM turns the user's words into the right calculation steps |
 | Source faithfulness | Numeric claims checked automatically; text claims judged by an LLM, calibrated by manual spot checks |
 | Availability accuracy | Products shown as available in the picks, spot-checked by hand |
-| Product matching accuracy | After v1, with external review sources: about 50 hand-labelled review and product pairs. In v1, matching the same product across Amazon and Taobao is measured instead |
+| Product matching accuracy | After v1, with Taobao and external review sources: about 50 hand-labelled pairs. Not measured in v1, where no matching happens |
 | Retrieval quality | About 30 questions, comparing vectors only, BM25 only, hybrid, bge-m3 sparse output and long context on accuracy, cost and latency |
-| Model comparison | The same extraction and recommendation tasks run on several candidate models, comparing accuracy, latency and cost, to choose a model per step |
+| Model comparison | The same extraction and recommendation tasks run on several candidate models, comparing accuracy, latency and cost, to choose a model per role or step |
+| Image reading | About 15 product images with specs, read by PaddleOCR-VL and by the worker model, compared against hand labels |
 | Search efficiency | How many fewer pages the Threshold Algorithm stopping rule fetches than reading every page |
 | Run metrics | Cost and latency per search (Langfuse) |
 
@@ -326,7 +339,8 @@ Build a labelled set: about 50 product pages across the four categories, split b
 
 - Check each source's terms before enabling it, and record the result in the adapter. Prefer official APIs.
 - Fetching is for personal use only, at low volume and rate-limited. The user handles login and captchas.
-- Both Amazon's and Taobao's terms restrict automated access. Before building each adapter, Zheyun reads the current terms and decides whether personal, low-volume use in her own browser is acceptable to her. The decision and date go into the adapter.
+- Amazon's terms restrict automated access. On 2026-10-03 Zheyun decided that personal, low-volume fetching of amazon.se in her own browser profile is acceptable to her. The decision and its date go into the Amazon adapter. Taobao's terms also restrict it; she decides before the Taobao adapter is built after v1.
+- The free Gemini tier may use requests to improve Google's products. What is sent is public product pages and the user's shopping needs.
 - Fetched pages, reviews, snapshots and the browser profile stay out of the public Git repo (already in `.gitignore`). The public repo holds only code and evaluation numbers.
 - Numbers in the CV must come from evaluations that actually ran, and Zheyun must confirm them.
 
@@ -334,21 +348,20 @@ Build a labelled set: about 50 product pages across the four categories, split b
 
 The project is too big for one implementation plan, so each phase gets its own plan.
 
-1. **Skeleton**: project structure, Postgres + pgvector, tables, the fridge preset profile, the LLM layer (one free model first), the Amazon adapter, structured extraction, command-line picks, and the labelled set and evaluation for price extraction on Amazon.
+1. **Skeleton**: project structure, Postgres + pgvector, tables, the fridge preset profile, the LLM layer with the `chat` and `worker` roles on a free Gemini key, the dedicated browser profile, the amazon.se adapter with selectors and the captcha check, structured extraction, command-line picks, and the labelled set and evaluation for price extraction on amazon.se.
 2. **Conversation**: LangGraph conversation loop, checkpoints, clarifying questions, follow-up tools, calculation tool, Langfuse.
-3. **Text and retrieval**: chunking, bge-m3 embeddings, BM25, RRF, Amazon shop reviews, on-demand extraction, pros and complaints in the picks.
-4. **Taobao and more categories**: the Taobao adapter with login checks and JSON capture, Taobao shop reviews, matching the same product across Amazon and Taobao, the other three preset categories, profile generation for new categories.
+3. **Text and retrieval**: chunking, bge-m3 embeddings, BM25, RRF, amazon.se shop reviews with the login check, on-demand extraction, pros and complaints in the picks.
+4. **Images and more categories**: image reading with PaddleOCR-VL and the worker fallback, the other three preset categories, profile generation for new categories.
 5. **Search strategy**: predicate pushdown, Threshold Algorithm, multi-stage ranking, budget.
 6. **Full evaluation**: all metrics, retrieval comparison, model comparison.
 7. **Deployment**: FastAPI, Docker.
 
-Amazon comes first because it works without login and is simpler to fetch. Shop reviews (phase 2d in section 3) arrive in build phase 3. External sources, the category-level review search (phase 2b) and other shops come after v1.
+Shop reviews (phase 2d in section 3) arrive in build phase 3. Taobao, external sources, the category-level review search (phase 2b) and other shops come after v1, Taobao first.
 
 ## 10. Open items
 
-- Which Amazon store: amazon.se, amazon.de, amazon.com or another. It sets the language and currency.
-- Her decision on Amazon's and Taobao's terms (section 8).
-- Which model to connect first in phase 1. Suggestion: get a free Gemini key first.
+- Exact Gemini models and quotas, checked when the key is created.
+- Which sort orders amazon.se offers (build phase 5).
 - Store filter fields redundantly in `chunks`, or join with `reviews` and `products` at query time.
 - Langfuse cloud or self-hosted in Docker.
 - CLAUDE.md still describes the old incense-only scope and must be updated to match this document.
