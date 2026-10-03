@@ -92,3 +92,28 @@ def test_adapter_without_terms_check_is_refused(db, tmp_path):
     adapter.terms_check = ""
     with pytest.raises(RuntimeError):
         crawl(db, adapter, "fridge", "kylskåp", on_problem=never_called)
+
+
+def test_last_attempt_does_not_ask_and_says_why(db, tmp_path):
+    calls = []
+
+    def solved(status, url):
+        calls.append(url)
+        return True
+
+    browser = site()
+    browser.pages[product_url("B0AAAAAAA1")] = [CAPTCHA]
+    report = crawl(db, AmazonSeAdapter(browser, tmp_path), "fridge", "kylskåp", on_problem=solved)
+    assert browser.fetched.count(product_url("B0AAAAAAA1")) == 3
+    assert len(calls) == 2
+    assert report.skipped == [product_url("B0AAAAAAA1")]
+    assert any("gave up after 3 attempts (captcha)" in note for note in report.notes)
+
+
+def test_failed_search_page_is_reported(db, tmp_path):
+    browser = site()
+    browser.pages[search_url("kylskåp")] = [CAPTCHA]
+    report = crawl(db, AmazonSeAdapter(browser, tmp_path), "fridge", "kylskåp",
+                   on_problem=lambda status, url: False)
+    assert (report.search_pages, report.saved) == (0, 0)
+    assert any("search stopped at page 1" in note for note in report.notes)

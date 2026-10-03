@@ -40,3 +40,14 @@ def test_has_next_page():
         '<span class="s-pagination-item s-pagination-next s-pagination-disabled">Nästa</span>'
     )
     assert not has_next_page("<html></html>")
+
+
+def test_rating_link_to_reviews_is_not_the_count():
+    html = """
+    <div data-component-type="s-search-result" data-asin="B0AAAAAAA7">
+      <h2><span>Rökelse sandelträ</span></h2>
+      <a href="/dp/B0AAAAAAA7#customerReviews"><span class="a-icon-alt">4,5 av 5 stjärnor</span></a>
+      <a href="/dp/B0AAAAAAA7#customerReviews"><span>1&nbsp;234</span></a>
+    </div>"""
+    card = parse_search_page(html)[0]
+    assert (card.rating, card.review_count) == (Decimal("4.5"), 1234)

@@ -9,7 +9,8 @@ from scout.sources.amazon_se.urls import SOURCE, asin_from_url, product_url
 from scout.sources.base import ProductRecord
 
 BRAND_KEYS = ("Märke", "Varumärke", "Brand")
-MODEL_KEYS = ("Modellnummer", "Artikelns modellnummer", "Modellnamn", "Item model number", "Model number")
+# Modellnamn is left out. It is often a marketing name, and the store matches products on the model.
+MODEL_KEYS = ("Modellnummer", "Artikelns modellnummer", "Item model number", "Model number")
 PRICE_AREAS = (
     "#corePrice_feature_div .a-price",
     "#corePriceDisplay_desktop_feature_div .priceToPay",
@@ -22,7 +23,10 @@ SPEC_ROWS = (
     "#productDetails_detailBullets_sections1 tr",
     "#productOverview_feature_div tr",
 )
-UNAVAILABLE = ("inte tillgänglig", "tillfälligt slut", "slut i lager", "currently unavailable")
+UNAVAILABLE = (
+    "inte tillgänglig", "tillfälligt slut", "slut i lager", "inte i lager", "ej i lager",
+    "currently unavailable", "out of stock",
+)
 BYLINE = (r"Varumärke:\s*(.+)", r"Besök (.+?)-butiken", r"Visit the (.+?) Store", r"Brand:\s*(.+)")
 MAX_TEXT = 12_000
 _MARKS = dict.fromkeys(map(ord, "\u200e\u200f"), None)

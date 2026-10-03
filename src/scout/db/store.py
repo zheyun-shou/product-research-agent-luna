@@ -61,8 +61,12 @@ def save_record(conn: psycopg.Connection, rec: ProductRecord, category: str) -> 
     return SavedIds(product_id, listing_id, variant_id)
 
 
+# Sellers without a brand use these names. Two listings with such a brand are not the same product.
+GENERIC_BRANDS = {"generic", "generisk", "unbranded", "no brand", "okänt märke", "ingen märkning"}
+
+
 def _find_product(conn: psycopg.Connection, rec: ProductRecord, category: str) -> int | None:
-    if not (rec.brand and rec.model):
+    if not (rec.brand and rec.model) or rec.brand.strip().lower() in GENERIC_BRANDS:
         return None
     row = conn.execute(
         """SELECT id FROM products

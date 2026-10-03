@@ -42,3 +42,13 @@ def test_no_sleep_after_a_long_gap():
     clock.now += 30.0
     t.wait()
     assert clock.slept == []
+
+
+def test_gap_starts_after_the_page_has_loaded():
+    clock = FakeClock()
+    t = timer(clock)
+    t.wait()
+    clock.now += 5.0  # the page load takes 5 seconds
+    t.mark()
+    t.wait()
+    assert clock.slept == [pytest.approx(6.5)]  # the full delay, not 6.5 minus the load time

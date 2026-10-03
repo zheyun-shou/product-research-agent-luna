@@ -29,6 +29,10 @@ class PoliteTimer:
                 self._sleep(remaining)
         self._last = self._clock()
 
+    def mark(self) -> None:
+        """Call after a page has loaded, so the next gap starts from the end of the load."""
+        self._last = self._clock()
+
 
 class BrowserSession:
     """Opens the product-scout Chrome profile in a visible window.
@@ -44,19 +48,26 @@ class BrowserSession:
     def __enter__(self) -> "BrowserSession":
         self.profile_dir.mkdir(parents=True, exist_ok=True)
         self._pw = sync_playwright().start()
-        self._ctx = self._pw.chromium.launch_persistent_context(
-            str(self.profile_dir),
-            channel="chrome",
-            headless=False,
-            locale="sv-SE",
-            viewport={"width": 1366, "height": 900},
-        )
+        try:
+            self._ctx = self._pw.chromium.launch_persistent_context(
+                str(self.profile_dir),
+                channel="chrome",
+                headless=False,
+                locale="sv-SE",
+                viewport={"width": 1366, "height": 900},
+            )
+        except Exception:
+            # Often the profile is locked because another scout window still uses it.
+            self._pw.stop()
+            raise
         self._page = self._ctx.pages[0] if self._ctx.pages else self._ctx.new_page()
         return self
 
     def __exit__(self, *exc) -> None:
-        self._ctx.close()
-        self._pw.stop()
+        try:
+            self._ctx.close()
+        finally:
+            self._pw.stop()
 
     def fetch(self, url: str) -> RawPage:
         self.timer.wait()
@@ -67,6 +78,8 @@ class BrowserSession:
             status, html = (response.status if response else 0), self._page.content()
         except PlaywrightError:
             status, html = 0, ""
+        finally:
+            self.timer.mark()
         return RawPage(
             url=url,
             final_url=self._page.url,

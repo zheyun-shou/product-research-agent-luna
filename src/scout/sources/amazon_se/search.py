@@ -20,7 +20,6 @@ def parse_search_page(html: str) -> list[Candidate]:
         seen.add(asin)
         price, currency = _price(card)
         rating_el = card.select_one(".a-icon-alt")
-        count_el = card.select_one('a[href*="customerReviews"]')
         found.append(
             Candidate(
                 source=SOURCE,
@@ -30,7 +29,7 @@ def parse_search_page(html: str) -> list[Candidate]:
                 price=price,
                 currency=currency,
                 rating=parse_rating(rating_el.get_text()) if rating_el else None,
-                review_count=parse_count(count_el.get_text(" ", strip=True)) if count_el else None,
+                review_count=_review_count(card),
                 sponsored=_is_sponsored(card),
             )
         )
@@ -50,6 +49,15 @@ def _price(card: Tag):
         if off and off.get_text(strip=True):
             return parse_price(off.get_text())
     return None, None
+
+
+def _review_count(card: Tag) -> int | None:
+    # The star rating can link to the reviews too. Its text is a rating, not a count.
+    for link in card.select('a[href*="customerReviews"]'):
+        text = link.get_text(" ", strip=True)
+        if text and parse_rating(text) is None:
+            return parse_count(text)
+    return None
 
 
 def _is_sponsored(card: Tag) -> bool:

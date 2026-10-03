@@ -55,3 +55,17 @@ def test_brand_from_store_link():
 def test_page_without_asin_is_refused():
     with pytest.raises(ValueError):
         parse_product_page("<html></html>", "https://www.amazon.se/gp/help", NOW)
+
+
+@pytest.mark.parametrize("text", ["Finns inte i lager.", "Ej i lager"])
+def test_negative_stock_phrases_are_out_of_stock(text):
+    html = f'<span id="productTitle">X</span><div id="availability"><span>{text}</span></div>'
+    assert parse_product_page(html, "https://www.amazon.se/dp/B0AAAAAAA5", NOW).in_stock is False
+
+
+def test_marketing_name_is_not_the_model():
+    html = (
+        '<span id="productTitle">X</span><table id="productDetails_techSpec_section_1">'
+        "<tr><th>Modellnamn</th><td>Rökelse</td></tr></table>"
+    )
+    assert parse_product_page(html, "https://www.amazon.se/dp/B0AAAAAAA6", NOW).model is None

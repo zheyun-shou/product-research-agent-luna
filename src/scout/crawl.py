@@ -27,15 +27,27 @@ class CrawlReport:
     notes: list[str] = field(default_factory=list)
 
 
-def fetch_checked(adapter, conn: psycopg.Connection, url: str, on_problem: OnProblem) -> RawPage | None:
-    for _ in range(MAX_ATTEMPTS):
+def fetch_checked(
+    adapter, conn: psycopg.Connection, url: str, on_problem: OnProblem, notes: list[str] | None = None,
+) -> RawPage | None:
+    """Fetch and check one page. Ask the user to fix a problem, then try the same URL again.
+
+    The last attempt does not ask, because no fetch would follow the answer.
+    """
+    for attempt in range(1, MAX_ATTEMPTS + 1):
         page = adapter.fetch(url)
         status = adapter.check_page(page)
         log_fetch(conn, adapter.name, url, "ok" if status.ok else status.problem,
                   page.status, page.duration_ms, status.detail)
         if status.ok:
             return page
-        if status.problem == "gone" or not on_problem(status, url):
+        if status.problem == "gone":
+            return None
+        if attempt == MAX_ATTEMPTS:
+            if notes is not None:
+                notes.append(f"gave up after {MAX_ATTEMPTS} attempts ({status.problem}) at {url}")
+            return None
+        if not on_problem(status, url):
             return None
     return None
 
@@ -57,8 +69,10 @@ def crawl(
     report = CrawlReport()
     candidates, seen = [], set()
     for number in range(1, max_pages + 1):
-        page = fetch_checked(adapter, conn, adapter.search_url(query, number), on_problem)
+        url = adapter.search_url(query, number)
+        page = fetch_checked(adapter, conn, url, on_problem, report.notes)
         if page is None:
+            report.notes.append(f"search stopped at page {number}: {url} did not load")
             break
         report.search_pages += 1
         found, has_next = adapter.parse_search(page)
@@ -74,7 +88,7 @@ def crawl(
         report.over_budget = len(candidates) - len(within)
         candidates = within
     for cand in candidates[:max_details]:
-        page = fetch_checked(adapter, conn, cand.url, on_problem)
+        page = fetch_checked(adapter, conn, cand.url, on_problem, report.notes)
         if page is None:
             report.skipped.append(cand.url)
             continue

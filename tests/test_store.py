@@ -73,3 +73,9 @@ def test_log_fetch(db):
     log_fetch(db, "amazon_se", "https://www.amazon.se/dp/B0AAAAAAA1", "captcha", 503, 1200, "amazon.se shows a captcha")
     row = db.execute("SELECT * FROM fetch_log").fetchone()
     assert (row["status"], row["http_status"], row["duration_ms"]) == ("captcha", 503, 1200)
+
+
+def test_generic_brand_does_not_join_products(db):
+    a = record(asin="B0AAAAAAA1").model_copy(update={"brand": "Generic", "model": "1"})
+    b = record(asin="B0AAAAAAA8").model_copy(update={"brand": "generic", "model": "1"})
+    assert save_record(db, a, "incense").product_id != save_record(db, b, "incense").product_id
