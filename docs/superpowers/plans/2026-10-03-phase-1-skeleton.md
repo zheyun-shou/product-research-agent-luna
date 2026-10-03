@@ -2395,7 +2395,7 @@ Open three of the products in a normal browser. Compare the price, the stock and
 
 **Stop here and do a review with Zheyun.** Go to Task 10 only when she agrees that the fetch and the storage work on real pages.
 
-Result on 2026-10-03: 11 pages fetched, all `ok`, no captcha. 10 listings saved, no missing fields. The three FOHERE BC-90 colours became one product. Zheyun checked three products in a normal browser. Price, stock and rating agreed. Finding: 4 of the 10 listings were accessories (water filters, a freshness device), because the sponsored cards come first. The picks must filter out accessories.
+Result on 2026-10-03: 11 pages fetched, all `ok`, no captcha. 10 listings saved, no missing fields. The three FOHERE BC-90 colours became one product. Zheyun checked three products in a normal browser. Price, stock and rating agreed. Finding: 4 of the 10 listings were not fridges (water filters, a freshness device), because the sponsored cards come first. The search also returns whiteboards and other items. The picks must keep only items of the target category and drop all other items, not only accessories.
 
 ---
 
