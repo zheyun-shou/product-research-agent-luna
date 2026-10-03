@@ -24,12 +24,13 @@ The system makes the list of candidates smaller. The user makes the final select
 - Source: amazon.se only, for products and for their shop reviews. Search terms are in Swedish. Prices are in SEK.
 - The budget is optional. If the user gives a budget, it is a hard condition. Price is not a ranking factor. The agent sorts by price only when the user asks. Then it uses the sort function of the site.
 - Text retrieval is hybrid. It uses vector search and BM25.
+- Professional reviews, simple version (decided 2026-10-03). After the shop reviews in build phase 3, the agent searches one or two public professional review sites (for example Råd & Rön) by the model numbers of the candidates. The review text uses the same chunks and retrieval as the shop reviews. The picks show the source type of each claim.
 
 ### Not in v1
 
 - Taobao. Taobao is the first source after v1. It adds login checks, JSON capture, Taobao shop reviews, the match of one product across Amazon and Taobao, and budgets in a second currency.
 - Other product sources: JD and Swedish shops (Prisjakt, Elgiganten, Tradera, EPREL and others). The adapter interface is ready for them.
-- Review sources outside the shops: Zhihu, Reddit, Flashback and professional review sites (Råd & Rön, Rtings, SweClockers and others). These sources also bring the category-level review search (phase 2b below).
+- Other review sources: community sites (Zhihu, Reddit, Flashback) and more professional review sites (Rtings, SweClockers and others). These sources also bring the category-level review search (phase 2b below).
 - Xiaohongshu. The posts contain too many advertisements. We cannot trust them as reviews.
 - Video reviews (YouTube, Bilibili). These come later. The difficult part is to get the transcripts. Cost is not the problem.
 - Currency conversion, shipping, duty or moms by default. The system calculates these only when the user tells it how.
@@ -58,7 +59,7 @@ User: I want a fridge, my requirements are ...
    c. Fetch the detail pages in Threshold Algorithm order over the sorted lists (see 4.3). Store them (see 4.4).
       Stop at 50 detail pages, or when no unread candidate can come into the top 10.
    d. Score the fetched candidates one time with the phase 3 scoring. For the top 10, fetch their shop reviews,
-      up to 30 pages.
+      up to 30 pages. Also search the selected professional review sites by the model numbers of the top 10.
    Check each fetched page for a login problem and for a captcha.
    ↓
 3. Recommend
@@ -100,7 +101,7 @@ questions_for_user:
 complaint_types: [noise, frost, door seal, compressor life, after-sales service]
 sources:
   products: [amazon_se]
-  reviews: [amazon_se_reviews]   # Taobao and external sources come after v1
+  reviews: [amazon_se_reviews, professional_reviews]   # community sources and Taobao come after v1
 ```
 
 - Attribute types: number with unit, enum, boolean, text.
@@ -191,7 +192,7 @@ Attributes that are not in the profile go in `attributes.extra`.
 
 Review fields: source URL, platform, author type (buyer, blogger, professional reviewer), publish date, matched product or "unmatched", original text, language, fetch time.
 
-In v1 all reviews are amazon.se shop reviews. Each review is already attached to a listing, so no matching is necessary. After v1, external sources bring community reviews. These reviews often do not give the model number. The agent must match them to a specific product.
+In v1, shop reviews are already attached to a listing, so no matching is necessary. Professional reviews in v1 are found by model number, so they match on the model number (step 1 below). If a test covers a different model of the same series, the agent files it under the brand and does not attach it to the product. After v1, external sources bring community reviews. These reviews often do not give the model number. The agent must match them to a specific product.
 1. Exact match on the model number, if there is one
 2. If not, a fuzzy match on brand, category and key specifications
 3. Last, the LLM decides if it is the same product
@@ -351,7 +352,7 @@ The project is too large for one implementation plan. Thus each phase has its ow
 
 1. **Skeleton.** Project structure, Postgres + pgvector, tables, the fridge preset profile, the LLM layer with the `chat` and `worker` roles on a free Gemini key, the dedicated browser profile, the amazon.se adapter with selectors and the captcha check, structured extraction, command-line picks, and the labelled set and evaluation for price extraction on amazon.se.
 2. **Conversation.** The LangGraph conversation loop, checkpoints, clarifying questions, follow-up tools, the calculation tool, Langfuse.
-3. **Text and retrieval.** Chunks, bge-m3 embeddings, BM25, RRF, amazon.se shop reviews with the login check, on-demand extraction, pros and complaints in the picks.
+3. **Text and retrieval.** Chunks, bge-m3 embeddings, BM25, RRF, amazon.se shop reviews with the login check, on-demand extraction, pros and complaints in the picks. At the end, professional reviews by model number from one or two public review sites (simple version).
 4. **Images and more categories.** Image reading with PaddleOCR-VL and the worker as the fallback, the other three preset categories, profile generation for new categories.
 5. **Search strategy.** Predicate pushdown, Threshold Algorithm, multi-stage ranking, page limits.
 6. **Full evaluation.** All metrics, the retrieval comparison, the model comparison.
@@ -363,6 +364,7 @@ Shop reviews (phase 2d in section 3) come in build phase 3. Taobao, external sou
 
 - The exact Gemini models and quotas. We check them when we make the key.
 - Which sort orders amazon.se has (build phase 5).
+- Which professional review sites to use, and their terms checks. Decide before build phase 3.
 - Keep the filter fields twice in `chunks`, or join with `reviews` and `products` during the query.
 - Langfuse cloud, or Langfuse in Docker on our computer.
 - CLAUDE.md still describes the old scope (incense only). We must update it to agree with this document.
