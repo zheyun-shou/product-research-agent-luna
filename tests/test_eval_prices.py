@@ -77,3 +77,16 @@ def test_evaluate_prices_counts_matches_and_lists_failures(tmp_path):
     assert (summary["pages"], summary["price_correct"], summary["stock_correct"]) == (3, 2, 3)
     assert summary["price_accuracy"] == pytest.approx(0.667, abs=0.001)
     assert len(result.failures) == 1 and "10990" in result.failures[0]
+
+
+def test_template_rows_follow_the_explorer_name_order(tmp_path):
+    product = tmp_path / "snapshots" / "amazon_se" / "product"
+    for asin in ["B01N3LBO4J", "B0BR1TGTYP", "B083V5R42B"]:
+        (product / asin).mkdir(parents=True)
+        (product / asin / "20261003T101500.html").write_text("x", encoding="utf-8")
+        (product / asin / "20261003T101500.png").write_bytes(b"png")
+    out = tmp_path / "labels.csv"
+    write_template(tmp_path / "snapshots", out)
+    rows = list(csv.DictReader(out.open(encoding="utf-8")))
+    # Windows Explorer compares digit runs as numbers: 0 < 1 < 83.
+    assert [r["asin"] for r in rows] == ["B0BR1TGTYP", "B01N3LBO4J", "B083V5R42B"]

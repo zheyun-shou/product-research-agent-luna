@@ -1,5 +1,6 @@
 """Price and stock extraction accuracy on hand-labelled amazon.se snapshots."""
 import csv
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -9,6 +10,12 @@ from typing import Callable
 from scout.sources.amazon_se.product import parse_product_page
 from scout.sources.amazon_se.urls import product_url
 from scout.sources.base import ProductRecord
+
+
+def explorer_order(path: Path) -> list:
+    """Sort key like Windows Explorer: digit runs compare as numbers, letters ignore case."""
+    return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", path.name)]
+
 
 COLUMNS = ["asin", "snapshot", "screenshot", "true_price", "true_currency", "true_in_stock", "note"]
 
@@ -47,7 +54,7 @@ def write_template(snapshot_dir: Path, out: Path) -> int:
     if out.exists():
         raise FileExistsError(f"{out} exists. Labels are never overwritten; pick another file name.")
     rows = []
-    for folder in sorted((snapshot_dir / "amazon_se" / "product").iterdir()):
+    for folder in sorted((snapshot_dir / "amazon_se" / "product").iterdir(), key=explorer_order):
         # Only snapshots with a screenshot can be labelled. Later rechecks save HTML without one.
         pages = sorted(p for p in folder.glob("*.html") if p.with_suffix(".png").exists())
         if not pages:
