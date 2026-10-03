@@ -3144,7 +3144,7 @@ class LLM:
 Run: `python -m pytest tests/test_llm.py -v`
 Expected: all passed.
 
-- [x] **Step 6: Add `llm-ping` and check the real key**
+- [ ] **Step 6: Add `llm-ping` and check the real key**
 
 Add to `src/scout/cli.py`:
 
