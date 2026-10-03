@@ -90,3 +90,10 @@ def test_template_rows_follow_the_explorer_name_order(tmp_path):
     rows = list(csv.DictReader(out.open(encoding="utf-8")))
     # Windows Explorer compares digit runs as numbers: 0 < 1 < 83.
     assert [r["asin"] for r in rows] == ["B0BR1TGTYP", "B01N3LBO4J", "B083V5R42B"]
+
+
+def test_kr_label_means_sek(tmp_path):
+    path = tmp_path / "labels.csv"
+    write_labels(path, [{"asin": "A1", "snapshot": "a.html", "true_price": "549.99", "true_currency": "kr",
+                         "true_in_stock": "yes"}])
+    assert read_labels(path)[0].true_currency == "SEK"

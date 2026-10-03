@@ -82,10 +82,16 @@ def read_labels(path: Path) -> list[PriceLabel]:
                 asin=row["asin"],
                 snapshot=Path(row["snapshot"]),
                 true_price=None if price in ("", "none") else Decimal(price),
-                true_currency=(row.get("true_currency") or "").strip() or None,
+                true_currency=_currency(row.get("true_currency") or ""),
                 true_in_stock={"yes": True, "no": False}.get(stock),
             ))
     return labels
+
+
+def _currency(text: str) -> str | None:
+    # On amazon.se the screenshot shows "kr". The parser stores the ISO code.
+    text = text.strip()
+    return "SEK" if text.lower() == "kr" else text.upper() or None
 
 
 def extract_from_snapshot(label: PriceLabel) -> ProductRecord:

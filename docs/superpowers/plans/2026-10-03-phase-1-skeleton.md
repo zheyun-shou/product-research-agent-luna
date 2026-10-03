@@ -2663,7 +2663,7 @@ def eval_prices(labels: Path = Path("data/eval/price_labels.csv")) -> None:
 
 Create `eval/results/.gitkeep` (empty).
 
-- [ ] **Step 6: Build the labelled set (Zheyun)**
+- [x] **Step 6: Build the labelled set (Zheyun)**
 
 Crawl about 25 fridge pages with screenshots. Use a few different searches, so that the set has variety (discounted, out of stock, several variants):
 
@@ -2682,10 +2682,16 @@ Open `data/eval/price_labels.csv` in Excel or a text editor. For each row, open 
 
 Use only the screenshot for the labels. Do not look at the output of the parser.
 
-- [ ] **Step 7: Run the evaluation**
+- [x] **Step 7: Run the evaluation**
 
 Run: `scout eval-prices`
 Expected: a JSON summary with real counts and accuracies, a list of wrong pages, and a results file under `eval/results/`. If a failure occurs on many pages, repair the selectors (with a new fixture case and test) and run again. Keep the two runs in `eval/results/`.
+
+Result on 2026-10-03 (`eval/results/prices-20261003-2320.json`): 26 pages, price 26 of 26, stock 25 of 25. Limits of this result:
+- Zheyun labelled 6 pages. Claude labelled 20 pages from the screenshots and marked them in the `note` column. Claude had seen the parser output for about 10 of these pages before it labelled them.
+- All 25 stock labels are "in stock". The set has no out-of-stock page, so it does not test that case.
+- One page (B0H4YNM2BL) shows a price range and no buy box. Its price label is `none` and its stock is not labelled. The parser said in stock for this page, which is doubtful.
+- One category, one day, 26 pages. Do not use this number in the CV until a larger set with out-of-stock pages exists and Zheyun confirms it.
 
 - [ ] **Step 8: Commit**
 
