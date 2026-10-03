@@ -8,9 +8,9 @@ providers:
 roles:
   chat:
     provider: gemini
-    model: gemini-2.5-flash
+    model: gemini-3.8-flash
     rpm: 10
   worker:
     provider: gemini
-    model: gemini-2.5-flash-lite
+    model: gemini-3.5-flash-lite
     rpm: 15
