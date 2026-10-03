@@ -1,12 +1,12 @@
 # Phase 1 Skeleton Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **How to use this plan.** Do the tasks in order. Each step has a checkbox (`- [ ]`). Mark the step when it is done.
 
-**Goal:** Fetch fridge listings from amazon.se in a dedicated Chrome profile, store them in Postgres, measure price extraction on a hand-labelled set, then add the two-role LLM layer and print top picks on the command line.
+**Goal:** Fetch fridge listings from amazon.se in a dedicated Chrome profile and store them in Postgres. Measure the price extraction on a set of pages that are labelled by hand. Then add the LLM layer with two roles, and show the top picks in the command line.
 
-**Architecture:** Fetching and storing come first and are tested on real pages before any LLM work (Tasks 1 to 10, ending with a checkpoint and the price evaluation). A Playwright session drives a dedicated Chrome profile one page at a time. Hand-written selectors read search cards and product pages into `ProductRecord`s, which a small repository layer writes to `products`, `listings`, `variants` and `price_history`. After the checkpoint, a provider-neutral LLM layer (roles `chat` and `worker`, first on a free Gemini key) fills fields the selectors miss, with every value's raw text verified by Python, and a `picks` command ranks, rechecks and writes the top 5.
+**Architecture:** Tasks 1 to 10 fetch and store data, with no LLM. We test them on real pages. They end with a checkpoint and the price evaluation. A Playwright session controls a dedicated Chrome profile and opens one page at a time. Hand-written selectors read the search cards and the product pages into `ProductRecord`s. A small repository layer writes these records to `products`, `listings`, `variants` and `price_history`. After the checkpoint, an LLM layer that is not tied to one provider fills the fields that the selectors do not find. The layer has the roles `chat` and `worker` and starts on a free Gemini key. Python checks the raw text of each value. Then a `picks` command ranks the products, checks them again and writes the top 5.
 
-**Tech Stack:** Python 3.10 (conda env `product-scout`), uv, Playwright with installed Chrome, BeautifulSoup + lxml, psycopg 3, Postgres 17 with pgvector in Docker, pydantic 2, the `openai` package against Gemini's OpenAI-compatible endpoint, Typer, pytest.
+**Tech Stack:** Python 3.10 (conda env `product-scout`), uv, Playwright with the installed Chrome, BeautifulSoup + lxml, psycopg 3, Postgres 17 with pgvector in Docker, pydantic 2, the `openai` package with the OpenAI-compatible endpoint of Gemini, Typer, pytest.
 
 **Spec:** `docs/superpowers/specs/2026-10-02-product-scout-design.md`
 
@@ -14,26 +14,26 @@
 
 - Python 3.10. Do not use 3.11+ features (`tomllib`, `StrEnum`, `typing.Self`, `ExceptionGroup`).
 - pgvector 0.8 or later.
-- v1 source is amazon.se only. Swedish search terms, prices in SEK. No currency conversion anywhere.
-- Price is a budget filter, never a ranking factor.
+- v1 uses only amazon.se. Search terms are in Swedish and prices are in SEK. Do not convert currencies.
+- Price is a budget filter. It is never a ranking factor.
 - Prices come only from structured data or HTML, never from images.
-- Every LLM-extracted value carries `raw` text, and Python checks that the text appears in the source. Values that fail are dropped and stay missing.
+- Each value that the LLM extracts includes `raw` text. Python checks that this text is in the source. If the check fails, remove the value. The field stays missing.
 - The LLM never writes SQL.
-- The user logs in and solves captchas. The program never types passwords, never bypasses captchas, and uses no stealth or anti-detection plugins.
-- Fetch one page at a time, 4 to 9 seconds apart.
-- Fetched pages, snapshots, labels, `.env` and `browser-profile/` stay out of Git (`.gitignore` already lists `.env`, `data/`, `snapshots/`, `browser-profile/`). Test fixtures are small hand-written HTML with made-up text, not copies of Amazon pages.
-- Free Gemini tier only. Never enable billing.
-- All project documents in English.
-- No copying or forking code from other repositories.
-- Run every command with the conda env active: `conda activate product-scout`. Tests run with `python -m pytest`.
+- The user logs in and solves captchas. The program never types passwords and never bypasses captchas. It uses no stealth or anti-detection plugins.
+- Fetch one page at a time. Wait 4 to 9 seconds between pages.
+- Fetched pages, snapshots, labels, `.env` and `browser-profile/` stay out of Git. (`.gitignore` already lists `.env`, `data/`, `snapshots/`, `browser-profile/`.) Test fixtures are small HTML files that we write by hand with invented text. They are not copies of Amazon pages.
+- Use only the free Gemini tier. Never enable billing.
+- Write all project documents in English, at about 80% ASD-STE100 (short sentences, active voice, simple words).
+- Do not copy or fork code from other repositories.
+- Activate the conda env before each command (`conda activate product-scout`). Run the tests with `python -m pytest`.
 
 ## Review Focus
 
-1. Swedish number formats with no-break and narrow no-break spaces (`8\u00a0990,00\u00a0kr`, `1\u202f234 betyg`) must read as 8990.00 SEK and 1234. Test in Task 3.
-2. A discounted item shows its struck-through list price before the real price. The stored price must be the real one. Tests in Task 6 (search cards) and Task 7 (product page).
-3. An unavailable product has no price and says "Inte tillgänglig för närvarande", while the same text block later contains "i lager". It must be stored as out of stock with a price history row, and never shown as a pick. Tests in Task 7, Task 8 and Task 14.
-4. A captcha appears in the middle of a crawl. The crawl must pause, let the user solve it, then retry the same URL; "skip" must move on without losing the rest. Test in Task 9.
-5. The worker model returns a value whose raw text is not on the page. The value must be dropped and the field stay missing. Test in Task 13.
+1. Swedish numbers use no-break spaces and narrow no-break spaces (`8\u00a0990,00\u00a0kr`, `1\u202f234 betyg`). The parser must read them as 8990.00 SEK and 1234. Test in Task 3.
+2. A discounted item shows the old list price with a line through it, before the real price. The stored price must be the real price. Tests in Task 6 (search cards) and Task 7 (product page).
+3. An unavailable product has no price and shows "Inte tillgänglig för närvarande". Later, the same text block contains "i lager". The program must store the product as out of stock, with a price history row. It must never show the product as a pick. Tests in Task 7, Task 8 and Task 14.
+4. A captcha appears during a crawl. The crawl must pause and let the user solve it. Then it must try the same URL again. "Skip" must go to the next item and keep the other results. Test in Task 9.
+5. The worker model gives a value, but its raw text is not on the page. The program must remove the value, and the field must stay missing. Test in Task 13.
 
 ---
 
@@ -148,7 +148,7 @@ markers = ["db: needs the Postgres container (docker compose up -d)"]
 - [ ] **Step 2: Install**
 
 Run: `uv pip install -e ".[dev]"`
-Expected: installs into the active conda env (uv reports the env's python path). No browser download is needed because Playwright will use the installed Chrome.
+Expected: uv installs the packages into the active conda env (uv shows the python path of the env). You do not need a browser download, because Playwright uses the installed Chrome.
 
 - [ ] **Step 3: Write the failing tests**
 
@@ -277,7 +277,7 @@ Expected: 3 passed.
 ```markdown
 # product-scout
 
-A conversational agent that helps pick products in any category: Zheyun's own purchases, and incense selection for a possible shop in Sweden. It is also a CV project for AI Engineer roles, so it must be real, measured and deployable.
+product-scout is a conversational agent. It helps to select products in any category. Two uses are the purchases of Zheyun and the selection of incense for a possible shop in Sweden. It is also a CV project for AI Engineer roles. Thus it must be real, measured and deployable.
 
 - Design: `docs/superpowers/specs/2026-10-02-product-scout-design.md`
 - Plans: `docs/superpowers/plans/`
@@ -285,27 +285,27 @@ A conversational agent that helps pick products in any category: Zheyun's own pu
 
 ## v1 in short
 
-- Source is amazon.se only (Swedish, SEK), fetched in a dedicated Chrome profile at low volume. Taobao comes first after v1.
-- The agent clarifies needs, searches and stores, gives top picks (default 5) and answers follow-ups.
-- Price is a budget filter, never a ranking factor. No default conversion, shipping or duty; Python calculates only what the user specifies.
-- The LLM layer is provider-neutral with two roles, `chat` (strong) and `worker` (light, can read images). First setup is a free Gemini key, never with billing.
-- Every extracted value carries raw text that Python finds in the source. Every claim in the picks is checked by Python against the records.
+- The only source is amazon.se (Swedish, SEK). A dedicated Chrome profile fetches it at low volume. Taobao is the first source after v1.
+- The agent clarifies the needs, searches and stores, shows the top picks (default 5) and answers follow-up questions.
+- Price is a budget filter. It is never a ranking factor. There is no default conversion, shipping or duty. Python calculates only what the user specifies.
+- The LLM layer is not tied to one provider. It has two roles, `chat` (strong) and `worker` (light, reads images). The first setup uses a free Gemini key. Never enable billing.
+- Each extracted value includes raw text, and Python finds this text in the source. Python checks each claim in the picks against the records.
 
 ## Environment
 
 - conda env `product-scout` (Python 3.10). Install with `uv pip install -e ".[dev]"`.
-- Postgres + pgvector in Docker: `docker compose up -d`.
-- Tests: `python -m pytest`. Tests marked `db` need the container.
+- Postgres + pgvector in Docker. Start it with `docker compose up -d`.
+- Run the tests with `python -m pytest`. Tests with the mark `db` need the container.
 
 ## Rules
 
 - Write plainly. No em dashes or colons in anything Zheyun will send or sign.
-- All project documents in English.
-- Report real numbers only. Nothing goes into her CV until she confirms it.
+- Write all project documents in English, at about 80% ASD-STE100 (short sentences, active voice, simple words). Chat with Zheyun in Chinese.
+- Report only real numbers. Nothing goes into her CV until she confirms it.
 - The user logs in and solves captchas herself. The program never types passwords and never bypasses captchas.
 - Fetched pages, snapshots, labels and the browser profile stay out of Git.
-- No forking or copying other people's code.
-- The repo stays private until she says otherwise.
+- Do not fork or copy code from other people.
+- The repository stays private until she says otherwise.
 ```
 
 - [ ] **Step 8: Commit**
@@ -357,7 +357,7 @@ CREATE DATABASE product_scout_test;
 - [ ] **Step 2: Start the container**
 
 Run: `docker compose up -d` then `docker compose ps`
-Expected: service `db` is running and port 5433 is mapped. (Docker Desktop must be running.)
+Expected: the service `db` runs and port 5433 is mapped. (Docker Desktop must run.)
 
 - [ ] **Step 3: Write the failing tests**
 
@@ -1225,16 +1225,16 @@ def snap(urls: List[str], screenshot: bool = True) -> None:
 - [ ] **Step 6: Manual check, set up the profile (Zheyun)**
 
 Run: `scout browser`
-Expected: a new Chrome window opens on amazon.se, with no bookmarks or logins from the everyday profile.
-In that window: on the cookie banner choose to decline non-essential cookies ("Avvisa"); set the delivery address to your Swedish postcode, so prices and stock match Sweden. Then press Enter in the terminal. The window closes.
+Expected: a new Chrome window opens on amazon.se. It has no bookmarks or logins from your usual profile.
+In that window, decline the non-essential cookies on the cookie banner ("Avvisa"). Set the delivery address to your Swedish postcode, so that prices and stock are correct for Sweden. Then push Enter in the terminal. The window closes.
 
 - [ ] **Step 7: Manual check, capture samples (Zheyun)**
 
-Run `scout browser "https://www.amazon.se/s?k=kylsk%C3%A5p"`, copy the links of three product pages from the results (pick one discounted product with a struck-through price and, if you see one, one that is out of stock), press Enter. Then run:
+Run `scout browser "https://www.amazon.se/s?k=kylsk%C3%A5p"`. From the results, copy the links of three product pages. Select one discounted product with an old price that has a line through it. If you see a product that is out of stock, select it too. Push Enter. Then run:
 
 `scout snap "https://www.amazon.se/s?k=kylsk%C3%A5p" <product link 1> <product link 2> <product link 3>`
 
-Expected: four lines starting with `ok`, each with a path under `snapshots/amazon_se/`. Open the `.png` files to confirm they show the real pages, not a captcha. If a line says `captcha`, solve it with `scout browser` and run `snap` again.
+Expected: four lines that start with `ok`, each with a path under `snapshots/amazon_se/`. Open the `.png` files. Make sure that they show the real pages and not a captcha. If a line shows `captcha`, solve the captcha with `scout browser` and run `snap` again.
 
 - [ ] **Step 8: Commit**
 
@@ -1257,7 +1257,7 @@ git commit -m "Dedicated Chrome profile session with polite timing; browser and 
 
 - [ ] **Step 1: Write the fixture**
 
-`tests/fixtures/amazon_se/search_basic.html` (hand-written structure, made-up products):
+`tests/fixtures/amazon_se/search_basic.html` (structure written by hand, invented products):
 
 ```html
 <html><body>
@@ -1433,9 +1433,9 @@ def parse_search_cmd(path: Path) -> None:
 ```
 
 Run: `scout parse-search <the search snapshot .html from Task 5>`
-Expected: one JSON line per result card on the screenshot, with matching titles, prices, ratings and review counts, and `next page: True`.
+Expected: one JSON line for each result card on the screenshot. The titles, prices, ratings and review counts are the same as on the screenshot. The last line is `next page: True`.
 
-If a field is wrong or empty: open the snapshot in a text editor, find that card's element, change the selector in `search.py`, add the same structure to `search_basic.html` written by hand with made-up text, add a test for it, and rerun until both the tests and the real snapshot agree. Write down in the commit message which selectors changed.
+If a field is wrong or empty, open the snapshot in a text editor and find the element of that card. Change the selector in `search.py`. Add the same structure to `search_basic.html`, written by hand with invented text. Add a test for it. Run again until the tests and the real snapshot agree. In the commit message, write which selectors changed.
 
 - [ ] **Step 7: Commit**
 
@@ -1454,7 +1454,7 @@ git commit -m "amazon.se search result parser, checked against a real snapshot"
 
 **Interfaces:**
 - Consumes: `ProductRecord` (Task 3), number parsers (Task 3), `SOURCE`, `product_url`, `asin_from_url` (Task 4).
-- Produces: `parse_product_page(html: str, url: str, fetched_at: datetime) -> ProductRecord`. Raises `ValueError` when no ASIN is found in the URL or page. Fills `text` with a cleaned page text (title, byline, price block, availability, `key: value` spec lines, bullets, description; at most 12,000 characters).
+- Produces: `parse_product_page(html: str, url: str, fetched_at: datetime) -> ProductRecord`. Raises `ValueError` if the URL and the page have no ASIN. Fills `text` with the cleaned page text (title, byline, price block, availability, `key: value` spec lines, bullets, description; 12,000 characters maximum).
 
 - [ ] **Step 1: Write the fixtures**
 
@@ -1774,9 +1774,9 @@ def parse_product_cmd(path: Path) -> None:
 ```
 
 Run: `scout parse-product <each product snapshot .html from Task 5>`
-Expected: title, price, rating, review count and stock match the screenshot next to it. For the discounted product the price is the real price, not the struck-through one.
+Expected: the title, price, rating, review count and stock are the same as on the screenshot next to the file. For the discounted product, the price is the real price, not the old price with the line through it.
 
-If a field is wrong: find the element in the snapshot, fix the selector, add the structure by hand with made-up text to a fixture, add a test, rerun. Write down the changed selectors in the commit message.
+If a field is wrong, find the element in the snapshot and repair the selector. Add the structure to a fixture, written by hand with invented text. Add a test and run again. In the commit message, write the selectors that changed.
 
 - [ ] **Step 7: Commit**
 
@@ -1796,7 +1796,7 @@ git commit -m "amazon.se product page parser with specs, stock and page text, ch
 - Consumes: `ProductRecord` (Task 3), `db` fixture (Task 2), `parse_product_page` (Task 7) for test data.
 - Produces: `SavedIds(product_id: int, listing_id: int, variant_id: int)`, `save_record(conn, rec: ProductRecord, category: str) -> SavedIds`, `log_fetch(conn, source: str, url: str, status: str, http_status: int | None, duration_ms: int | None, note: str = "") -> None`.
 
-Matching rule: same `(source, source_id)` updates the existing listing; otherwise a product with the same category, brand and model (case-insensitive, both known) is reused; otherwise a new product is created. Phase 1 stores one variant per listing, keyed by the ASIN.
+Matching rule. If `(source, source_id)` is the same, update the existing listing. If not, use a product with the same category, brand and model (case-insensitive, both known). If there is no such product, make a new product. Phase 1 stores one variant for each listing, with the ASIN as its key.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -2149,7 +2149,7 @@ def test_adapter_without_terms_check_is_refused(db, tmp_path):
         crawl(db, adapter, "fridge", "kylskåp", on_problem=never_called)
 ```
 
-Also create an empty `tests/__init__.py` so `from tests.fakes import FakeBrowser` works.
+Also make an empty `tests/__init__.py`, so that `from tests.fakes import FakeBrowser` works.
 
 - [ ] **Step 3: Run the tests to see them fail**
 
@@ -2382,7 +2382,7 @@ git commit -m "amazon.se adapter and crawl with captcha pause, budget filter and
 - [ ] **Step 9: CHECKPOINT, real crawl (Zheyun and Claude together)**
 
 Run: `scout db-init` then `scout crawl fridge "kylskåp" --pages 1 --details 10`
-Expected: the browser window loads one search page and up to 10 product pages, 4 to 9 seconds apart. The report shows `saved` close to 10 and lists which fields the selectors missed.
+Expected: the browser window opens one search page and a maximum of 10 product pages, 4 to 9 seconds apart. The report shows `saved` near 10 and lists the fields that the selectors did not find.
 
 Look at the stored data:
 
@@ -2391,9 +2391,9 @@ docker compose exec db psql -U scout product_scout -c "SELECT l.source_id, left(
 docker compose exec db psql -U scout product_scout -c "SELECT status, count(*) FROM fetch_log GROUP BY status;"
 ```
 
-Open three of the products in a normal browser and compare price, stock and rating. Any mismatch goes back to Task 6 or 7 (fix the selector, add a fixture case, rerun).
+Open three of the products in a normal browser. Compare the price, the stock and the rating. If a value is different, go back to Task 6 or 7. Repair the selector, add a fixture case and run again.
 
-**Stop here and review with Zheyun.** Continue to Task 10 only when she agrees that fetching and storing work on real pages.
+**Stop here and do a review with Zheyun.** Go to Task 10 only when she agrees that the fetch and the storage work on real pages.
 
 ---
 
@@ -2407,8 +2407,8 @@ Open three of the products in a normal browser and compare price, stock and rati
 - Consumes: `parse_product_page` (Task 7), `product_url` (Task 4), `ProductRecord` (Task 3).
 - Produces:
   - `PriceLabel(asin: str, snapshot: Path, true_price: Decimal | None, true_currency: str | None, true_in_stock: bool | None)`
-  - `write_template(snapshot_dir: Path, out: Path) -> int` (one row per product, using its latest snapshot that has a screenshot; refuses to overwrite)
-  - `read_labels(path: Path) -> list[PriceLabel]` (skips rows not labelled yet; `none` means the page shows no price)
+  - `write_template(snapshot_dir: Path, out: Path) -> int` (one row for each product, from its latest snapshot that has a screenshot; does not overwrite an existing file)
+  - `read_labels(path: Path) -> list[PriceLabel]` (skips rows without a label; `none` means that the page shows no price)
   - `extract_from_snapshot(label: PriceLabel) -> ProductRecord`
   - `evaluate_prices(labels, extract: Callable[[PriceLabel], ProductRecord]) -> PriceEvalResult` with `summary() -> dict` and `failures: list[str]`
 
@@ -2663,7 +2663,7 @@ Create `eval/results/.gitkeep` (empty).
 
 - [ ] **Step 6: Build the labelled set (Zheyun)**
 
-Crawl about 25 fridge pages with screenshots, spread over a few searches so the set has variety (discounted, out of stock, several variants):
+Crawl about 25 fridge pages with screenshots. Use a few different searches, so that the set has variety (discounted, out of stock, several variants):
 
 ```bash
 scout crawl fridge "kylskåp" --details 10 --screenshots
@@ -2672,18 +2672,18 @@ scout crawl fridge "minikylskåp" --details 5 --screenshots
 scout eval-template
 ```
 
-Open `data/eval/price_labels.csv` in Excel or a text editor. For each row open the `.png` screenshot and fill in:
-- `true_price`: the price you would pay, as `8990.00`, or `none` if no price is shown
+Open `data/eval/price_labels.csv` in Excel or a text editor. For each row, open the `.png` screenshot and fill in these columns:
+- `true_price`: the price that you pay, as `8990.00`. Write `none` if the page shows no price
 - `true_currency`: `SEK`
 - `true_in_stock`: `yes` or `no`
-- `note`: anything odd, e.g. "price range" or "only used offers"
+- `note`: anything unusual, for example "price range" or "only used offers"
 
-Label from the screenshot only, not from the parser's output.
+Use only the screenshot for the labels. Do not look at the output of the parser.
 
 - [ ] **Step 7: Run the evaluation**
 
 Run: `scout eval-prices`
-Expected: a JSON summary with real counts and accuracies, a list of wrong pages, and a results file under `eval/results/`. Fix selectors for any systematic failure (with a new fixture case and test), then run again. Both runs stay in `eval/results/`.
+Expected: a JSON summary with real counts and accuracies, a list of wrong pages, and a results file under `eval/results/`. If a failure occurs on many pages, repair the selectors (with a new fixture case and test) and run again. Keep the two runs in `eval/results/`.
 
 - [ ] **Step 8: Commit**
 
@@ -2706,10 +2706,10 @@ git commit -m "Price and stock extraction evaluation on hand-labelled amazon.se 
   - `LLMConfig(providers: dict[str, ProviderConfig], roles: dict[str, RoleConfig])`, `load_llm_config(path: Path = ROOT / "config" / "models.yaml") -> LLMConfig`
   - `RateLimiter(rpm: int, sleep=time.sleep, clock=time.monotonic).wait()`
   - `LLM(config, clients: dict[str, Any] | None = None, sleep=time.sleep, clock=time.monotonic)` with `structured(role: Literal["chat", "worker"], system: str, user: str, schema: type[T]) -> T`, `model_for(role) -> str`, `client(provider) -> OpenAI`, `calls: list[CallRecord]`
-  - `QuotaExhausted` (daily quota used up, or still rate limited after every retry), `LLMOutputError`, `inline_refs(schema: dict) -> dict`, `strip_fences(text: str) -> str`
-  - If the endpoint rejects the JSON schema (HTTP 400), the call retries once in JSON mode with the schema in the system prompt.
+  - `QuotaExhausted` (the daily quota is finished, or the rate limit continues after all retries), `LLMOutputError`, `inline_refs(schema: dict) -> dict`, `strip_fences(text: str) -> str`
+  - If the endpoint refuses the JSON schema (HTTP 400), the call tries again one time in JSON mode, with the schema in the system prompt.
 
-Prerequisite: Zheyun has put `GEMINI_API_KEY=...` in `.env` (free key from https://aistudio.google.com/apikey, no billing).
+Prerequisite: Zheyun puts `GEMINI_API_KEY=...` in `.env` (a free key from https://aistudio.google.com/apikey, no billing).
 
 - [ ] **Step 1: Write the model config**
 
@@ -3168,8 +3168,8 @@ def llm_ping() -> None:
 ```
 
 Run: `scout llm-ping`
-Expected: a list of available flash models, then for each role `[('ping', 'pong'), ('empty', None)]`. If Gemini rejects the JSON schema, the client falls back to JSON mode on its own, so this still passes.
-If the model names in `config/models.yaml` are not in the list, replace them with the current Flash and Flash-Lite names (without the `models/` prefix). Set each role's `rpm` to the free-tier limit shown at https://ai.google.dev/gemini-api/docs/rate-limits or in AI Studio. Run `scout llm-ping` again.
+Expected: a list of the available Flash models. Then, for each role, `[('ping', 'pong'), ('empty', None)]`. If Gemini refuses the JSON schema, the client changes to JSON mode automatically, so this check still passes.
+If the model names in `config/models.yaml` are not in the list, replace them with the current Flash and Flash-Lite names (without the `models/` prefix). Set the `rpm` of each role to the free-tier limit at https://ai.google.dev/gemini-api/docs/rate-limits or in AI Studio. Run `scout llm-ping` again.
 
 - [ ] **Step 7: Commit**
 
@@ -3373,9 +3373,9 @@ git commit -m "Fridge category profile and profile loader"
 
 **Interfaces:**
 - Consumes: `ProductRecord`, `Candidate` (Task 3), `to_decimal`, `parse_price` (Task 3), `LLM.structured`, `QuotaExhausted`, `LLMOutputError` (Task 11), `CategoryProfile`, `ProfileAttribute` (Task 12), `crawl` (Task 9).
-- Produces: `verify_raw(raw: str, source: str) -> bool`; `NamedValue(name, value: str | None, raw: str | None)`; `PageExtraction(values: list[NamedValue])`; `enrich_record(rec, profile, llm) -> tuple[ProductRecord, bool]`; `screen_titles(cands: list[Candidate], profile, llm) -> list[Candidate]`; `store.stored_attributes(conn, source, source_id) -> dict`; `crawl(..., screen: Screener | None = None)` with `Screener = Callable[[list[Candidate]], list[Candidate]]` and a new `CrawlReport.off_topic: int`. Stored attribute format: `{"value": ..., "unit": ..., "raw": ..., "source_url": ...}` (the spec's `source_chunk_id` arrives with chunks in phase 3).
+- Produces: `verify_raw(raw: str, source: str) -> bool`; `NamedValue(name, value: str | None, raw: str | None)`; `PageExtraction(values: list[NamedValue])`; `enrich_record(rec, profile, llm) -> tuple[ProductRecord, bool]`; `screen_titles(cands: list[Candidate], profile, llm) -> list[Candidate]`; `store.stored_attributes(conn, source, source_id) -> dict`; `crawl(..., screen: Screener | None = None)` with `Screener = Callable[[list[Candidate]], list[Candidate]]` and a new `CrawlReport.off_topic: int`. Stored attribute format: `{"value": ..., "unit": ..., "raw": ..., "source_url": ...}` (the `source_chunk_id` of the spec comes with chunks in phase 3).
 
-Why title screening is here and not in phase 5: a search for "kylskåp" also returns thermometers, shelves and door seals. Without a relevance filter, `picks` with no conditions could rank a well-reviewed accessory first. One worker call per crawl reads all candidate titles and keeps only the product itself, which also saves detail-page fetches. This is the first pass of the spec's multi-stage ranking (4.3), brought forward.
+Why title screening is in this task and not in phase 5. A search for "kylskåp" also shows thermometers, shelves and door seals. Without a relevance filter, `picks` with no conditions can put a well-reviewed accessory first. One worker call for each crawl reads all candidate titles and keeps only the real products. This also prevents unnecessary fetches of detail pages. This is the first pass of the multi-stage ranking in the spec (4.3), moved forward.
 
 - [ ] **Step 1: Add the fake LLM**
 
@@ -3577,7 +3577,7 @@ def test_keeps_only_the_numbers_the_worker_returns():
 - [ ] **Step 3: Run the tests to see them fail**
 
 Run: `python -m pytest tests/test_extract.py tests/test_screen.py tests/test_crawl.py tests/test_store.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'scout.extract'`; the new crawl and store tests fail because `screen`, `stored_attributes` and the error handling do not exist yet.
+Expected: FAIL with `ModuleNotFoundError: No module named 'scout.extract'`. The new crawl and store tests fail, because `screen`, `stored_attributes` and the error handling do not exist yet.
 
 - [ ] **Step 4: Write the extraction code**
 
@@ -3754,7 +3754,7 @@ Screener = Callable[[list[Candidate]], list[Candidate]]
 
 2. Add `off_topic: int = 0` to `CrawlReport`, and `screen: Screener | None = None` as the last keyword argument of `crawl`.
 
-3. Right after the budget filter, before the detail loop:
+3. Immediately after the budget filter, before the detail loop:
 
 ```python
     if screen is not None and candidates:
@@ -3797,7 +3797,7 @@ from scout.extract.screen import screen_titles
 from scout.profiles import load_profile
 ```
 
-Change the `crawl` command: add the option `no_llm: bool = typer.Option(False, "--no-llm")`, build the screener and enricher before the `with` block, pass them to `run_crawl`, and print the screening result and LLM usage at the end:
+Change the `crawl` command. Add the option `no_llm: bool = typer.Option(False, "--no-llm")`. Make the screener and the enricher before the `with` block and give them to `run_crawl`. At the end, show the screening result and the LLM usage:
 
 ```python
     enrich, screen, llm = None, None, None
@@ -3827,7 +3827,7 @@ Replace the line that prints `pages that needed an LLM call` with:
         typer.echo(f"LLM calls {len(llm.calls)}, tokens in {tokens_in}, out {tokens_out}")
 ```
 
-Change the `eval-prices` command: add `llm: bool = typer.Option(False, "--llm")` and `category: str = "fridge"`, and choose the extractor:
+Change the `eval-prices` command. Add `llm: bool = typer.Option(False, "--llm")` and `category: str = "fridge"`, and select the extractor:
 
 ```python
     extract, extractor = extract_from_snapshot, "selectors"
@@ -3844,16 +3844,16 @@ Change the `eval-prices` command: add `llm: bool = typer.Option(False, "--llm")`
 - [ ] **Step 7: Real run**
 
 Run: `scout crawl fridge "kylskåp" --details 5`
-Expected: the report shows how many results were dropped as off topic, how many pages went to the worker, and the LLM call and token counts. Look at the search screenshot or the search page in a normal browser and check that the dropped ones really are accessories. Check the stored attributes:
+Expected: the report shows how many results the screening removed as off topic, how many pages went to the worker, and the counts of LLM calls and tokens. Look at the search screenshot, or at the search page in a normal browser. Make sure that the removed results are really accessories. Check the stored attributes:
 
 ```bash
 docker compose exec db psql -U scout product_scout -c "SELECT left(name, 40) AS name, attributes FROM products ORDER BY id DESC LIMIT 5;"
 ```
 
-Each attribute has a `raw` that you can find on the product page.
+Each attribute has a `raw` value that you can find on the product page.
 
 Run: `scout eval-prices --llm`
-Expected: a second results file with extractor `selectors+worker:...`, so the two runs can be compared.
+Expected: a second results file with the extractor `selectors+worker:...`. You can then compare the two runs.
 
 - [ ] **Step 8: Commit**
 
@@ -4449,7 +4449,7 @@ Expected: all passed.
 - [ ] **Step 11: Real run (Zheyun)**
 
 Run: `scout picks fridge --budget 9000 --where "height<=186" --where "width<=60"`
-Expected: up to 5 picks, each rechecked a few seconds before it is shown, with price, rating, attributes, missing data, a short summary and a link. Open two links and confirm price and stock match. Then run the same with `--no-llm` and confirm the facts are identical.
+Expected: a maximum of 5 picks. The program checks each pick again a few seconds before it shows the pick. Each pick shows the price, rating, attributes, missing data, a short summary and a link. Open two links and make sure that the price and the stock are correct. Then run the same command with `--no-llm` and make sure that the facts are the same.
 
 - [ ] **Step 12: Commit**
 
@@ -4462,5 +4462,5 @@ git commit -m "Command-line picks: SQL and Python filters, Bayesian ranking, rec
 
 ## After phase 1
 
-- Record the real numbers from `eval/results/` in the progress notes. Nothing goes into the CV until Zheyun confirms it.
-- Phase 2 (conversation, LangGraph, Langfuse) gets its own plan.
+- Write the real numbers from `eval/results/` in the progress notes. Nothing goes into the CV until Zheyun confirms it.
+- Phase 2 (conversation, LangGraph, Langfuse) has its own plan.
