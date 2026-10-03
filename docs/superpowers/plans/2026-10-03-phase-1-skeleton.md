@@ -2379,7 +2379,7 @@ git add src/scout/sources/amazon_se/adapter.py src/scout/crawl.py src/scout/cli.
 git commit -m "amazon.se adapter and crawl with captcha pause, budget filter and fetch log"
 ```
 
-- [ ] **Step 9: CHECKPOINT, real crawl (Zheyun and Claude together)**
+- [x] **Step 9: CHECKPOINT, real crawl (Zheyun and Claude together)**
 
 Run: `scout db-init` then `scout crawl fridge "kylskåp" --pages 1 --details 10`
 Expected: the browser window opens one search page and a maximum of 10 product pages, 4 to 9 seconds apart. The report shows `saved` near 10 and lists the fields that the selectors did not find.
@@ -2394,6 +2394,8 @@ docker compose exec db psql -U scout product_scout -c "SELECT status, count(*) F
 Open three of the products in a normal browser. Compare the price, the stock and the rating. If a value is different, go back to Task 6 or 7. Repair the selector, add a fixture case and run again.
 
 **Stop here and do a review with Zheyun.** Go to Task 10 only when she agrees that the fetch and the storage work on real pages.
+
+Result on 2026-10-03: 11 pages fetched, all `ok`, no captcha. 10 listings saved, no missing fields. The three FOHERE BC-90 colours became one product. Zheyun checked three products in a normal browser. Price, stock and rating agreed. Finding: 4 of the 10 listings were accessories (water filters, a freshness device), because the sponsored cards come first. The picks must filter out accessories.
 
 ---
 
