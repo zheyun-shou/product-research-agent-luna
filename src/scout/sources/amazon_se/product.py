@@ -10,7 +10,7 @@ from scout.sources.base import ProductRecord
 
 BRAND_KEYS = ("Märke", "Varumärke", "Brand")
 # Modellnamn is left out. It is often a marketing name, and the store matches products on the model.
-MODEL_KEYS = ("Modellnummer", "Artikelns modellnummer", "Item model number", "Model number")
+MODEL_KEYS = ("Modellnummer", "Artikelns modellnummer", "Modell", "Item model number", "Model number")
 PRICE_AREAS = (
     "#corePrice_feature_div .a-price",
     "#corePriceDisplay_desktop_feature_div .priceToPay",
@@ -22,6 +22,7 @@ SPEC_ROWS = (
     "#productDetails_techSpec_section_2 tr",
     "#productDetails_detailBullets_sections1 tr",
     "#productOverview_feature_div tr",
+    "table.prodDetTable tr",
 )
 UNAVAILABLE = (
     "inte tillgänglig", "tillfälligt slut", "slut i lager", "inte i lager", "ej i lager",
@@ -56,7 +57,9 @@ def parse_product_page(html: str, url: str, fetched_at: datetime) -> ProductReco
         rating=parse_rating(rating_text) if rating_text else None,
         review_count=parse_count(_text(count_el)) if count_el else None,
         in_stock=_in_stock(soup),
-        variant_label=" / ".join(_text(el) for el in soup.select('[id^="variation_"] .selection')),
+        variant_label=" / ".join(
+            _text(el) for el in soup.select('[id^="variation_"] .selection, .inline-twister-dim-title-value')
+        ),
         specs=specs,
         bullets=bullets,
         text=_page_text(soup, specs, bullets),

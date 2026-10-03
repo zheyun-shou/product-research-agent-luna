@@ -69,3 +69,23 @@ def test_marketing_name_is_not_the_model():
         "<tr><th>Modellnamn</th><td>Rökelse</td></tr></table>"
     )
     assert parse_product_page(html, "https://www.amazon.se/dp/B0AAAAAAA6", NOW).model is None
+
+
+def test_details_table_without_id_and_modell_key():
+    html = (
+        '<span id="productTitle">X</span><table class="a-keyvalue prodDetTable">'
+        "<tr><th>Modellnamn</th><td>Kylan</td></tr><tr><th>Modell</th><td>KX 100</td></tr>"
+        "<tr><th>Tillverkare</th><td>Exempel AB</td></tr></table>"
+    )
+    rec = parse_product_page(html, "https://www.amazon.se/dp/B0AAAAAAA7", NOW)
+    assert rec.model == "KX 100"
+    assert rec.specs["Tillverkare"] == "Exempel AB"
+
+
+def test_variant_label_from_inline_twister():
+    html = (
+        '<span id="productTitle">X</span>'
+        '<div id="inline-twister-dim-title-color_name"><span class="inline-twister-dim-title-value">Röd</span></div>'
+        '<div id="inline-twister-dim-title-size_name"><span class="inline-twister-dim-title-value">40 L</span></div>'
+    )
+    assert parse_product_page(html, "https://www.amazon.se/dp/B0AAAAAAA8", NOW).variant_label == "Röd / 40 L"

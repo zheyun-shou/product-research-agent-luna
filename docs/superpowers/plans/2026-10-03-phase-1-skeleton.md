@@ -1222,13 +1222,13 @@ def snap(urls: List[str], screenshot: bool = True) -> None:
             typer.echo(f"{status.problem or 'ok':8} {path}")
 ```
 
-- [ ] **Step 6: Manual check, set up the profile (Zheyun)**
+- [x] **Step 6: Manual check, set up the profile (Zheyun)**
 
 Run: `scout browser`
 Expected: a new Chrome window opens on amazon.se. It has no bookmarks or logins from your usual profile.
 In that window, decline the non-essential cookies on the cookie banner ("Avvisa"). Set the delivery address to your Swedish postcode, so that prices and stock are correct for Sweden. Then push Enter in the terminal. The window closes.
 
-- [ ] **Step 7: Manual check, capture samples (Zheyun)**
+- [x] **Step 7: Manual check, capture samples (Zheyun)**
 
 Run `scout browser "https://www.amazon.se/s?k=kylsk%C3%A5p"`. From the results, copy the links of three product pages. Select one discounted product with an old price that has a line through it. If you see a product that is out of stock, select it too. Push Enter. Then run:
 
@@ -1412,7 +1412,7 @@ def _is_sponsored(card: Tag) -> bool:
 Run: `python -m pytest tests/test_amazon_search.py -v`
 Expected: 5 passed.
 
-- [ ] **Step 6: Add `parse-search` and check against the real snapshot**
+- [x] **Step 6: Add `parse-search` and check against the real snapshot**
 
 Add to `src/scout/cli.py`:
 
@@ -1752,7 +1752,7 @@ def _page_text(soup: BeautifulSoup, specs: dict[str, str], bullets: list[str]) -
 Run: `python -m pytest tests/test_amazon_product.py -v`
 Expected: 5 passed.
 
-- [ ] **Step 6: Add `parse-product` and check against the real snapshots**
+- [x] **Step 6: Add `parse-product` and check against the real snapshots**
 
 Add to `src/scout/cli.py`:
 
