@@ -22,7 +22,7 @@ The system makes the list of candidates smaller. The user makes the final select
 - Four test categories: fridge, incense, headphones or small electronics, clothes or shoes.
 - The agent clarifies the needs of the user, searches, and shows a small number of top picks. Then it answers all follow-up questions or suggests alternatives. The user can pause a conversation and continue it later.
 - Source: amazon.se only, for products and for their shop reviews. Search terms are in Swedish. Prices are in SEK.
-- Price is a hard condition (the budget). Price is not a ranking factor. The agent sorts by price only when the user asks. Then it uses the sort function of the site.
+- The budget is optional. If the user gives a budget, it is a hard condition. Price is not a ranking factor. The agent sorts by price only when the user asks. Then it uses the sort function of the site.
 - Text retrieval is hybrid. It uses vector search and BM25.
 
 ### Not in v1
@@ -52,7 +52,7 @@ User: I want a fridge, my requirements are ...
 2. Search and store
    Before the search starts, check the login for each site that this search needs and that requires a login.
    Ask the user to log in at the start.
-   a. Search amazon.se in Swedish. Send the filters and the budget of the user to the site.
+   a. Search amazon.se in Swedish. Send the filters of the user to the site, and the budget if the user gives one.
       The result lists show the rating and the review count of each candidate.
    b. (After v1) Search external review sources at category level. Count how often each model is mentioned.
    c. Fetch the detail pages in Threshold Algorithm order over the sorted lists (see 4.3). Store them (see 4.4).
@@ -151,8 +151,8 @@ The search must not read an endless number of result pages. It must also keep pr
 1. **Predicate pushdown.** Each hard condition that the site can filter goes into the search parameters of the site.
 2. **Top-k over more than one sorted list (Fagin's Threshold Algorithm).** All lists must be available before the agent fetches a detail page. In v1 the lists are the sort orders of amazon.se, by customer rating and by popularity (or review count). The first task of build phase 5 finds which sorts amazon.se has. After v1, review mentions from the category-level review search (phase 2b) become a third list. The agent reads down the lists in parallel. It fetches the detail page of each new candidate. It stops when the best possible list score of every unread candidate is less than the score of the current k-th candidate (k = 10). The list score moves the rating near the category average when the review count is small (a Bayesian average). Thus a 5.0 rating from 2 reviews does not rank above 4.6 from 3,000 reviews. The final rank in phase 3 also uses data from the detail pages. Thus this stop rule only selects the detail pages that the agent fetches.
    On amazon.se each search card shows the rating and the review count. Thus a candidate's value in the other list costs nothing. Here the algorithm mainly decides how many result pages to read for each list. Its full benefit comes after v1, when the review-mentions list is expensive to read.
-3. **Multi-stage ranking.** The first pass uses only the title, price, rating and review count from the search results. It removes products that are not related and products above the budget. The agent fetches detail pages only for the candidates that pass. Only the top 10 after the rank get reviews and images.
-4. **Budget.** Each search has page limits. When the agent reaches a limit, it stops and says so in the picks. Defaults: 50 detail pages and 30 review pages. If we use a paid model, we add a money limit. We set it after phase 1 measures the cost of one search.
+3. **Multi-stage ranking.** The first pass uses only the title, price, rating and review count from the search results. It removes products that are not related. If the user gives a budget, it also removes products above the budget. The agent fetches detail pages only for the candidates that pass. Only the top 10 after the rank get reviews and images.
+4. **Page limits.** Each search has page limits. When the agent reaches a limit, it stops and says so in the picks. Defaults: 50 detail pages and 30 review pages. If we use a paid model, we add a money limit. We set it after phase 1 measures the cost of one search.
 
 ### 4.4 Extraction and storage
 
@@ -220,7 +220,7 @@ Product text chunks and review chunks use one retrieval path.
 
 **Which price to show.** If a product has variants, the picks show the price of the variant that agrees with the needs of the user (size, color, capacity). If this variant is not known, the picks show the price range of the variants. The budget check uses the lowest price of the variants that agree.
 
-**Price and currency.** The agent uses the price only for the budget. The price does not change the score. In v1 all prices are in SEK. After v1, with Taobao, the agent checks the budget for each site in the currency of that site. The picks from the two sites are side by side, and each price is in its own currency. The system never converts currencies on its own. If the user asks to sort by price, the agent uses the sort of the site within one site, or asks the user how to compare across sites.
+**Price and currency.** The agent uses the price only for the budget, and only if the user gives one. The price does not change the score. In v1 all prices are in SEK. After v1, with Taobao, the agent checks the budget for each site in the currency of that site. The picks from the two sites are side by side, and each price is in its own currency. The system never converts currencies on its own. If the user asks to sort by price, the agent uses the sort of the site within one site, or asks the user how to compare across sites.
 
 **Before the agent shows the picks, it checks the price and the availability of each pick again. It does this also when the fetch was recent.** If a pick is sold out, the next candidate replaces it, and the agent checks that candidate too. The agent does not check again the candidates outside the top.
 
@@ -353,7 +353,7 @@ The project is too large for one implementation plan. Thus each phase has its ow
 2. **Conversation.** The LangGraph conversation loop, checkpoints, clarifying questions, follow-up tools, the calculation tool, Langfuse.
 3. **Text and retrieval.** Chunks, bge-m3 embeddings, BM25, RRF, amazon.se shop reviews with the login check, on-demand extraction, pros and complaints in the picks.
 4. **Images and more categories.** Image reading with PaddleOCR-VL and the worker as the fallback, the other three preset categories, profile generation for new categories.
-5. **Search strategy.** Predicate pushdown, Threshold Algorithm, multi-stage ranking, budget.
+5. **Search strategy.** Predicate pushdown, Threshold Algorithm, multi-stage ranking, page limits.
 6. **Full evaluation.** All metrics, the retrieval comparison, the model comparison.
 7. **Deployment.** FastAPI, Docker.
 
