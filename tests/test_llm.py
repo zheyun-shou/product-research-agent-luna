@@ -1,0 +1,165 @@
+from types import SimpleNamespace
+
+import httpx2
+import pytest
+from openai import BadRequestError, RateLimitError
+from pydantic import BaseModel, ValidationError
+
+from scout.llm.client import LLM, LLMOutputError, QuotaExhausted, inline_refs, strip_fences
+from scout.llm.config import LLMConfig, load_llm_config
+from scout.llm.ratelimit import RateLimiter
+
+
+class Inner(BaseModel):
+    name: str
+
+
+class Outer(BaseModel):
+    items: list[Inner]
+
+
+class Answer(BaseModel):
+    answer: str
+
+
+class FakeCompletions:
+    def __init__(self, replies):
+        self.replies = list(replies)
+        self.requests = []
+
+    def create(self, **kwargs):
+        self.requests.append(kwargs)
+        reply = self.replies.pop(0)
+        if isinstance(reply, Exception):
+            raise reply
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=reply))],
+            usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5),
+        )
+
+
+class FakeOpenAI:
+    def __init__(self, replies):
+        self.chat = SimpleNamespace(completions=FakeCompletions(replies))
+
+
+class FakeClock:
+    def __init__(self):
+        self.now = 0.0
+        self.slept = []
+
+    def clock(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.slept.append(seconds)
+        self.now += seconds
+
+
+CONFIG = LLMConfig.model_validate({
+    "providers": {"gemini": {"base_url": "https://example.test/", "api_key_env": "GEMINI_API_KEY"}},
+    "roles": {
+        "chat": {"provider": "gemini", "model": "strong-model", "rpm": 60},
+        "worker": {"provider": "gemini", "model": "light-model", "rpm": 60},
+    },
+})
+
+
+def rate_limited(message):
+    response = httpx2.Response(429, request=httpx2.Request("POST", "https://example.test/"))
+    return RateLimitError(message, response=response, body=None)
+
+
+def make(replies):
+    fake, clock = FakeOpenAI(replies), FakeClock()
+    return LLM(CONFIG, clients={"gemini": fake}, sleep=clock.sleep, clock=clock.clock), fake, clock
+
+
+def test_structured_reply_uses_the_role_model():
+    llm, fake, _ = make(['{"answer": "pong"}'])
+    assert llm.structured("worker", "sys", "user", Answer) == Answer(answer="pong")
+    assert fake.chat.completions.requests[0]["model"] == "light-model"
+    assert llm.calls[0].input_tokens == 10
+
+
+def test_fenced_json_is_accepted():
+    llm, _, _ = make(['```json\n{"answer": "pong"}\n```'])
+    assert llm.structured("chat", "sys", "user", Answer).answer == "pong"
+
+
+def test_invalid_reply_is_retried_with_feedback():
+    llm, fake, _ = make(['{"wrong": 1}', '{"answer": "pong"}'])
+    assert llm.structured("chat", "sys", "user", Answer).answer == "pong"
+    second = fake.chat.completions.requests[1]["messages"]
+    assert second[-1]["role"] == "user" and "did not match" in second[-1]["content"]
+
+
+def test_three_invalid_replies_raise():
+    llm, _, _ = make(["nope", "nope", "nope"])
+    with pytest.raises(LLMOutputError):
+        llm.structured("chat", "sys", "user", Answer)
+
+
+def test_per_minute_limit_waits_and_retries():
+    llm, _, clock = make([rate_limited("GenerateRequestsPerMinutePerProjectPerModel-FreeTier"), '{"answer": "ok"}'])
+    assert llm.structured("worker", "sys", "user", Answer).answer == "ok"
+    assert 15 in clock.slept
+
+
+def test_daily_limit_raises_quota_exhausted():
+    llm, _, _ = make([rate_limited("GenerateRequestsPerDayPerProjectPerModel-FreeTier")])
+    with pytest.raises(QuotaExhausted):
+        llm.structured("worker", "sys", "user", Answer)
+
+
+def test_rate_limited_on_every_try_also_raises_quota_exhausted():
+    minute = "GenerateRequestsPerMinutePerProjectPerModel-FreeTier"
+    llm, _, _ = make([rate_limited(minute), rate_limited(minute), rate_limited(minute)])
+    with pytest.raises(QuotaExhausted, match="still rate limited"):
+        llm.structured("worker", "sys", "user", Answer)
+
+
+def test_rejected_schema_falls_back_to_json_mode():
+    bad = BadRequestError("Invalid JSON schema", response=httpx2.Response(
+        400, request=httpx2.Request("POST", "https://example.test/")), body=None)
+    llm, fake, _ = make([bad, '{"answer": "pong"}'])
+    assert llm.structured("worker", "sys", "user", Answer).answer == "pong"
+    retry = fake.chat.completions.requests[1]
+    assert retry["response_format"] == {"type": "json_object"}
+    assert "schema" in retry["messages"][0]["content"]
+
+
+def test_missing_key_names_the_variable(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    llm = LLM(CONFIG)
+    with pytest.raises(RuntimeError, match="GEMINI_API_KEY"):
+        llm.structured("chat", "sys", "user", Answer)
+
+
+def test_inline_refs_removes_refs():
+    schema = inline_refs(Outer.model_json_schema())
+    assert "$defs" not in schema
+    assert schema["properties"]["items"]["items"]["properties"]["name"]["type"] == "string"
+
+
+def test_strip_fences():
+    assert strip_fences('```json\n{"a": 1}\n```') == '{"a": 1}'
+    assert strip_fences('{"a": 1}') == '{"a": 1}'
+
+
+def test_rate_limiter_spaces_calls():
+    clock = FakeClock()
+    limiter = RateLimiter(30, sleep=clock.sleep, clock=clock.clock)
+    limiter.wait()
+    limiter.wait()
+    assert clock.slept == [pytest.approx(2.0)]
+
+
+def test_config_needs_both_roles_and_known_providers():
+    with pytest.raises(ValidationError):
+        LLMConfig.model_validate({"providers": {}, "roles": {"chat": {"provider": "x", "model": "m", "rpm": 1}}})
+
+
+def test_shipped_config_loads():
+    config = load_llm_config()
+    assert {"chat", "worker"} <= set(config.roles)

@@ -7,11 +7,14 @@ from pathlib import Path
 from typing import List, Optional
 
 import typer
+from pydantic import BaseModel
 
 from scout.config import ROOT, load_settings
 from scout.crawl import crawl as run_crawl
 from scout.db.conn import connect, init_schema
 from scout.eval.prices import evaluate_prices, extract_from_snapshot, read_labels, write_template
+from scout.llm.client import LLM
+from scout.llm.config import load_llm_config
 from scout.sources.amazon_se.adapter import AmazonSeAdapter
 from scout.sources.amazon_se.check import check_page
 from scout.sources.amazon_se.product import parse_product_page
@@ -143,3 +146,28 @@ def eval_prices(labels: Path = Path("data/eval/price_labels.csv")) -> None:
     for failure in result.failures:
         typer.echo(f"wrong: {failure}")
     typer.echo(f"saved {out}")
+
+
+class _PingItem(BaseModel):
+    name: str
+    value: str | None = None
+
+
+class _Ping(BaseModel):
+    items: list[_PingItem]
+
+
+@app.command("llm-ping")
+def llm_ping() -> None:
+    """Check the API key, list the flash models it can use, and make one small structured call per role."""
+    load_settings()  # loads .env
+    config = load_llm_config()
+    llm = LLM(config)
+    for name in config.providers:
+        ids = sorted(model.id for model in llm.client(name).models.list())
+        typer.echo(f"{name}: " + ", ".join(i for i in ids if "flash" in i))
+    for role in ("chat", "worker"):
+        # Nested models and an optional field, the same shapes the extraction and picks schemas use.
+        reply = llm.structured(role, "Reply in JSON.",
+                               "Return two items: name ping with value pong, and name empty with value null.", _Ping)
+        typer.echo(f"{role} ({llm.model_for(role)}): {[(i.name, i.value) for i in reply.items]}")
