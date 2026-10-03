@@ -1,4 +1,7 @@
 """Command line for product-scout."""
+import json
+import sys
+from pathlib import Path
 from typing import List
 
 import typer
@@ -6,6 +9,7 @@ import typer
 from scout.config import load_settings
 from scout.db.conn import connect, init_schema
 from scout.sources.amazon_se.check import check_page
+from scout.sources.amazon_se.search import has_next_page, parse_search_page
 from scout.sources.amazon_se.urls import BASE_URL, SOURCE, page_kind, snapshot_key
 from scout.sources.browser import BrowserSession
 from scout.sources.snapshots import save_html
@@ -16,6 +20,10 @@ app = typer.Typer(no_args_is_help=True)
 @app.callback()
 def main() -> None:
     """product-scout command line."""
+    # The Windows console defaults to GBK here and cannot print Swedish letters.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
 
 
 @app.command()
@@ -53,3 +61,12 @@ def snap(urls: List[str], screenshot: bool = True) -> None:
             if screenshot:
                 session.screenshot(path.with_suffix(".png"))
             typer.echo(f"{status.problem or 'ok':8} {path}")
+
+
+@app.command("parse-search")
+def parse_search_cmd(path: Path) -> None:
+    """Print what the parser reads from a saved search page."""
+    html = path.read_text(encoding="utf-8")
+    for c in parse_search_page(html):
+        typer.echo(json.dumps(c.model_dump(mode="json"), ensure_ascii=False))
+    typer.echo(f"next page: {has_next_page(html)}")
