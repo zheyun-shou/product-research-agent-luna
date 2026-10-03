@@ -3202,7 +3202,7 @@ git commit -m "Provider-neutral LLM layer with chat and worker roles, rate limit
 - Consumes: `ROOT` (Task 1).
 - Produces: `ProfileAttribute(name, label, type: Literal["number", "enum", "boolean", "text"], kind: Literal["hard", "soft"], unit: str | None, values: list[str] | None)`, `CategoryProfile` with `attribute(name) -> ProfileAttribute | None`, `load_profile(category: str, profiles_dir: Path = PROFILES_DIR) -> CategoryProfile`.
 
-- [x] **Step 1: Write the profile**
+- [ ] **Step 1: Write the profile**
 
 `profiles/fridge.yaml`:
 
@@ -3260,7 +3260,7 @@ sources:
   reviews: [amazon_se_reviews]
 ```
 
-- [x] **Step 2: Write the failing tests**
+- [ ] **Step 2: Write the failing tests**
 
 `tests/test_profiles.py`:
 
@@ -3300,12 +3300,12 @@ def test_attribute_names_must_be_unique():
         CategoryProfile.model_validate(base([attr, attr]))
 ```
 
-- [x] **Step 3: Run the tests to see them fail**
+- [ ] **Step 3: Run the tests to see them fail**
 
 Run: `python -m pytest tests/test_profiles.py -v`
 Expected: FAIL with `ModuleNotFoundError`.
 
-- [x] **Step 4: Write the loader**
+- [ ] **Step 4: Write the loader**
 
 `src/scout/profiles.py`:
 
@@ -3364,12 +3364,12 @@ def load_profile(category: str, profiles_dir: Path = PROFILES_DIR) -> CategoryPr
     return CategoryProfile.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
 ```
 
-- [x] **Step 5: Run the tests to see them pass**
+- [ ] **Step 5: Run the tests to see them pass**
 
 Run: `python -m pytest tests/test_profiles.py -v`
 Expected: 4 passed.
 
-- [x] **Step 6: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add profiles src/scout/profiles.py tests/test_profiles.py
@@ -3390,7 +3390,7 @@ git commit -m "Fridge category profile and profile loader"
 
 Why title screening is in this task and not in phase 5. A search for "kylskåp" also shows thermometers, shelves and door seals. Without a relevance filter, `picks` with no conditions can put a well-reviewed accessory first. One worker call for each crawl reads all candidate titles and keeps only the real products. This also prevents unnecessary fetches of detail pages. This is the first pass of the multi-stage ranking in the spec (4.3), moved forward.
 
-- [x] **Step 1: Add the fake LLM**
+- [ ] **Step 1: Add the fake LLM**
 
 Append to `tests/fakes.py`:
 
@@ -3413,7 +3413,7 @@ class FakeLLM:
         return f"fake-{role}"
 ```
 
-- [x] **Step 2: Write the failing tests**
+- [ ] **Step 2: Write the failing tests**
 
 `tests/test_extract.py`:
 
@@ -3587,12 +3587,12 @@ def test_keeps_only_the_numbers_the_worker_returns():
     assert "1: Kylskåpstermometer" in prompt and "Fridge" in prompt
 ```
 
-- [x] **Step 3: Run the tests to see them fail**
+- [ ] **Step 3: Run the tests to see them fail**
 
 Run: `python -m pytest tests/test_extract.py tests/test_screen.py tests/test_crawl.py tests/test_store.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'scout.extract'`. The new crawl and store tests fail, because `screen`, `stored_attributes` and the error handling do not exist yet.
 
-- [x] **Step 4: Write the extraction code**
+- [ ] **Step 4: Write the extraction code**
 
 `src/scout/extract/__init__.py`:
 
@@ -3795,12 +3795,12 @@ Screener = Callable[[list[Candidate]], list[Candidate]]
                 report.notes.append(f"{cand.url}: {exc}. Stored without LLM extraction.")
 ```
 
-- [x] **Step 5: Run the tests to see them pass**
+- [ ] **Step 5: Run the tests to see them pass**
 
 Run: `python -m pytest tests/test_extract.py tests/test_screen.py tests/test_crawl.py tests/test_store.py -v`
 Expected: all passed.
 
-- [x] **Step 6: Use the worker in `crawl` and `eval-prices`**
+- [ ] **Step 6: Use the worker in `crawl` and `eval-prices`**
 
 In `src/scout/cli.py`, add imports:
 
@@ -3854,7 +3854,7 @@ Change the `eval-prices` command. Add `llm: bool = typer.Option(False, "--llm")`
     summary = {"extractor": extractor, "run_at": datetime.now(timezone.utc).isoformat(), **result.summary()}
 ```
 
-- [x] **Step 7: Real run**
+- [ ] **Step 7: Real run**
 
 Run: `scout crawl fridge "kylskåp" --details 5`
 Expected: the report shows how many results the screening removed as off topic, how many pages went to the worker, and the counts of LLM calls and tokens. Look at the search screenshot, or at the search page in a normal browser. Make sure that the removed results are really accessories. Check the stored attributes:
@@ -3868,7 +3868,7 @@ Each attribute has a `raw` value that you can find on the product page.
 Run: `scout eval-prices --llm`
 Expected: a second results file with the extractor `selectors+worker:...`. You can then compare the two runs.
 
-- [x] **Step 8: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add src/scout/extract src/scout/db/store.py src/scout/crawl.py src/scout/cli.py tests/fakes.py tests/test_extract.py tests/test_screen.py tests/test_crawl.py tests/test_store.py eval/results
@@ -3893,7 +3893,7 @@ git commit -m "Worker title screening and extraction with raw-text checks; reuse
   - `recheck.recheck_picks(ranked, k, refetch: Callable[[Card], ProductRecord | None], budget) -> tuple[list[Card], list[str]]`
   - `write.PicksText`, `check_picks(text, cards_by_id) -> list[str]`, `write_picks(llm, cards, conditions_text, language="English", max_rounds=3) -> tuple[PicksText | None, list[str]]`, `format_picks(picks, texts, notes, conditions_text, dropped) -> str`
 
-- [x] **Step 1: Write the failing ranking tests**
+- [ ] **Step 1: Write the failing ranking tests**
 
 `tests/test_picks_rank.py`:
 
@@ -3974,12 +3974,12 @@ def test_load_cards_skips_out_of_stock_and_applies_the_budget(db):
     assert [c.url[-10:] for c in load_cards(db, "fridge", Decimal("6000"))] == ["B0AAAAAAA3"]
 ```
 
-- [x] **Step 2: Run them to see them fail**
+- [ ] **Step 2: Run them to see them fail**
 
 Run: `python -m pytest tests/test_picks_rank.py tests/test_picks_db.py -v`
 Expected: FAIL with `ModuleNotFoundError`.
 
-- [x] **Step 3: Write `rank.py`**
+- [ ] **Step 3: Write `rank.py`**
 
 `src/scout/picks/__init__.py`:
 
@@ -4091,12 +4091,12 @@ def rank(cards: list[Card]) -> list[Card]:
     return sorted(cards, key=lambda c: (bool(c.missing), -c.score))
 ```
 
-- [x] **Step 4: Run them to see them pass**
+- [ ] **Step 4: Run them to see them pass**
 
 Run: `python -m pytest tests/test_picks_rank.py tests/test_picks_db.py -v`
 Expected: all passed.
 
-- [x] **Step 5: Write the failing recheck and writing tests**
+- [ ] **Step 5: Write the failing recheck and writing tests**
 
 `tests/test_picks_recheck.py`:
 
@@ -4205,12 +4205,12 @@ def test_format_shows_missing_data_and_how_ranking_works():
     assert "Bayesian" in out and "note one" in out and "2 products failed" in out
 ```
 
-- [x] **Step 6: Run them to see them fail**
+- [ ] **Step 6: Run them to see them fail**
 
 Run: `python -m pytest tests/test_picks_recheck.py tests/test_picks_write.py -v`
 Expected: FAIL with `ModuleNotFoundError`.
 
-- [x] **Step 7: Write `recheck.py` and `write.py`**
+- [ ] **Step 7: Write `recheck.py` and `write.py`**
 
 `src/scout/picks/recheck.py`:
 
@@ -4395,12 +4395,12 @@ def format_picks(picks: list[Card], texts: PicksText | None, notes: list[str],
     return "\n".join(lines)
 ```
 
-- [x] **Step 8: Run them to see them pass**
+- [ ] **Step 8: Run them to see them pass**
 
 Run: `python -m pytest tests/test_picks_recheck.py tests/test_picks_write.py -v`
 Expected: all passed.
 
-- [x] **Step 9: Add the `picks` command**
+- [ ] **Step 9: Add the `picks` command**
 
 Add to `src/scout/cli.py`:
 
@@ -4454,17 +4454,17 @@ def picks(
     typer.echo(format_picks(chosen, texts, notes + [f"check failed: {e}" for e in errors], conditions_text, dropped))
 ```
 
-- [x] **Step 10: Run the whole suite**
+- [ ] **Step 10: Run the whole suite**
 
 Run: `python -m pytest -v`
 Expected: all passed.
 
-- [x] **Step 11: Real run (Zheyun)**
+- [ ] **Step 11: Real run (Zheyun)**
 
 Run: `scout picks fridge --budget 9000 --where "height<=186" --where "width<=60"`
 Expected: a maximum of 5 picks. The program checks each pick again a few seconds before it shows the pick. Each pick shows the price, rating, attributes, missing data, a short summary and a link. Open two links and make sure that the price and the stock are correct. Then run the same command with `--no-llm` and make sure that the facts are the same.
 
-- [x] **Step 12: Commit**
+- [ ] **Step 12: Commit**
 
 ```bash
 git add src/scout/picks src/scout/cli.py tests/test_picks_*.py
