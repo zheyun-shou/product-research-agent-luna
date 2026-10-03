@@ -1,0 +1,51 @@
+category: fridge
+display_name: Fridge
+attributes:
+  - name: height
+    label: Height
+    type: number
+    unit: cm
+    kind: hard
+  - name: width
+    label: Width
+    type: number
+    unit: cm
+    kind: hard
+  - name: depth
+    label: Depth
+    type: number
+    unit: cm
+    kind: hard
+  - name: total_volume
+    label: Total volume
+    type: number
+    unit: l
+    kind: soft
+  - name: freezer_volume
+    label: Freezer volume
+    type: number
+    unit: l
+    kind: soft
+  - name: noise
+    label: Noise
+    type: number
+    unit: dB
+    kind: soft
+  - name: energy_class
+    label: Energy class
+    type: enum
+    values: [A, B, C, D, E, F, G]
+    kind: soft
+  - name: no_frost
+    label: No Frost
+    type: boolean
+    kind: soft
+questions_for_user:
+  - How wide, tall and deep is the space for the fridge?
+  - What is your budget?
+  - Do you need a freezer part, and how big?
+  - Do you care about noise?
+complaint_types: [noise, frost, door seal, compressor life, after-sales service]
+sources:
+  products: [amazon_se]
+  reviews: [amazon_se_reviews]

@@ -3202,7 +3202,7 @@ git commit -m "Provider-neutral LLM layer with chat and worker roles, rate limit
 - Consumes: `ROOT` (Task 1).
 - Produces: `ProfileAttribute(name, label, type: Literal["number", "enum", "boolean", "text"], kind: Literal["hard", "soft"], unit: str | None, values: list[str] | None)`, `CategoryProfile` with `attribute(name) -> ProfileAttribute | None`, `load_profile(category: str, profiles_dir: Path = PROFILES_DIR) -> CategoryProfile`.
 
-- [ ] **Step 1: Write the profile**
+- [x] **Step 1: Write the profile**
 
 `profiles/fridge.yaml`:
 
@@ -3260,7 +3260,7 @@ sources:
   reviews: [amazon_se_reviews]
 ```
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 `tests/test_profiles.py`:
 
@@ -3300,12 +3300,12 @@ def test_attribute_names_must_be_unique():
         CategoryProfile.model_validate(base([attr, attr]))
 ```
 
-- [ ] **Step 3: Run the tests to see them fail**
+- [x] **Step 3: Run the tests to see them fail**
 
 Run: `python -m pytest tests/test_profiles.py -v`
 Expected: FAIL with `ModuleNotFoundError`.
 
-- [ ] **Step 4: Write the loader**
+- [x] **Step 4: Write the loader**
 
 `src/scout/profiles.py`:
 
@@ -3364,12 +3364,12 @@ def load_profile(category: str, profiles_dir: Path = PROFILES_DIR) -> CategoryPr
     return CategoryProfile.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
 ```
 
-- [ ] **Step 5: Run the tests to see them pass**
+- [x] **Step 5: Run the tests to see them pass**
 
 Run: `python -m pytest tests/test_profiles.py -v`
 Expected: 4 passed.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add profiles src/scout/profiles.py tests/test_profiles.py
