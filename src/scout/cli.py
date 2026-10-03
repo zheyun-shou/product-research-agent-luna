@@ -2,17 +2,21 @@
 import json
 import sys
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import typer
 
 from scout.config import load_settings
+from scout.crawl import crawl as run_crawl
 from scout.db.conn import connect, init_schema
+from scout.sources.amazon_se.adapter import AmazonSeAdapter
 from scout.sources.amazon_se.check import check_page
 from scout.sources.amazon_se.product import parse_product_page
 from scout.sources.amazon_se.search import has_next_page, parse_search_page
 from scout.sources.amazon_se.urls import BASE_URL, SOURCE, page_kind, product_url, snapshot_key
+from scout.sources.base import SessionStatus
 from scout.sources.browser import BrowserSession
 from scout.sources.snapshots import save_html
 
@@ -82,3 +86,37 @@ def parse_product_cmd(path: Path) -> None:
     shown = rec.model_dump(mode="json", exclude={"text"})
     typer.echo(json.dumps(shown, ensure_ascii=False, indent=2))
     typer.echo(f"missing: {rec.missing_core()}")
+
+
+def ask_user(status: SessionStatus, url: str) -> bool:
+    """Pause until the user has dealt with a captcha or sign-in in the browser window."""
+    typer.echo(f"\n{status.detail} at {url}")
+    typer.echo("Solve it or log in in the product-scout browser window.")
+    answer = typer.prompt("Press Enter when done, or type s and Enter to skip", default="", show_default=False)
+    return answer.strip().lower() != "s"
+
+
+@app.command()
+def crawl(
+    category: str,
+    query: str,
+    pages: int = 1,
+    details: int = 20,
+    budget: Optional[float] = None,
+    screenshots: bool = False,
+) -> None:
+    """Search amazon.se, fetch detail pages and store them. QUERY is in Swedish, e.g. kylskåp."""
+    settings = load_settings()
+    budget_sek = Decimal(str(budget)) if budget is not None else None
+    with connect(settings.database_url) as conn, BrowserSession(settings.browser_profile_dir) as session:
+        adapter = AmazonSeAdapter(session, settings.snapshot_dir, screenshots=screenshots)
+        report = run_crawl(conn, adapter, category, query, on_problem=ask_user,
+                           max_pages=pages, max_details=details, budget=budget_sek)
+    typer.echo(f"search pages {report.search_pages}, candidates {report.candidates}, "
+               f"over budget {report.over_budget}, detail pages {report.detail_pages}, saved {report.saved}")
+    typer.echo(f"pages that needed an LLM call: {report.llm_pages} of {report.detail_pages}")
+    typer.echo(f"fields the selectors missed: {dict(report.missing) or 'none'}")
+    for url in report.skipped:
+        typer.echo(f"skipped {url}")
+    for note in report.notes:
+        typer.echo(note)

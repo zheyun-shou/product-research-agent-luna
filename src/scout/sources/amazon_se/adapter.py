@@ -1,0 +1,53 @@
+"""The amazon.se adapter: fetch through the browser, snapshot, check and parse."""
+from pathlib import Path
+from typing import Protocol
+
+from scout.sources.amazon_se.check import check_page
+from scout.sources.amazon_se.product import parse_product_page
+from scout.sources.amazon_se.search import has_next_page, parse_search_page
+from scout.sources.amazon_se.urls import BASE_URL, SOURCE, page_kind, search_url, snapshot_key
+from scout.sources.base import Candidate, ProductRecord, RawPage, SessionStatus
+from scout.sources.snapshots import save_html
+
+
+class Browser(Protocol):
+    def fetch(self, url: str) -> RawPage: ...
+    def screenshot(self, path: Path) -> Path: ...
+
+
+class AmazonSeAdapter:
+    name = SOURCE
+    kind = "product"
+    access = "user_browser"
+    terms_check = (
+        "2026-10-03: Zheyun accepts personal, low-volume fetching of amazon.se "
+        "in her own browser profile (spec section 8)."
+    )
+
+    def __init__(self, browser: Browser, snapshot_dir: Path, screenshots: bool = False):
+        self.browser = browser
+        self.snapshot_dir = snapshot_dir
+        self.screenshots = screenshots
+
+    def search_url(self, query: str, page: int = 1) -> str:
+        return search_url(query, page)
+
+    def fetch(self, url: str) -> RawPage:
+        page = self.browser.fetch(url)
+        kind = page_kind(url)
+        path = save_html(page, self.snapshot_dir, SOURCE, kind, snapshot_key(url))
+        if self.screenshots and kind == "product":
+            self.browser.screenshot(path.with_suffix(".png"))
+        return page.model_copy(update={"snapshot_path": str(path)})
+
+    def check_page(self, page: RawPage) -> SessionStatus:
+        return check_page(page)
+
+    def check_session(self) -> SessionStatus:
+        return check_page(self.browser.fetch(BASE_URL + "/"))
+
+    def parse_search(self, page: RawPage) -> tuple[list[Candidate], bool]:
+        return parse_search_page(page.html), has_next_page(page.html)
+
+    def parse(self, page: RawPage) -> ProductRecord:
+        return parse_product_page(page.html, page.url, page.fetched_at)
