@@ -47,12 +47,16 @@ User: I want a fridge, my requirements are ...
    ↓
 2. Search and store
    Before starting, check login for every browser-based site this search needs; ask the user to log in up front.
-   Turn needs into each site's search terms and filters; queue candidates by rating, sales and review mentions.
-   Fetch detail pages one by one and store them (see 4.4); check login and captcha again on every page.
-   Stop at 50 pages or once the top picks are settled.
+   a. Search product sites with the user's filters; the result lists give rating and sales per candidate.
+   b. Search the profile's review sources at category level; count how often each model is mentioned.
+   c. Fetch detail pages in Threshold Algorithm order over the three lists (see 4.3) and store them (see 4.4).
+      Stop at 50 detail pages or when no unread candidate can reach the top k.
+   d. For the top 10 candidates, fetch model-specific reviews (shop reviews and review sources), up to 30 pages.
+   Every fetched page is also checked for login and captcha.
    ↓
 3. Recommend
    SQL filter plus Python scoring; take the top picks (default 5).
+   If candidates are priced in different currencies and price affects the ranking, ask the user first (see 4.7).
    Recheck every pick for price and availability; replace sold-out picks with the next candidate.
    The LLM writes the picks citing record IDs; Python checks the IDs and numbers.
    ↓
@@ -126,7 +130,7 @@ class SourceAdapter(Protocol):
 #### Login and captcha
 
 - `check_session` decides whether the user is logged in. Any of these counts as logged out: a redirect to the login page, a login dialog on the page, or captured JSON reporting "not logged in" or "session expired". A captcha is handled the same way.
-- Before phase 2, check every browser-based site this search needs, so the user is asked up front. Check again on every page, because a session can expire or a captcha can appear mid-search.
+- Before phase 2, check every browser-based site this search needs, so the user is asked up front. Check again on every page, because a session can expire or a captcha can appear mid-search. The per-page check inspects the page just fetched and sends no extra request. Availability rechecks in phase 3 go through the same check.
 - On a problem, pause with a LangGraph interrupt. Open the site's login page in the user's browser and tell the user in the chat, for example: "You are not logged in to Taobao. I opened the login page. Reply 'done' after logging in, or skip Taobao." After the reply, check again and resume where it stopped. If the user skips, continue with the other sites.
 - The user always logs in and solves captchas. The program never types passwords and never bypasses captchas. Sessions are stored locally in `browser-profile/`, which is not in Git.
 
@@ -135,9 +139,9 @@ class SourceAdapter(Protocol):
 The goal is to avoid paging through endless results and to keep irrelevant products out. It draws on these classic methods.
 
 1. **Predicate pushdown**: every hard condition the site can filter on goes into the site's search parameters.
-2. **Top-k over several sorted lists (Fagin's Threshold Algorithm)**: read down lists sorted by rating, sales and review mentions in parallel. Stop when the best possible combined score of any unread product is below the current k-th product.
-3. **Multi-stage ranking**: the first pass uses only the title, price, rating and sales shown in search results, to drop irrelevant products. Only top-ranked products get their detail pages, reviews and images fetched.
-4. **Budget**: each search has a page cap. When it is used up, stop and say so in the picks. The default is 50 detail pages. If a paid model is used, add a money cap, set after phase 1 measures the cost of one search.
+2. **Top-k over several sorted lists (Fagin's Threshold Algorithm)**: three lists, all available before any detail page is fetched. Rating and sales come from the product sites' search results. Review mentions come from the category-level review search (phase 2b), matched to models as in 4.5. Read down the lists in parallel, fetching the detail page of each newly seen candidate. Stop when the best possible combined list score of any unread candidate is below the current k-th candidate (k = 10). The final ranking in phase 3 also uses detail-page data, so this stopping rule decides only which detail pages are worth fetching.
+3. **Multi-stage ranking**: the first pass uses only the title, price, rating and sales shown in search results, to drop irrelevant products. Only candidates that pass get detail pages fetched, and only the top 10 after ranking get model-specific reviews and images.
+4. **Budget**: each search has page caps. When one is used up, stop and say so in the picks. Defaults: 50 detail pages and 30 review pages. If a paid model is used, add a money cap, set after phase 1 measures the cost of one search.
 
 ### 4.4 Extraction and storage
 
@@ -146,7 +150,7 @@ Principle: **only information used for filtering and comparison is structured. E
 **Structured path: a few fields only**
 
 1. Read in order of reliability: captured JSON or structured data embedded in the page (JSON-LD), then the HTML text.
-2. Core fields: name, brand, model, price, currency, rating, review count, in stock, source URL, fetch time. Fields missing from structured data are extracted from the HTML by the LLM.
+2. Core fields: name, brand, model, price, currency, rating, review count, in stock, source URL, fetch time. Also extract the attributes listed in the profile and any attribute the user's current conditions use, since they are needed for ranking anyway. Fields missing from structured data are extracted from the HTML by the LLM, in one call per page.
 3. Validate with Pydantic.
 4. Match on model number, brand and specs to see whether the product is already in the database. If it is, add or update the listing and variant. If not, create a product. Every fetched price also adds a price_history row.
 
@@ -160,7 +164,9 @@ Rule: **prices come only from structured data or HTML, never from images**, beca
 
 **On-demand attribute extraction**
 
-When the user gives a hard condition on an attribute that is not stored yet (for example "no taller than 180 cm"), retrieve the chunks about that attribute for each candidate, have the LLM extract the value, write it to `attributes` and record the source chunk ID. If nothing is found, mark it as missing and say so in the picks. The model never guesses.
+When the user later adds a condition on an attribute that is not stored yet (for example "no taller than 180 cm"), retrieve the chunks about that attribute for each candidate, have the LLM extract the value, write it to `attributes` and record the source chunk ID. If nothing is found, mark it as missing and say so in the picks.
+
+To keep the model from guessing, every extracted value must carry the raw text it came from (`raw`), and Python checks that this text really appears in the source page or chunk. Values that fail the check are dropped and marked missing.
 
 Format of each value in `attributes`:
 
@@ -200,6 +206,10 @@ Product text chunks and review chunks share one retrieval path.
 4. Missing and uncertain data
 5. Fetch time and availability
 6. How the ranking was done
+
+**Which price to show.** A product with variants shows the price of the variant that fits the user's needs (size, color, capacity). If that is unknown, it shows the price range across variants. The ranking uses the lowest price of the fitting variants.
+
+**Mixed currencies.** There is no default conversion (section 2). If the candidates are priced in more than one currency and price affects the ranking, ask the user before ranking: limit the search to one market, or give an exchange rate to use. The rate the user gives is shown in the picks with the formula.
 
 **Before the picks are shown, every pick is rechecked for price and availability, however recently it was fetched.** A sold-out pick is replaced with the next candidate, which is then checked too. Candidates outside the top are not rechecked.
 
@@ -244,6 +254,7 @@ The model provider is not decided and may be a free tier, so the LLM layer is no
 - One calling interface: send messages, request structured output, call tools. Gemini, Groq, OpenRouter and Ollama all offer OpenAI-compatible endpoints, so one client covers them by configuration. Claude is connected separately through the official Anthropic SDK.
 - Each step has its own model setting. Extraction is simple and can use a free small model. Writing the picks and understanding follow-ups need a stronger one.
 - Models are chosen by evaluation numbers (section 7), not by impression.
+- The layer has its own rate limiter and retries, set per provider. Free tiers are slow: at 10 requests per minute, 50 pages that all need an LLM call take at least 5 minutes. JSON capture and JSON-LD keep most pages away from the LLM, and the share of pages that needed an LLM call is logged per search.
 
 Candidates (quotas change often; check the official pages before signing up):
 
@@ -270,7 +281,7 @@ One Postgres database with the pgvector extension.
 | `chunks` | Product text and review chunks: text, `vector(1024)`, BM25 tokens, language, embedding model version, source IDs |
 | `source_stats` | Contribution of each source per category |
 | `fetch_log` | URL, time, status and duration of each request, for rate limiting and debugging |
-| `eliminations` | Eliminated products and why; not shown in the picks |
+| `eliminations` | Products eliminated or rejected in a conversation, with the thread ID and why; not shown in the picks. `exclude_and_rerank` reads it so rejected products stay out for the rest of that conversation |
 | LangGraph checkpoint tables | Conversation state |
 
 ## 6. Tech choices
@@ -287,7 +298,7 @@ One Postgres database with the pgvector extension.
 
 ## 7. Evaluation
 
-Build a labelled set: about 50 product pages across the four categories and several sites. Record the true price and key specs by hand, and save page snapshots so tests can be rerun.
+Build a labelled set: about 50 product pages across the four categories and several sites. Record the true price and key specs by hand, and save page snapshots so tests can be rerun. For browser-based sites a snapshot includes the captured JSON responses as well as the HTML.
 
 | Metric | How it is measured |
 |---|---|
@@ -323,7 +334,9 @@ The project is too big for one implementation plan, so each phase gets its own p
 6. **Full evaluation**: all metrics, retrieval comparison, model comparison.
 7. **Deployment**: FastAPI, Docker.
 
-The first product adapter in phase 1 is chosen after the terms check. Candidates are Prisjakt (full prices, terms not yet checked) and EPREL (official API, accurate specs, no prices).
+The first product adapter in phase 1 is chosen after the terms check. Phase 1 evaluates price extraction, so that adapter must have prices. Prisjakt (full prices, terms not yet checked) fits; EPREL (official API, accurate specs, no prices) can only be a second source for fridge specs, never the only one.
+
+Review fetching (phase 2b and 2d in section 3) arrives in phase 3. Until then the Threshold Algorithm runs on rating and sales only.
 
 ## 10. Open items
 
