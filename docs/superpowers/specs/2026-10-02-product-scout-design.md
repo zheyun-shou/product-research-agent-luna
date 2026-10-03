@@ -51,7 +51,8 @@ User: I want a fridge, my requirements are ...
    b. Search the profile's review sources at category level; count how often each model is mentioned.
    c. Fetch detail pages in Threshold Algorithm order over the three lists (see 4.3) and store them (see 4.4).
       Stop at 50 detail pages or when no unread candidate can reach the top k.
-   d. For the top 10 candidates, fetch model-specific reviews (shop reviews and review sources), up to 30 pages.
+   d. Score the fetched candidates once with the phase 3 scoring. For the top 10, fetch model-specific reviews
+      (shop reviews and review sources), up to 30 pages.
    Every fetched page is also checked for login and captcha.
    ↓
 3. Recommend
