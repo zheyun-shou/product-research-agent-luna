@@ -82,3 +82,9 @@ def test_yes_no_and_class_claims_are_checked_as_text():
     errors = check_picks(picks("Class D, no frost.", [("energy_class", "D"), ("no_frost", "false")]), {1: c})
     assert any("energy_class is E, not D" in e for e in errors)
     assert any("no_frost is yes, not false" in e for e in errors)
+
+
+def test_numbers_from_the_shoppers_conditions_may_be_repeated():
+    text = picks("Under your 9 000 SEK budget and 180 cm limit.", [])
+    assert check_picks(text, cards(), "height<=180, budget 9000 SEK") == []
+    assert check_picks(text, cards()) != []

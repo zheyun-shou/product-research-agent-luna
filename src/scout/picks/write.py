@@ -15,7 +15,8 @@ Rules:
 - summary: one or two sentences on why the product fits, and what to watch out for, such as missing data.
 - Use only facts on the cards.
 - Every number you write in a summary must also be in that pick's claims, with the card field it comes from.
-  Claim fields are price, rating, review_count, or an attribute name on the card. Do not write any other numbers.
+  Claim fields are price, rating, review_count, or an attribute name on the card.
+  You may also repeat numbers from the shopper's conditions without a claim. Do not write any other numbers.
 - Write in {language}."""
 
 SUMMARY_NUMBER = re.compile(r"\d{1,3}(?:[\u00a0\u202f ]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?")
@@ -79,8 +80,9 @@ def _card_json(card: Card) -> str:
     }, ensure_ascii=False)
 
 
-def check_picks(text: PicksText, cards: dict[int, Card]) -> list[str]:
+def check_picks(text: PicksText, cards: dict[int, Card], conditions_text: str = "") -> list[str]:
     errors = []
+    given = {n for raw in SUMMARY_NUMBER.findall(conditions_text) if (n := to_decimal(raw)) is not None}
     for pick in text.picks:
         card = cards.get(pick.listing_id)
         if card is None:
@@ -107,7 +109,7 @@ def check_picks(text: PicksText, cards: dict[int, Card]) -> list[str]:
             summary = re.sub(re.escape(card.model), "", summary, flags=re.IGNORECASE)
         for raw in SUMMARY_NUMBER.findall(summary):
             number = to_decimal(raw)
-            if number is not None and number not in claimed:
+            if number is not None and number not in claimed and number not in given:
                 errors.append(f"{pick.listing_id}: the number {raw} in the summary is not in the claims")
     missing_ids = sorted(set(cards) - {p.listing_id for p in text.picks})
     if missing_ids:
@@ -124,7 +126,7 @@ def write_picks(llm, cards: list[Card], conditions_text: str, language: str = "E
         prompt = base if not errors else base + "\n\nYour last answer had these problems. Fix them:\n" + \
             "\n".join(f"- {e}" for e in errors)
         text = llm.structured("chat", SYSTEM.format(language=language), prompt, PicksText)
-        errors = check_picks(text, by_id)
+        errors = check_picks(text, by_id, conditions_text)
         if not errors:
             return text, []
     return None, errors
