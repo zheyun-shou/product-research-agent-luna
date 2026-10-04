@@ -25,13 +25,14 @@
 
 ## Decisions for this phase
 
-These points differ from the spec or make it more exact. Task 13 writes them into the spec.
+These points differ from the spec or make it more exact. Task 14 writes them into the spec.
 
 1. **Tool selection is structured output, not native tool calls.** Each follow-up turn makes one `Route` object with one action. This uses the same JSON path for Gemini and Groq, and Python validates each choice before a tool runs. The spec tools map to actions as follows. `query_products`: `change_needs`, then the SQL and Python filters. `exclude_and_rerank`: `exclude`. `fetch_more`: `more`. `calculate`: `calculate`. `recheck_availability`: `recheck`. `search_text` and `extract_attribute` need chunks and come in phase 3. `update_profile` comes in phase 4, with profile generation.
 2. **Login and captcha pauses stay a prompt in the terminal.** The graph runs in the same process as the terminal, so the crawl can wait for the user, as in phase 1. The LangGraph interrupt comes in phase 7, when a web page replaces the terminal.
 3. **Profiles get kinds.** The 5 l cosmetics cooler ranked second in the phase 1 runs, because "fridge" was too wide. A profile now lists kinds (for the fridge: with a freezer part, without one, mini fridge, wine cooler, cool box), each with Swedish search terms. The clarify step must know the kind before it searches. The title screening keeps only items of that kind.
 4. **The clarify step must not invent numbers.** Each condition and the budget must agree with a number that the user wrote, with a unit change of a power of ten at most (1,8 m is 180 cm). Otherwise the model must ask.
 5. **Size doubts are marked, never changed.** The worker compares the sizes on each pick with the title, the bullet points and the specifications. A doubtful size gets "(doubtful)" and a note. A quote in the note must be on the page.
+6. **A hidden price comes from "Visa alla köpalternativ".** Sometimes amazon.se shows no buy box and no price, only the text "Priset är högre än vanligt" and the button "Visa alla köpalternativ". Zheyun found this in her label review on 2026-10-04 (4 of 38 labelled pages). The program then opens the offer panel and reads the lowest new offer. The price keeps the source `all_offers`, and the picks say that Amazon marks this price as higher than usual.
 
 ## Review Focus
 
@@ -41,6 +42,7 @@ These points differ from the spec or make it more exact. Task 13 writes them int
 4. The calculation tool gets an exchange rate that the user did not give. It must ask for the rate and calculate nothing. Test in Task 8.
 5. A conversation that only clarifies never calls the crawl and never opens the browser. Test in Task 9.
 6. The size check returns a quote that is not on the page. The size must stay as it is, with no note. Test in Task 11.
+7. A product page has no buy box and the offer panel has only used offers. The price must stay empty. A used offer must never become the price. Test in Task 12.
 
 ---
 
@@ -58,6 +60,7 @@ src/scout/
   llm/client.py                      a tracer records each attempt as a generation
   extract/screen.py                  screen_titles takes the wanted kind
   extract/doubt.py                   worker size check with checked quotes
+  sources/amazon_se/offers.py        parse the offer panel (Visa alla köpalternativ)
   db/schema.sql                      add eliminations
   db/conn.py                         add connect_checkpoints
   db/store.py                        add known_source_ids, add_eliminations, eliminated_products
@@ -2451,7 +2454,51 @@ git commit -m "Worker size check on the picks: doubtful sizes are marked, quotes
 
 ---
 
-### Task 12: Langfuse setup (Zheyun)
+### Task 12: Read the offer panel when Amazon hides the price
+
+**Why:** In 4 of the 38 labelled pages, amazon.se shows no buy box and no price. The page says "Priset är högre än vanligt" and shows the button "Visa alla köpalternativ". The offer panel behind the button has the prices. Zheyun found this in her label review on 2026-10-04. Now these products have no price, so a budget removes them from the picks, although they can be bought.
+
+**Note.** The dry run did not include this task. The saved pages do not contain the panel: it loads only after a click (the saved pages have the class `aod-assets-not-loaded`). So the selectors and the test fixture come from real panels that Step 1 saves. Claude writes the code of Steps 2 to 5 after Step 1, with the same rules as the other tasks: a test first, then the code.
+
+**Files:**
+- Modify: `src/scout/sources/base.py`, `src/scout/sources/amazon_se/product.py`, `src/scout/sources/amazon_se/adapter.py`, `src/scout/sources/browser.py`
+- Create: `src/scout/sources/amazon_se/offers.py`, `tests/fixtures/amazon_se/offers_*.html`, `tests/test_amazon_offers.py`
+- Modify: `src/scout/crawl.py`, `src/scout/picks/recheck.py`, `src/scout/picks/write.py`, `src/scout/db/schema.sql`, `src/scout/db/store.py`
+
+- [ ] **Step 1: Save four real offer panels**
+
+Add `--offers` to `scout snap`. With this option, the browser opens the product page, clicks "Visa alla köpalternativ", waits up to 10 seconds for `#aod-container`, and saves the panel HTML and a screenshot in `snapshots/amazon_se/offers/<ASIN>/`. Run it on the 4 ASINs from the review: B07YKSGPV1, B093388SWG, B0B5LN7J3X and B0DRVXYFXD. Zheyun is at the computer, because a captcha can come. Copy a reduced version of two panels to `tests/fixtures/amazon_se/` (remove scripts and images, keep the offer blocks). One fixture must have a used offer, if a real panel has one.
+
+- [ ] **Step 2: Detect the hidden price**
+
+`ProductRecord` gets `price_hidden: bool = False` and `price_source: Literal["buy_box", "all_offers"] | None = None`. The product parser sets `price_hidden` when it finds no price and finds `#buybox-see-all-buying-choices`. Test this on the 4 saved product pages: each one gives `price_hidden=True`. The 34 other labelled pages give `price_hidden=False`.
+
+- [ ] **Step 3: Parse the offer panel**
+
+`parse_offers(html) -> list[Offer]`. `Offer` has `price`, `currency`, `condition` ("new" or "used"), `seller`, `delivery` (text, for example "Gratis leverans") and `raw_text`. Python finds each `raw_text` on the panel, as for the other extracted values. `lowest_new(offers)` returns the cheapest offer in the condition "new", or None. Test: the fixture with a used offer never returns the used price.
+
+- [ ] **Step 4: Use the panel in the crawl and the recheck**
+
+When a fetched product page has `price_hidden`, the adapter opens the panel in the same tab (one click, no new page load), and the record takes the price of `lowest_new`, with `price_source="all_offers"`. `in_stock` is True when there is a new offer. The fetch log gets a line for the panel. `variants` and `price_history` get the column `price_source`. The recheck of the picks does the same. When the panel has no new offer, the price stays empty, as now.
+
+- [ ] **Step 5: Show it in the picks**
+
+A card with `price_source="all_offers"` shows "(from all buying options, Amazon marks this price as higher than usual)" after the price. `check_picks` accepts the price as before. Test with a card in `tests/test_picks_write.py`.
+
+- [ ] **Step 6: New labels and a new evaluation run (Zheyun)**
+
+Zheyun labels the price of the 4 panels from their screenshots: the cheapest new offer, in kr. Add these rows to `data/eval/price_labels_all.csv` with the note "labelled by Zheyun from the offer panel". Run `scout eval-prices`. Write the result under this step.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src tests
+git commit -m "Read the offer panel when amazon.se hides the price"
+```
+
+---
+
+### Task 13: Langfuse setup (Zheyun)
 
 - [ ] **Step 1: Choose where the traces go**
 
@@ -2477,7 +2524,7 @@ Expected: `keys accepted: True`. In Langfuse, **Tracing** shows a trace named "c
 
 ---
 
-### Task 13: Real conversations (Zheyun) and the numbers
+### Task 14: Real conversations (Zheyun) and the numbers
 
 - [ ] **Step 1: Conversation A, a fridge with a freezer part**
 
@@ -2517,7 +2564,7 @@ Report only the real numbers. Nothing goes into the CV until Zheyun confirms it.
 
 - [ ] **Step 6: Update the documents**
 
-1. Spec: write the five decisions of this plan into sections 3, 4.1, 4.2, 4.8 and 4.11. In the table of LLM candidates, change the Groq row: it is the `chat` fallback, with the limits from 2026-10-04.
+1. Spec: write the six decisions of this plan into sections 3, 4.1, 4.2, 4.8 and 4.11. In the table of LLM candidates, change the Groq row: it is the `chat` fallback, with the limits from 2026-10-04.
 2. Diagram (https://claude.ai/artifact/4jJqCkVudUFU24kTyXsiqZ): mark the phase 2 nodes as built and update the Progress section.
 3. Write the results of Steps 1 to 5 under this task.
 
