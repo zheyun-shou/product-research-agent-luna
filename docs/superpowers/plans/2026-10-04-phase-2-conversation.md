@@ -34,7 +34,7 @@ These points differ from the spec or make it more exact. Task 14 writes them int
 3. **Profiles get kinds.** The 5 l cosmetics cooler ranked second in the phase 1 runs, because "fridge" was too wide. A profile now lists kinds (for the fridge: with a freezer part, without one, mini fridge, wine cooler, cool box), each with Swedish search terms. The clarify step must know the kind before it searches. The title screening keeps only items of that kind.
 4. **The clarify step must not invent numbers.** Each condition and the budget must agree with a number that the user wrote, with a unit change of a power of ten at most (1,8 m is 180 cm). Otherwise the model must ask.
 5. **Size doubts are marked, never changed.** The worker compares the sizes on each pick with the title, the bullet points and the specifications. A doubtful size gets "(doubtful)" and a note. A quote in the note must be on the page.
-6. **A hidden price comes from "Visa alla köpalternativ".** Sometimes amazon.se shows no buy box and no price, only the text "Priset är högre än vanligt" and the button "Visa alla köpalternativ". Zheyun found this in her label review on 2026-10-04 (4 of 38 labelled pages). The program then opens the offer panel and reads the lowest new offer. The price keeps the source `all_offers`, and the picks say that Amazon marks this price as higher than usual.
+6. **A hidden price comes from one click on the page.** Zheyun found two cases in her label review on 2026-10-04 (5 of 38 labelled pages). On 4 pages, amazon.se shows no buy box, only "Priset är högre än vanligt" and the button "Visa alla köpalternativ". The program opens the offer panel and reads the lowest new offer that can go in the cart. On 1 page, the price shows only after a size is selected. The program clicks each size and stores each one as a variant. Each price keeps its source (`all_offers` or `size_choice`), and the picks show it.
 
 ## Review Focus
 
@@ -63,6 +63,7 @@ src/scout/
   extract/screen.py                  screen_titles takes the wanted kind
   extract/doubt.py                   worker size check with checked quotes
   sources/amazon_se/offers.py        parse the offer panel (Visa alla köpalternativ)
+  sources/amazon_se/product.py       detect a hidden price: offer panel or size choice
   db/schema.sql                      add eliminations
   db/conn.py                         add connect_checkpoints
   db/store.py                        add known_source_ids, add_eliminations, eliminated_products
@@ -2456,46 +2457,64 @@ git commit -m "Worker size check on the picks: doubtful sizes are marked, quotes
 
 ---
 
-### Task 12: Read the offer panel when Amazon hides the price
+### Task 12: Read the price when amazon.se hides it
 
-**Why:** In 4 of the 38 labelled pages, amazon.se shows no buy box and no price. The page says "Priset är högre än vanligt" and shows the button "Visa alla köpalternativ". The offer panel behind the button has the prices. Zheyun found this in her label review on 2026-10-04. Now these products have no price, so a budget removes them from the picks, although they can be bought.
+**Why:** Zheyun reviewed the 32 labels that Claude made, on 2026-10-04. 27 were correct. 5 were wrong, and in all 5 the page shows no single price:
 
-**Note.** The dry run did not include this task. The saved pages do not contain the panel: it loads only after a click (the saved pages have the class `aod-assets-not-loaded`). So the selectors and the test fixture come from real panels that Step 1 saves. Claude writes the code of Steps 2 to 5 after Step 1, with the same rules as the other tasks: a test first, then the code.
+1. **Offer panel (4 pages).** B07YKSGPV1, B093388SWG, B0B5LN7J3X and B0DRVXYFXD show no buy box. The page says "Priset är högre än vanligt" and shows the button "Visa alla köpalternativ". The offer panel behind the button has the prices. The panel does not show the stock. Zheyun's rule: an offer that you can add to the cart is in stock.
+2. **Size choice (1 page).** B0H4YNM2BL shows a price range, 1809 to 1977 kr, and "Välj Storlek". The page shows a price and a stock only after a size is selected. The page has an ASIN for each colour and size (`dimensionValuesDisplayData`, here 4 ASINs for 2 colours and 2 sizes).
+
+Now these products have no price, so a budget removes them from the picks, although they can be bought. The labels and the parser both said "no price", so the evaluation counted them as correct.
+
+**Note.** The dry run did not include this task. The saved pages do not contain the offer panel: it loads only after a click (the saved pages have the class `aod-assets-not-loaded`). So the selectors and the test fixtures come from real pages that Step 1 saves. Claude writes the code of Steps 2 to 6 after Step 1, with the same rules as the other tasks: a test first, then the code.
 
 **Files:**
 - Modify: `src/scout/sources/base.py`, `src/scout/sources/amazon_se/product.py`, `src/scout/sources/amazon_se/adapter.py`, `src/scout/sources/browser.py`
-- Create: `src/scout/sources/amazon_se/offers.py`, `tests/fixtures/amazon_se/offers_*.html`, `tests/test_amazon_offers.py`
+- Create: `src/scout/sources/amazon_se/offers.py`, `tests/fixtures/amazon_se/offers_*.html`, `tests/fixtures/amazon_se/product_size_*.html`, `tests/test_amazon_offers.py`
 - Modify: `src/scout/crawl.py`, `src/scout/picks/recheck.py`, `src/scout/picks/write.py`, `src/scout/db/schema.sql`, `src/scout/db/store.py`
 
-- [ ] **Step 1: Save four real offer panels**
+- [ ] **Step 1: Save real pages after the click**
 
-Add `--offers` to `scout snap`. With this option, the browser opens the product page, clicks "Visa alla köpalternativ", waits up to 10 seconds for `#aod-container`, and saves the panel HTML and a screenshot in `snapshots/amazon_se/offers/<ASIN>/`. Run it on the 4 ASINs from the review: B07YKSGPV1, B093388SWG, B0B5LN7J3X and B0DRVXYFXD. Zheyun is at the computer, because a captcha can come. Copy a reduced version of two panels to `tests/fixtures/amazon_se/` (remove scripts and images, keep the offer blocks). One fixture must have a used offer, if a real panel has one.
+Add `--offers` and `--sizes` to `scout snap`.
+- With `--offers`, the browser opens the product page, clicks "Visa alla köpalternativ", waits up to 10 seconds for `#aod-container`, and saves the panel HTML and a screenshot in `snapshots/amazon_se/offers/<ASIN>/`.
+- With `--sizes`, the browser clicks each option in the row "Storlek" (at most 4), waits for the price to change, and saves the page HTML and a screenshot after each click in `snapshots/amazon_se/product/<ASIN>/`.
 
-- [ ] **Step 2: Detect the hidden price**
+Run `--offers` on the 4 offer-panel ASINs and `--sizes` on B0H4YNM2BL. Zheyun is at the computer, because a captcha can come. Copy reduced versions to `tests/fixtures/amazon_se/` (remove scripts and images, keep the offer blocks and the price blocks). One offer fixture must have a used offer, if a real panel has one.
 
-`ProductRecord` gets `price_hidden: bool = False` and `price_source: Literal["buy_box", "all_offers"] | None = None`. The product parser sets `price_hidden` when it finds no price and finds `#buybox-see-all-buying-choices`. Test this on the 4 saved product pages: each one gives `price_hidden=True`. The 34 other labelled pages give `price_hidden=False`.
+- [ ] **Step 2: Detect a hidden price**
+
+`ProductRecord` gets `price_hidden: Literal["offers", "size"] | None = None` and `price_source: Literal["buy_box", "all_offers", "size_choice"] | None = None`.
+- `offers`: the parser finds no price and finds `#buybox-see-all-buying-choices`.
+- `size`: the parser finds `.a-price-range` and a row with "Välj". It also reads the ASIN, colour and size of each option from `dimensionValuesDisplayData`.
+
+Test this on the 38 labelled pages: the 4 offer pages give `offers`, B0H4YNM2BL gives `size`, and the other 33 give None.
 
 - [ ] **Step 3: Parse the offer panel**
 
-`parse_offers(html) -> list[Offer]`. `Offer` has `price`, `currency`, `condition` ("new" or "used"), `seller`, `delivery` (text, for example "Gratis leverans") and `raw_text`. Python finds each `raw_text` on the panel, as for the other extracted values. `lowest_new(offers)` returns the cheapest offer in the condition "new", or None. Test: the fixture with a used offer never returns the used price.
+`parse_offers(html) -> list[Offer]`. `Offer` has `price`, `currency`, `condition` ("new" or "used"), `seller`, `delivery` (text, for example "Gratis leverans"), `can_add_to_cart` and `raw_text`. Python finds each `raw_text` on the panel, as for the other extracted values. `lowest_new(offers)` returns the cheapest offer in the condition "new" that can go in the cart, or None. Test: the fixture with a used offer never returns the used price.
 
-- [ ] **Step 4: Use the panel in the crawl and the recheck**
+- [ ] **Step 4: Use the offer panel and the size choice in the crawl and the recheck**
 
-When a fetched product page has `price_hidden`, the adapter opens the panel in the same tab (one click, no new page load), and the record takes the price of `lowest_new`, with `price_source="all_offers"`. `in_stock` is True when there is a new offer. The fetch log gets a line for the panel. `variants` and `price_history` get the column `price_source`. The recheck of the picks does the same. When the panel has no new offer, the price stays empty, as now.
+- `offers`: the adapter opens the panel in the same tab (one click, no new page load). The record takes the price of `lowest_new`, with `price_source="all_offers"`, and `in_stock` is True. When the panel has no new offer that can go in the cart, the price stays empty, as now.
+- `size`: the adapter clicks each size of the colour on the page, at most 4. Each size becomes one row in `variants`, with its own price and stock and `price_source="size_choice"`. The variant key is the ASIN of the option, and the label is the colour and the size. The budget filter keeps the listing when one variant is in the budget. The picks show the variant that is in the budget.
+- The fetch log gets one line for each click. `variants` and `price_history` get the column `price_source`. The recheck of the picks does the same clicks.
 
 - [ ] **Step 5: Show it in the picks**
 
-A card with `price_source="all_offers"` shows "(from all buying options, Amazon marks this price as higher than usual)" after the price. `check_picks` accepts the price as before. Test with a card in `tests/test_picks_write.py`.
+- A card with `price_source="all_offers"` shows "(from all buying options, Amazon marks this price as higher than usual)" after the price.
+- A card with `price_source="size_choice"` shows the size after the price, for example "1 809,00 kr (size 50 L)".
+
+`check_picks` accepts the price as before. Test with two cards in `tests/test_picks_write.py`.
 
 - [ ] **Step 6: New labels and a new evaluation run (Zheyun)**
 
-Zheyun labels the price of the 4 panels from their screenshots: the cheapest new offer, in kr. Add these rows to `data/eval/price_labels_all.csv` with the note "labelled by Zheyun from the offer panel". Run `scout eval-prices`. Write the result under this step.
+Zheyun labels the 4 offer panels (the cheapest new offer that can go in the cart, in kr) and each size of B0H4YNM2BL (price and stock), from the screenshots of Step 1. Add these rows to `data/eval/price_labels_all.csv` with the note "labelled by Zheyun after the click". Run `scout eval-prices`. Write the result under this step.
 
 - [ ] **Step 7: Commit**
 
 ```bash
 git add src tests
-git commit -m "Read the offer panel when amazon.se hides the price"
+git commit -m "Read the price from the offer panel or the size choice when amazon.se hides it"
 ```
 
 ---
@@ -2582,4 +2601,6 @@ git commit -m "Phase 2 real conversations: results, spec and plan notes"
 ## After phase 2
 
 - Phase 3 (text and retrieval) has its own plan. It adds `search_text` and `extract_attribute`, so the agent can answer questions that the cards cannot answer.
+- Use the filters of amazon.se in the search (spec section 4.2, predicate pushdown). The saved "kylskåp" pages show these filters: price, 4 stars and up, condition, Konfiguration (with or without a freezer part, and where), Kapacitet, Höjd, Bredd and Djup in wide ranges, and the brand. Not done yet. A filter can hide a product that Amazon did not tag, so first measure how many of the products that meet the needs each filter keeps.
+- Measure how many result pages give good picks: after which page do the top 5 stop changing? Zheyun decided on 2026-10-04 to do this after the reviews are connected, because then the candidates come from the search and from professional reviews.
 - Store the title screening results, so that `--no-llm` runs and later searches do not screen the same titles again (Zheyun decided on 2026-10-04 to keep the LLM screening for now).
