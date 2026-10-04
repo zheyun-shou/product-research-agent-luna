@@ -4488,6 +4488,15 @@ Changes from the code above, made during Claude's test runs on 2026-10-04:
 
 Results of Claude's runs (`--budget 9000 --where "height<=186" --where "width<=60"`): 5 picks, each rechecked on amazon.se. The first run wrote summaries, and all of them passed the checks. On the second run, Gemini returned 503. On the third run, the free daily quota of `gemini-3.8-flash` was used up after only a few chat calls that day, so the free chat quota is small. With and without the LLM, the facts of picks 1 to 4 were the same. A 5 l cosmetics cooler ranks second, because the profile does not say what kind of fridge the user wants. The clarify step in phase 2 must ask this. Zheyun must still open two links and compare the price and the stock.
 
+Later changes on 2026-10-04, after the Gemini chat quota ran out:
+
+- The chat role has a fallback model, `openai/gpt-oss-120b` on Groq (free plan: 30 requests a minute, 1000 a day, 200K tokens a day, from the Groq rate-limit page on 2026-10-04). When the main model raises `LLMUnavailable`, the role uses the fallback for the rest of the run. Output errors do not cause a switch. Groq models read text only, so the worker stays on Gemini.
+- The picks check knew only numeric attributes. Claims such as `no_frost` True or `energy_class` E failed, so all 3 summary rounds failed (1 on Gemini, 2 on Groq). The check now compares yes/no and class values as text.
+- The next run failed only because a summary repeated the 9000 SEK budget. Numbers from the conditions are now allowed in summaries.
+- One recheck got a 200 page of 86 KB with only the navigation skeleton (1 of 96 product snapshots). The pick stayed with "price unknown" under the budget. A product page without `productTitle` is now `incomplete` and is fetched again without asking. A rechecked pick with no price is replaced when there is a budget.
+
+With these changes, the run wrote summaries for all 5 picks in 1 Groq call (1189 tokens in, 2699 out), and they passed the checks.
+
 - [x] **Step 12: Commit**
 
 ```bash
