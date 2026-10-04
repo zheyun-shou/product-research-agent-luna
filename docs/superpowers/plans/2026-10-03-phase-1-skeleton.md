@@ -4472,7 +4472,7 @@ def picks(
 Run: `python -m pytest -v`
 Expected: all passed.
 
-- [ ] **Step 11: Real run (Zheyun)**
+- [x] **Step 11: Real run (Zheyun)**
 
 Run: `scout picks fridge --budget 9000 --where "height<=186" --where "width<=60"`
 Expected: a maximum of 5 picks. The program checks each pick again a few seconds before it shows the pick. Each pick shows the price, rating, attributes, missing data, a short summary and a link. Open two links and make sure that the price and the stock are correct. Then run the same command with `--no-llm` and make sure that the facts are the same.
@@ -4496,6 +4496,8 @@ Later changes on 2026-10-04, after the Gemini chat quota ran out:
 - One recheck got a 200 page of 86 KB with only the navigation skeleton (1 of 96 product snapshots). The pick stayed with "price unknown" under the budget. A product page without `productTitle` is now `incomplete` and is fetched again without asking. A rechecked pick with no price is replaced when there is a budget.
 
 With these changes, the run wrote summaries for all 5 picks in 1 Groq call (1189 tokens in, 2699 out), and they passed the checks.
+
+Zheyun's check on 2026-10-04: she ran the command with and without `--no-llm`. The facts of the 4 products in both runs were the same. Without the LLM, a water filter came first, because titles are not screened. She opened B08PL233S8 (Bomann 175 l, 5137.18 SEK) and B0F9Y2XN3J (FOHERE 90 l, 2199.99 SEK). The price and the stock were correct for both. The FOHERE page gives 48 cm height and 80 cm depth, and she thinks that the page is wrong. A worker check of sizes against the title, the description and the images is a task for later.
 
 - [x] **Step 12: Commit**
 
