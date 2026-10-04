@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-02-product-scout-design.md`, sections 3, 4.7 to 4.10, and phase 2 in section 9.
 
+**Video:** a walkthrough of this plan, with captions and voice, is at https://claude.ai/artifact/BRmWUvhE8E82DBwQQYeLNx. Fig. 4 of the diagram (https://claude.ai/artifact/4jJqCkVudUFU24kTyXsiqZ) shows one turn of the conversation.
+
 **Dry run.** On 2026-10-04 Claude applied all code of this plan in a temporary Git worktree, on commit f676761. 204 tests passed: the 163 tests of phase 1 and 41 new ones. Then Claude ran one real clarify turn of `scout chat` in Chinese ("a fridge, 60 cm wide, 186 cm high, budget 9000 kronor"). The agent stored width<=60, height<=186 and budget 9000. It asked about the kind (with or without a freezer part), the depth and the noise. No browser opened. The chat role used 2 calls on Groq, because the Gemini chat quota was used up. Claude then deleted that thread and the worktree. The tasks below are still not done in the repository.
 
 ## Global Constraints
