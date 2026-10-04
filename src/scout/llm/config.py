@@ -14,10 +14,15 @@ class ProviderConfig(BaseModel):
     api_key_env: str
 
 
-class RoleConfig(BaseModel):
+class ModelConfig(BaseModel):
     provider: str
     model: str
     rpm: int = Field(gt=0)
+
+
+class RoleConfig(ModelConfig):
+    # Used for the rest of the run when the main model is out of quota, busy or unreachable.
+    fallback: ModelConfig | None = None
 
 
 class LLMConfig(BaseModel):
@@ -30,8 +35,9 @@ class LLMConfig(BaseModel):
             if needed not in self.roles:
                 raise ValueError(f"models.yaml needs a '{needed}' role")
         for name, role in self.roles.items():
-            if role.provider not in self.providers:
-                raise ValueError(f"role '{name}' uses unknown provider '{role.provider}'")
+            for used in (role, role.fallback):
+                if used is not None and used.provider not in self.providers:
+                    raise ValueError(f"role '{name}' uses unknown provider '{used.provider}'")
         return self
 
 

@@ -184,3 +184,75 @@ def test_config_needs_both_roles_and_known_providers():
 def test_shipped_config_loads():
     config = load_llm_config()
     assert {"chat", "worker"} <= set(config.roles)
+
+
+FALLBACK_CONFIG = LLMConfig.model_validate({
+    "providers": {"gemini": {"base_url": "https://example.test/", "api_key_env": "GEMINI_API_KEY"},
+                  "groq": {"base_url": "https://groq.test/", "api_key_env": "GROQ_API_KEY"}},
+    "roles": {
+        "chat": {"provider": "gemini", "model": "strong-model", "rpm": 60,
+                 "fallback": {"provider": "groq", "model": "backup-model", "rpm": 60}},
+        "worker": {"provider": "gemini", "model": "light-model", "rpm": 60},
+    },
+})
+
+
+def make_with_fallback(main_replies, backup_replies):
+    main, backup, clock = FakeOpenAI(main_replies), FakeOpenAI(backup_replies), FakeClock()
+    llm = LLM(FALLBACK_CONFIG, clients={"gemini": main, "groq": backup}, sleep=clock.sleep, clock=clock.clock)
+    return llm, main, backup
+
+
+def test_daily_quota_moves_the_role_to_its_fallback_for_the_rest_of_the_run():
+    llm, main, backup = make_with_fallback(
+        [rate_limited("GenerateRequestsPerDayPerProjectPerModel-FreeTier")],
+        ['{"answer": "one"}', '{"answer": "two"}'])
+    assert llm.structured("chat", "sys", "user", Answer).answer == "one"
+    assert llm.structured("chat", "sys", "user", Answer).answer == "two"
+    assert len(main.chat.completions.requests) == 1
+    assert [r["model"] for r in backup.chat.completions.requests] == ["backup-model", "backup-model"]
+    assert llm.model_for("chat") == "backup-model"
+    assert "daily quota" in llm.fallbacks["chat"]
+    assert [c.model for c in llm.calls] == ["backup-model", "backup-model"]
+
+
+def test_busy_server_also_moves_to_the_fallback():
+    llm, _, _ = make_with_fallback([server_busy()] * 3, ['{"answer": "ok"}'])
+    assert llm.structured("chat", "sys", "user", Answer).answer == "ok"
+
+
+def test_output_errors_do_not_move_to_the_fallback():
+    llm, _, backup = make_with_fallback(["nope", "nope", "nope"], [])
+    with pytest.raises(LLMOutputError):
+        llm.structured("chat", "sys", "user", Answer)
+    assert backup.chat.completions.requests == [] and llm.fallbacks == {}
+
+
+def test_role_without_fallback_still_raises():
+    llm, _, _ = make_with_fallback([rate_limited("GenerateRequestsPerDayPerProjectPerModel-FreeTier")], [])
+    with pytest.raises(QuotaExhausted):
+        llm.structured("worker", "sys", "user", Answer)
+
+
+def test_missing_fallback_key_raises_unavailable_with_the_variable(monkeypatch):
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    main, clock = FakeOpenAI([rate_limited("GenerateRequestsPerDayPerProjectPerModel-FreeTier")]), FakeClock()
+    llm = LLM(FALLBACK_CONFIG, clients={"gemini": main}, sleep=clock.sleep, clock=clock.clock)
+    with pytest.raises(LLMUnavailable, match="GROQ_API_KEY"):
+        llm.structured("chat", "sys", "user", Answer)
+
+
+def test_groq_daily_limit_message_raises_quota_exhausted():
+    message = ("Rate limit reached for model `openai/gpt-oss-120b` in organization `org` service tier `on_demand` "
+               "on tokens per day (TPD): Limit 200000, Used 199990, Requested 500.")
+    llm, _, _ = make([rate_limited(message)])
+    with pytest.raises(QuotaExhausted):
+        llm.structured("chat", "sys", "user", Answer)
+
+
+def test_fallback_provider_must_exist():
+    with pytest.raises(ValidationError):
+        LLMConfig.model_validate({"providers": {"gemini": {"base_url": "x", "api_key_env": "K"}}, "roles": {
+            "chat": {"provider": "gemini", "model": "m", "rpm": 1,
+                     "fallback": {"provider": "groq", "model": "b", "rpm": 1}},
+            "worker": {"provider": "gemini", "model": "m", "rpm": 1}}})

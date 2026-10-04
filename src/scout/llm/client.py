@@ -1,4 +1,4 @@
-"""One calling interface for OpenAI-compatible endpoints (Gemini first) with structured output."""
+"""One calling interface for OpenAI-compatible endpoints (Gemini, Groq) with structured output."""
 import json
 import os
 import time
@@ -8,7 +8,7 @@ from typing import Any, Literal, TypeVar
 from openai import APIConnectionError, BadRequestError, InternalServerError, OpenAI, RateLimitError
 from pydantic import BaseModel, ValidationError
 
-from scout.llm.config import LLMConfig
+from scout.llm.config import LLMConfig, ModelConfig
 from scout.llm.ratelimit import RateLimiter
 
 Role = Literal["chat", "worker"]
@@ -70,11 +70,16 @@ class LLM:
         self._clients = dict(clients or {})
         self._sleep = sleep
         self._clock = clock
-        self._limiters = {name: RateLimiter(role.rpm, sleep, clock) for name, role in config.roles.items()}
+        self._limiters: dict[tuple[str, str], RateLimiter] = {}
         self.calls: list[CallRecord] = []
+        self.fallbacks: dict[str, str] = {}  # role -> why it moved to its fallback model
+
+    def _target(self, role: Role) -> ModelConfig:
+        role_cfg = self.config.roles[role]
+        return role_cfg.fallback if role in self.fallbacks else role_cfg
 
     def model_for(self, role: Role) -> str:
-        return self.config.roles[role].model
+        return self._target(role).model
 
     def client(self, provider: str):
         if provider not in self._clients:
@@ -86,21 +91,37 @@ class LLM:
         return self._clients[provider]
 
     def structured(self, role: Role, system: str, user: str, schema: type[T]) -> T:
-        role_cfg = self.config.roles[role]
+        fallback = self.config.roles[role].fallback
+        if role not in self.fallbacks:
+            try:
+                return self._structured(role, self.config.roles[role], system, user, schema)
+            except LLMUnavailable as exc:
+                if fallback is None:
+                    raise
+                key_env = self.config.providers[fallback.provider].api_key_env
+                if fallback.provider not in self._clients and not os.environ.get(key_env):
+                    raise LLMUnavailable(f"{exc} The fallback {fallback.model} needs {key_env} in .env.") from exc
+                self.fallbacks[role] = str(exc)
+        return self._structured(role, fallback, system, user, schema)
+
+    def _structured(self, role: Role, role_cfg: ModelConfig, system: str, user: str, schema: type[T]) -> T:
         client = self.client(role_cfg.provider)
+        limiter = self._limiters.setdefault(
+            (role_cfg.provider, role_cfg.model), RateLimiter(role_cfg.rpm, self._sleep, self._clock))
         schema_dict = inline_refs(schema.model_json_schema())
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
         response_format = {"type": "json_schema", "json_schema": {"name": schema.__name__, "schema": schema_dict}}
         last_error = ""
         for attempt in range(1, self.MAX_ATTEMPTS + 1):
-            self._limiters[role].wait()
+            limiter.wait()
             started = self._clock()
             try:
                 response = client.chat.completions.create(
                     model=role_cfg.model, messages=messages, response_format=response_format
                 )
             except RateLimitError as exc:
-                if "PerDay" in str(exc):
+                # Gemini says PerDay, Groq says "per day".
+                if "perday" in str(exc).lower().replace(" ", ""):
                     raise QuotaExhausted(
                         f"The free daily quota for {role_cfg.model} is used up. It resets tomorrow."
                     ) from exc

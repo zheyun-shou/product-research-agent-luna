@@ -143,9 +143,16 @@ def crawl(
     for note in report.notes:
         typer.echo(note)
     if llm is not None:
-        tokens_in = sum(c.input_tokens for c in llm.calls)
-        tokens_out = sum(c.output_tokens for c in llm.calls)
-        typer.echo(f"LLM calls {len(llm.calls)}, tokens in {tokens_in}, out {tokens_out}")
+        report_llm_use(llm)
+
+
+def report_llm_use(llm: LLM) -> None:
+    for role, reason in llm.fallbacks.items():
+        typer.echo(f"{role} moved to {llm.model_for(role)}: {reason}")
+    for model in dict.fromkeys(c.model for c in llm.calls):
+        calls = [c for c in llm.calls if c.model == model]
+        typer.echo(f"LLM {model}: calls {len(calls)}, tokens in {sum(c.input_tokens for c in calls)}, "
+                   f"out {sum(c.output_tokens for c in calls)}")
 
 
 @app.command()
@@ -207,6 +214,8 @@ def picks(
         except LLMUnavailable as exc:
             notes.append(f"No summaries: {exc}")
     typer.echo(format_picks(chosen, texts, notes, conditions_text, dropped, errors))
+    if llm is not None:
+        report_llm_use(llm)
 
 
 @app.command("eval-template")
@@ -253,15 +262,25 @@ class _Ping(BaseModel):
 
 @app.command("llm-ping")
 def llm_ping() -> None:
-    """Check the API key, list the flash models it can use, and make one small structured call per role."""
+    """Check the API keys and the configured models, and make one small structured call per role and fallback."""
     load_settings()  # loads .env
     config = load_llm_config()
     llm = LLM(config)
+    used = {config.roles[r].model for r in config.roles} | {config.roles[r].fallback.model
+                                                               for r in config.roles if config.roles[r].fallback}
     for name in config.providers:
-        ids = sorted(model.id for model in llm.client(name).models.list())
-        typer.echo(f"{name}: " + ", ".join(i for i in ids if "flash" in i))
+        try:
+            ids = {model.id.removeprefix("models/") for model in llm.client(name).models.list()}
+        except RuntimeError as exc:  # no key for this provider
+            typer.echo(f"{name}: {exc}")
+            continue
+        typer.echo(f"{name}: {len(ids)} models; configured and present: {sorted(ids & used) or 'none'}")
     for role in ("chat", "worker"):
         # Nested models and an optional field, the same shapes the extraction and picks schemas use.
-        reply = llm.structured(role, "Reply in JSON.",
-                               "Return two items: name ping with value pong, and name empty with value null.", _Ping)
+        ask = "Return two items: name ping with value pong, and name empty with value null."
+        reply = llm.structured(role, "Reply in JSON.", ask, _Ping)
         typer.echo(f"{role} ({llm.model_for(role)}): {[(i.name, i.value) for i in reply.items]}")
+        fallback = config.roles[role].fallback
+        if fallback is not None:
+            reply = llm._structured(role, fallback, "Reply in JSON.", ask, _Ping)
+            typer.echo(f"{role} fallback ({fallback.model}): {[(i.name, i.value) for i in reply.items]}")
