@@ -73,3 +73,12 @@ def test_failed_checks_are_reported_only_when_summaries_were_written():
     assert "did not pass" not in format_picks([c], None, [], "", 0)
     out = format_picks([c], None, [], "", 0, check_errors=["1: rating is 4.5, not 4.9"])
     assert "did not pass" in out and "rating is 4.5, not 4.9" in out
+
+
+def test_yes_no_and_class_claims_are_checked_as_text():
+    c = card(1, 4.5, 1234, no_frost=True, energy_class="E")
+    assert check_picks(picks("No frost, class E.", [("no_frost", "True"), ("energy_class", "E")]), {1: c}) == []
+    assert check_picks(picks("No frost.", [("no_frost", "yes")]), {1: c}) == []
+    errors = check_picks(picks("Class D, no frost.", [("energy_class", "D"), ("no_frost", "false")]), {1: c})
+    assert any("energy_class is E, not D" in e for e in errors)
+    assert any("no_frost is yes, not false" in e for e in errors)

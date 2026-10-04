@@ -37,8 +37,17 @@ class PicksText(BaseModel):
     picks: list[PickText]
 
 
-def card_facts(card: Card) -> dict[str, Decimal]:
-    facts: dict[str, Decimal] = {}
+YES_NO = {"true": "yes", "yes": "yes", "ja": "yes", "false": "no", "no": "no", "nej": "no"}
+
+
+def _as_text(value: str) -> str:
+    plain = value.strip().lower()
+    return YES_NO.get(plain, plain)
+
+
+def card_facts(card: Card) -> dict[str, Decimal | str]:
+    """Numbers are compared as numbers. Yes/no and class values are compared as text."""
+    facts: dict[str, Decimal | str] = {}
     if card.price is not None:
         facts["price"] = Decimal(card.price)
     if card.rating is not None:
@@ -47,8 +56,12 @@ def card_facts(card: Card) -> dict[str, Decimal]:
         facts["review_count"] = Decimal(card.review_count)
     for name, entry in card.attributes.items():
         value = entry.get("value")
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if isinstance(value, bool):
+            facts[name] = "yes" if value else "no"
+        elif isinstance(value, (int, float)):
             facts[name] = Decimal(str(value))
+        elif isinstance(value, str) and value.strip():
+            facts[name] = value.strip()
     return facts
 
 
@@ -79,9 +92,14 @@ def check_picks(text: PicksText, cards: dict[int, Card]) -> list[str]:
             if claim.field not in facts:
                 errors.append(f"{pick.listing_id}: no field '{claim.field}' on the card")
                 continue
+            fact = facts[claim.field]
+            if isinstance(fact, str):
+                if _as_text(claim.value) != _as_text(fact):
+                    errors.append(f"{pick.listing_id}: {claim.field} is {fact}, not {claim.value}")
+                continue
             value = to_decimal(claim.value)
-            if value is None or value != facts[claim.field]:
-                errors.append(f"{pick.listing_id}: {claim.field} is {facts[claim.field]}, not {claim.value}")
+            if value is None or value != fact:
+                errors.append(f"{pick.listing_id}: {claim.field} is {fact}, not {claim.value}")
                 continue
             claimed.add(value)
         summary = RATING_SCALE.sub("", pick.summary)
