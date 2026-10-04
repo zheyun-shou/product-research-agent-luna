@@ -5,7 +5,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Literal, TypeVar
 
-from openai import BadRequestError, OpenAI, RateLimitError
+from openai import APIConnectionError, BadRequestError, InternalServerError, OpenAI, RateLimitError
 from pydantic import BaseModel, ValidationError
 
 from scout.llm.config import LLMConfig
@@ -15,7 +15,11 @@ Role = Literal["chat", "worker"]
 T = TypeVar("T", bound=BaseModel)
 
 
-class QuotaExhausted(RuntimeError):
+class LLMUnavailable(RuntimeError):
+    """The provider cannot serve requests now: quota used up, server busy, or no connection."""
+
+
+class QuotaExhausted(LLMUnavailable):
     """The provider's daily free quota is used up."""
 
 
@@ -103,6 +107,10 @@ class LLM:
                 last_error = "rate limited"
                 self._sleep(15 * attempt)
                 continue
+            except (InternalServerError, APIConnectionError):
+                last_error = "unavailable"
+                self._sleep(15 * attempt)
+                continue
             except BadRequestError as exc:
                 if response_format["type"] == "json_object":
                     raise
@@ -131,6 +139,8 @@ class LLM:
                 ]
         if last_error == "rate limited":
             raise QuotaExhausted(f"{role_cfg.model} is still rate limited after {self.MAX_ATTEMPTS} tries.")
+        if last_error == "unavailable":
+            raise LLMUnavailable(f"{role_cfg.model} is busy or unreachable after {self.MAX_ATTEMPTS} tries.")
         raise LLMOutputError(
             f"{role_cfg.model} gave no valid {schema.__name__} after {self.MAX_ATTEMPTS} tries: {last_error}"
         )

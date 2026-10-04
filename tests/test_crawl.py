@@ -166,3 +166,15 @@ def test_screening_drops_off_topic_candidates_before_fetching(db, tmp_path):
     assert (report.off_topic, report.saved) == (1, 2)
     assert [c.source_id for c in report.dropped] == ["B0AAAAAAA3"]
     assert product_url("B0AAAAAAA3") not in browser.fetched
+
+
+def test_busy_llm_server_keeps_storing_without_the_llm(db, tmp_path):
+    from scout.llm.client import LLMUnavailable
+
+    def busy(_):
+        raise LLMUnavailable("chat-model is busy or unreachable after 3 tries.")
+
+    report = crawl(db, AmazonSeAdapter(site(), tmp_path), "fridge", "kylskåp",
+                   on_problem=never_called, enrich=busy, screen=busy)
+    assert report.saved == 3 and report.off_topic == 0
+    assert any("screening skipped" in note for note in report.notes)

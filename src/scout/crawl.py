@@ -7,7 +7,7 @@ from typing import Callable
 import psycopg
 
 from scout.db.store import log_fetch, save_record, stored_attributes
-from scout.llm.client import LLMOutputError, QuotaExhausted
+from scout.llm.client import LLMOutputError, LLMUnavailable
 from scout.sources.base import Candidate, ProductRecord, RawPage, SessionStatus
 
 OnProblem = Callable[[SessionStatus, str], bool]
@@ -98,7 +98,7 @@ def crawl(
             report.off_topic = len(candidates) - len(kept)
             report.dropped = [c for c in candidates if c not in kept]
             candidates = kept
-        except (QuotaExhausted, LLMOutputError) as exc:
+        except (LLMUnavailable, LLMOutputError) as exc:
             report.notes.append(f"Title screening skipped: {exc}")
     for cand in candidates[:max_details]:
         page = fetch_checked(adapter, conn, cand.url, on_problem, report.notes)
@@ -118,7 +118,7 @@ def crawl(
             try:
                 rec, called = enrich(rec)
                 report.llm_pages += int(called)
-            except QuotaExhausted as exc:
+            except LLMUnavailable as exc:
                 report.notes.append(f"{exc} The remaining pages are stored without LLM extraction.")
                 enrich = None
             except LLMOutputError as exc:

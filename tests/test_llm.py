@@ -2,10 +2,10 @@ from types import SimpleNamespace
 
 import httpx2
 import pytest
-from openai import BadRequestError, RateLimitError
+from openai import BadRequestError, InternalServerError, RateLimitError
 from pydantic import BaseModel, ValidationError
 
-from scout.llm.client import LLM, LLMOutputError, QuotaExhausted, inline_refs, strip_fences
+from scout.llm.client import LLM, LLMOutputError, LLMUnavailable, QuotaExhausted, inline_refs, strip_fences
 from scout.llm.config import LLMConfig, load_llm_config
 from scout.llm.ratelimit import RateLimiter
 
@@ -117,6 +117,27 @@ def test_rate_limited_on_every_try_also_raises_quota_exhausted():
     llm, _, _ = make([rate_limited(minute), rate_limited(minute), rate_limited(minute)])
     with pytest.raises(QuotaExhausted, match="still rate limited"):
         llm.structured("worker", "sys", "user", Answer)
+
+
+def server_busy():
+    response = httpx2.Response(503, request=httpx2.Request("POST", "https://example.test/"))
+    return InternalServerError("This model is currently experiencing high demand.", response=response, body=None)
+
+
+def test_busy_server_waits_and_retries():
+    llm, _, clock = make([server_busy(), '{"answer": "ok"}'])
+    assert llm.structured("chat", "sys", "user", Answer).answer == "ok"
+    assert 15 in clock.slept
+
+
+def test_busy_server_on_every_try_raises_unavailable():
+    llm, _, _ = make([server_busy(), server_busy(), server_busy()])
+    with pytest.raises(LLMUnavailable, match="busy or unreachable"):
+        llm.structured("chat", "sys", "user", Answer)
+
+
+def test_quota_exhausted_is_a_kind_of_unavailable():
+    assert issubclass(QuotaExhausted, LLMUnavailable)
 
 
 def test_rejected_schema_falls_back_to_json_mode():

@@ -3906,7 +3906,7 @@ git commit -m "Worker title screening and extraction with raw-text checks; reuse
   - `recheck.recheck_picks(ranked, k, refetch: Callable[[Card], ProductRecord | None], budget) -> tuple[list[Card], list[str]]`
   - `write.PicksText`, `check_picks(text, cards_by_id) -> list[str]`, `write_picks(llm, cards, conditions_text, language="English", max_rounds=3) -> tuple[PicksText | None, list[str]]`, `format_picks(picks, texts, notes, conditions_text, dropped) -> str`
 
-- [ ] **Step 1: Write the failing ranking tests**
+- [x] **Step 1: Write the failing ranking tests**
 
 `tests/test_picks_rank.py`:
 
@@ -3987,12 +3987,12 @@ def test_load_cards_skips_out_of_stock_and_applies_the_budget(db):
     assert [c.url[-10:] for c in load_cards(db, "fridge", Decimal("6000"))] == ["B0AAAAAAA3"]
 ```
 
-- [ ] **Step 2: Run them to see them fail**
+- [x] **Step 2: Run them to see them fail**
 
 Run: `python -m pytest tests/test_picks_rank.py tests/test_picks_db.py -v`
 Expected: FAIL with `ModuleNotFoundError`.
 
-- [ ] **Step 3: Write `rank.py`**
+- [x] **Step 3: Write `rank.py`**
 
 `src/scout/picks/__init__.py`:
 
@@ -4104,12 +4104,12 @@ def rank(cards: list[Card]) -> list[Card]:
     return sorted(cards, key=lambda c: (bool(c.missing), -c.score))
 ```
 
-- [ ] **Step 4: Run them to see them pass**
+- [x] **Step 4: Run them to see them pass**
 
 Run: `python -m pytest tests/test_picks_rank.py tests/test_picks_db.py -v`
 Expected: all passed.
 
-- [ ] **Step 5: Write the failing recheck and writing tests**
+- [x] **Step 5: Write the failing recheck and writing tests**
 
 `tests/test_picks_recheck.py`:
 
@@ -4218,12 +4218,12 @@ def test_format_shows_missing_data_and_how_ranking_works():
     assert "Bayesian" in out and "note one" in out and "2 products failed" in out
 ```
 
-- [ ] **Step 6: Run them to see them fail**
+- [x] **Step 6: Run them to see them fail**
 
 Run: `python -m pytest tests/test_picks_recheck.py tests/test_picks_write.py -v`
 Expected: FAIL with `ModuleNotFoundError`.
 
-- [ ] **Step 7: Write `recheck.py` and `write.py`**
+- [x] **Step 7: Write `recheck.py` and `write.py`**
 
 `src/scout/picks/recheck.py`:
 
@@ -4408,12 +4408,12 @@ def format_picks(picks: list[Card], texts: PicksText | None, notes: list[str],
     return "\n".join(lines)
 ```
 
-- [ ] **Step 8: Run them to see them pass**
+- [x] **Step 8: Run them to see them pass**
 
 Run: `python -m pytest tests/test_picks_recheck.py tests/test_picks_write.py -v`
 Expected: all passed.
 
-- [ ] **Step 9: Add the `picks` command**
+- [x] **Step 9: Add the `picks` command**
 
 Add to `src/scout/cli.py`:
 
@@ -4467,7 +4467,7 @@ def picks(
     typer.echo(format_picks(chosen, texts, notes + [f"check failed: {e}" for e in errors], conditions_text, dropped))
 ```
 
-- [ ] **Step 10: Run the whole suite**
+- [x] **Step 10: Run the whole suite**
 
 Run: `python -m pytest -v`
 Expected: all passed.
@@ -4477,7 +4477,18 @@ Expected: all passed.
 Run: `scout picks fridge --budget 9000 --where "height<=186" --where "width<=60"`
 Expected: a maximum of 5 picks. The program checks each pick again a few seconds before it shows the pick. Each pick shows the price, rating, attributes, missing data, a short summary and a link. Open two links and make sure that the price and the stock are correct. Then run the same command with `--no-llm` and make sure that the facts are the same.
 
-- [ ] **Step 12: Commit**
+Changes from the code above, made during Claude's test runs on 2026-10-04:
+
+- The database had items outside the category, because the first crawl ran before the title screening existed (water filters, vacuum rolls). `picks` now screens the stored titles with the worker before the recheck. With `--no-llm` there is no screening, and the output says so. In that run a water filter came in at place 5.
+- `rank` keeps one card per product. The three FOHERE colours are three listings of one product.
+- `drop_implausible_sizes` ignores height, width and depth when the outer box is smaller than the stated volume (for example "10D x 10B x 10H millimeter" for a 173 l fridge).
+- `recheck_picks` takes the conditions and applies them again to the sizes on the fresh page. In the first run, a Severin fridge with "61,5cm breit" in its title passed `width<=60`, because its stored card had no width.
+- The LLM layer retries server errors (such as 503 "high demand") and connection errors. After 3 tries it raises `LLMUnavailable`. `QuotaExhausted` is now a kind of `LLMUnavailable`, so crawl and picks continue without the LLM in both cases.
+- `format_picks` reports failed summary checks only when summaries were written.
+
+Results of Claude's runs (`--budget 9000 --where "height<=186" --where "width<=60"`): 5 picks, each rechecked on amazon.se. The first run wrote summaries, and all of them passed the checks. On the second run, Gemini returned 503. On the third run, the free daily quota of `gemini-3.8-flash` was used up after only a few chat calls that day, so the free chat quota is small. With and without the LLM, the facts of picks 1 to 4 were the same. A 5 l cosmetics cooler ranks second, because the profile does not say what kind of fridge the user wants. The clarify step in phase 2 must ask this. Zheyun must still open two links and compare the price and the stock.
+
+- [x] **Step 12: Commit**
 
 ```bash
 git add src/scout/picks src/scout/cli.py tests/test_picks_*.py

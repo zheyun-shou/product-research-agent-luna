@@ -1,0 +1,124 @@
+"""SQL filter for budget and stock, Python conditions and a Bayesian rating score."""
+import re
+from dataclasses import dataclass, field
+from datetime import datetime
+from decimal import Decimal
+from typing import Literal
+
+import psycopg
+
+from scout.sources.amazon_se.numbers import to_decimal
+
+PRIOR_WEIGHT = 20  # reviews needed before a product's own rating counts as much as the average
+SIZES = ("height", "width", "depth")
+
+CARDS_SQL = """
+SELECT l.id AS listing_id, p.id AS product_id, COALESCE(l.title, p.name) AS title, p.brand, p.model, l.url,
+       v.price, v.currency, v.in_stock, l.rating, l.review_count, p.attributes, l.fetched_at
+FROM listings l
+JOIN products p ON p.id = l.product_id
+JOIN variants v ON v.listing_id = l.id
+WHERE p.category = %(category)s
+  AND v.in_stock IS DISTINCT FROM false
+  AND (%(budget)s::numeric IS NULL OR (v.price IS NOT NULL AND v.price <= %(budget)s::numeric))
+ORDER BY l.id
+"""
+_CONDITION = re.compile(r"^\s*(\w+)\s*(<=|>=)\s*([\d.,]+)\s*$")
+
+
+@dataclass
+class Card:
+    listing_id: int
+    product_id: int
+    title: str
+    brand: str | None
+    model: str | None
+    url: str
+    price: Decimal | None
+    currency: str | None
+    in_stock: bool | None
+    rating: Decimal | None
+    review_count: int | None
+    attributes: dict
+    fetched_at: datetime
+    score: float = 0.0
+    missing: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class Condition:
+    attribute: str
+    op: Literal["<=", ">="]
+    value: float
+
+
+def parse_condition(text: str) -> Condition:
+    match = _CONDITION.match(text)
+    number = to_decimal(match.group(3)) if match else None
+    if not match or number is None:
+        raise ValueError(f"Cannot read '{text}'. Write it like height<=180 or total_volume>=300.")
+    return Condition(match.group(1), match.group(2), float(number))
+
+
+def load_cards(conn: psycopg.Connection, category: str, budget: Decimal | None) -> list[Card]:
+    rows = conn.execute(CARDS_SQL, {"category": category, "budget": budget}).fetchall()
+    return [Card(**row) for row in rows]
+
+
+def apply_conditions(cards: list[Card], conditions: list[Condition]) -> tuple[list[Card], int]:
+    kept, dropped = [], 0
+    for card in cards:
+        missing, passes = [], True
+        for cond in conditions:
+            entry = card.attributes.get(cond.attribute) or {}
+            if entry.get("value") is None:
+                missing.append(cond.attribute)
+                continue
+            value = float(entry["value"])
+            if (cond.op == "<=" and value > cond.value) or (cond.op == ">=" and value < cond.value):
+                passes = False
+                break
+        if passes:
+            card.missing = missing
+            kept.append(card)
+        else:
+            dropped += 1
+    return kept, dropped
+
+
+def bayesian(rating: Decimal | None, count: int | None, prior_mean: float, weight: int = PRIOR_WEIGHT) -> float:
+    if rating is None or not count:
+        return prior_mean
+    return (count * float(rating) + weight * prior_mean) / (count + weight)
+
+
+def rank(cards: list[Card]) -> list[Card]:
+    rated = [float(c.rating) for c in cards if c.rating is not None and c.review_count]
+    prior = sum(rated) / len(rated) if rated else 0.0
+    for card in cards:
+        card.score = bayesian(card.rating, card.review_count, prior)
+    ranked, seen = [], set()
+    for card in sorted(cards, key=lambda c: (bool(c.missing), -c.score)):
+        if card.product_id not in seen:  # colours of one product are separate listings
+            seen.add(card.product_id)
+            ranked.append(card)
+    return ranked
+
+
+def drop_implausible_sizes(cards: list[Card]) -> dict[int, str]:
+    """Ignore height, width and depth when the outer box cannot hold the stated volume.
+
+    Sellers sometimes give sizes like "10D x 10B x 10H millimeter". The raw-text check
+    cannot catch this, because the page really says it.
+    """
+    notes = {}
+    for card in cards:
+        values = {name: (card.attributes.get(name) or {}).get("value") for name in (*SIZES, "total_volume")}
+        if any(not isinstance(v, (int, float)) for v in values.values()):
+            continue
+        box_litres = values["height"] * values["width"] * values["depth"] / 1000
+        if box_litres < values["total_volume"]:
+            card.attributes = {k: v for k, v in card.attributes.items() if k not in SIZES}
+            notes[card.listing_id] = (f"{card.title}: the sizes on the page cannot hold "
+                                      f"{values['total_volume']} l, so they were ignored.")
+    return notes

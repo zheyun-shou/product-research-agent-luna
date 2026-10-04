@@ -17,3 +17,12 @@ def test_keeps_only_the_numbers_the_worker_returns():
     role, prompt = llm.requests[0]
     assert role == "worker"
     assert "1: Kylskåpstermometer" in prompt and "Fridge" in prompt
+
+
+def test_screens_stored_cards_too():
+    from tests.test_picks_rank import card
+
+    cards = [card(1), card(2)]
+    cards[1].title = "AquaHouse vattenfilter för kylskåp"
+    kept = screen_titles(cards, load_profile("fridge"), FakeLLM([Keep(keep=[0])]))
+    assert [c.listing_id for c in kept] == [1]
