@@ -25,7 +25,10 @@ def recheck_picks(
         if rec.in_stock is False:
             notes.append(f"{card.title} is sold out now and was replaced.")
             continue
-        if budget is not None and rec.price is not None and rec.price > budget:
+        if budget is not None and rec.price is None:
+            notes.append(f"{card.title} shows no price now, so the budget cannot be checked, and it was replaced.")
+            continue
+        if budget is not None and rec.price > budget:
             notes.append(f"{card.title} now costs {rec.price} {rec.currency}, over budget, and was replaced.")
             continue
         fresh = replace(card, price=rec.price, currency=rec.currency, in_stock=rec.in_stock,

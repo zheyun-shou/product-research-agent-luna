@@ -178,3 +178,11 @@ def test_busy_llm_server_keeps_storing_without_the_llm(db, tmp_path):
                    on_problem=never_called, enrich=busy, screen=busy)
     assert report.saved == 3 and report.off_topic == 0
     assert any("screening skipped" in note for note in report.notes)
+
+
+def test_incomplete_page_is_fetched_again_without_asking(db, tmp_path):
+    browser = site()
+    browser.pages[product_url("B0AAAAAAA1")].insert(0, "<html><body><div id='nav'></div></body></html>")
+    report = crawl(db, AmazonSeAdapter(browser, tmp_path), "fridge", "kylskåp", on_problem=never_called)
+    assert browser.fetched.count(product_url("B0AAAAAAA1")) == 2
+    assert report.saved == 3

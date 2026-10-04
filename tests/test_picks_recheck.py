@@ -7,7 +7,7 @@ from scout.sources.base import ProductRecord
 
 def fresh(c, price="5000", in_stock=True):
     return ProductRecord(source="amazon_se", source_id=c.url[-10:], url=c.url, fetched_at=NOW,
-                         price=Decimal(price), currency="SEK", in_stock=in_stock)
+                         price=None if price is None else Decimal(price), currency="SEK", in_stock=in_stock)
 
 
 def test_sold_out_and_over_budget_picks_are_replaced():
@@ -42,3 +42,12 @@ def test_sizes_found_on_recheck_must_meet_the_conditions():
     assert [p.listing_id for p in picks] == [2]
     assert picks[0].attributes["width"]["value"] == 55.0 and picks[0].missing == []
     assert "width" in notes[0]
+
+
+def test_a_pick_without_a_price_now_is_replaced_when_there_is_a_budget():
+    picks, notes = recheck_picks([card(1), card(2)], 1, lambda c: fresh(c, price=None if c.listing_id == 1 else "5000"),
+                                 Decimal("8000"))
+    assert [p.listing_id for p in picks] == [2]
+    assert "no price" in notes[0]
+    picks, _ = recheck_picks([card(1)], 1, lambda c: fresh(c, price=None), None)
+    assert picks[0].price is None
