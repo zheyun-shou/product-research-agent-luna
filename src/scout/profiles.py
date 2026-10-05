@@ -25,6 +25,12 @@ class ProfileAttribute(BaseModel):
         return self
 
 
+class ProductKind(BaseModel):
+    name: str
+    label: str
+    search_terms_sv: str
+
+
 class CategoryProfile(BaseModel):
     category: str
     display_name: str
@@ -32,6 +38,8 @@ class CategoryProfile(BaseModel):
     questions_for_user: list[str]
     complaint_types: list[str] = Field(default_factory=list)
     sources: dict[str, list[str]]
+    search_terms_sv: str | None = None
+    kinds: list[ProductKind] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _unique_names(self) -> "CategoryProfile":
@@ -42,6 +50,9 @@ class CategoryProfile(BaseModel):
 
     def attribute(self, name: str) -> ProfileAttribute | None:
         return next((a for a in self.attributes if a.name == name), None)
+
+    def kind(self, name: str | None) -> ProductKind | None:
+        return next((k for k in self.kinds if k.name == name), None)
 
 
 def load_profile(category: str, profiles_dir: Path = PROFILES_DIR) -> CategoryProfile:

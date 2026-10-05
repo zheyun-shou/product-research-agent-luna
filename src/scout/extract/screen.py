@@ -23,8 +23,8 @@ class Keep(BaseModel):
     keep: list[int]
 
 
-def screen_titles(cands: list[T], profile: CategoryProfile, llm) -> list[T]:
+def screen_titles(cands: list[T], profile: CategoryProfile, llm, wanted: str | None = None) -> list[T]:
     lines = "\n".join(f"{n}: {c.title}" for n, c in enumerate(cands))
-    user = f"The shopper wants: {profile.display_name}\n\nResults:\n{lines}\n\nReturn the numbers to keep."
-    wanted = set(llm.structured("worker", SYSTEM, user, Keep).keep)
-    return [c for n, c in enumerate(cands) if n in wanted]
+    user = f"The shopper wants: {wanted or profile.display_name}\n\nResults:\n{lines}\n\nReturn the numbers to keep."
+    keep = set(llm.structured("worker", SYSTEM, user, Keep).keep)
+    return [c for n, c in enumerate(cands) if n in keep]

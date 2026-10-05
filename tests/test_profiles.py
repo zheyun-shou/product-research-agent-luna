@@ -31,3 +31,10 @@ def test_attribute_names_must_be_unique():
     attr = {"name": "h", "label": "H", "type": "number", "unit": "cm", "kind": "hard"}
     with pytest.raises(ValidationError):
         CategoryProfile.model_validate(base([attr, attr]))
+
+
+def test_fridge_kinds_have_swedish_search_terms():
+    profile = load_profile("fridge")
+    assert profile.search_terms_sv == "kylskåp"
+    assert profile.kind("fridge_freezer").search_terms_sv == "kyl och frys"
+    assert profile.kind("nothing") is None and profile.kind(None) is None

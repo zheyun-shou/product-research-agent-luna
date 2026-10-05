@@ -1,5 +1,22 @@
 category: fridge
 display_name: Fridge
+search_terms_sv: kylskåp
+kinds:
+  - name: fridge_freezer
+    label: Fridge with a freezer part
+    search_terms_sv: kyl och frys
+  - name: fridge
+    label: Fridge without a freezer part
+    search_terms_sv: kylskåp utan frys
+  - name: mini_fridge
+    label: Mini fridge for a room or an office
+    search_terms_sv: minikylskåp
+  - name: wine_cooler
+    label: Wine cooler
+    search_terms_sv: vinkyl
+  - name: cool_box
+    label: Cool box for a car or camping
+    search_terms_sv: kylbox
 attributes:
   - name: height
     label: Height
@@ -41,6 +58,7 @@ attributes:
     type: boolean
     kind: soft
 questions_for_user:
+  - What kind of fridge do you want? With a freezer part, without one, a mini fridge, a wine cooler or a cool box?
   - How wide, tall and deep is the space for the fridge?
   - What is your budget?
   - Do you need a freezer part, and how big?

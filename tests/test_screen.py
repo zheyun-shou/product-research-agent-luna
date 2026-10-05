@@ -26,3 +26,9 @@ def test_screens_stored_cards_too():
     cards[1].title = "AquaHouse vattenfilter för kylskåp"
     kept = screen_titles(cards, load_profile("fridge"), FakeLLM([Keep(keep=[0])]))
     assert [c.listing_id for c in kept] == [1]
+
+
+def test_the_wanted_kind_goes_into_the_prompt():
+    llm = FakeLLM([Keep(keep=[0])])
+    screen_titles([cand(1, "FOHERE minikylskåp 5 l")], load_profile("fridge"), llm, "Mini fridge for a room or an office")
+    assert "The shopper wants: Mini fridge for a room or an office" in llm.requests[0][1]
