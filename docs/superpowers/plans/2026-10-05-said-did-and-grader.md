@@ -2,7 +2,7 @@
 
 > **How to use this plan.** Zheyun reviews this plan first. Claude starts only after she agrees, and makes the changes that she asks for. Do the tasks in order and commit at the end of each task. Do not run `scout eval-chat` with a paid model until she says so.
 
-**Goal:** Give the chat model more freedom, and measure the quality of its replies with a second model. Python keeps the checks that a rule can do well: the facts in each reply agree with the records, and each action that a reply states has a tool call. The model calculates by itself. A grader model scores each reply against a rubric, and Zheyun's own labels show how far the grader is correct.
+**Goal:** Give the chat model more freedom, and measure the quality of its replies with a second model. Python keeps the checks that a rule can do well: the facts in each reply agree with the records, and each action that a reply states has a tool call. The model calculates by itself. A grader model scores each reply against a rubric. A test set of replies with known faults shows how far the grader is correct.
 
 **Why:** The run with GPT-5.6 Luna on 2026-10-05 (`eval/results/chat-openai_gpt-5.6-luna-20261005-1844.json`) showed four faults:
 
@@ -22,18 +22,8 @@ The number rule ("each new number must come from a claim, the shopper or Python"
 ## Decisions for Zheyun
 
 1. **The calculation tool.** Recommended: remove `calculate` from `next_step`, so the model answers calculations in its reply. Keep `agent/calc.py` until Task 7 shows the grader results for arithmetic, then delete it. Other choice: keep the tool for long rules ("25% moms and 499 SEK shipping"), and let the model calculate only short sums.
-2. **Where the reply labels go.** The labels hold product titles and prices from amazon.se, as the results files in `eval/results/` already do. Recommended: `eval/labels/replies.yaml` in Git, so the calibration numbers can be checked again. Other choice: `data/labels/`, which Git ignores.
-3. **When a grader is good enough.** Recommended: agreement with her labels of 85% or more for each criterion, and the grader says "pass" for at most 1 in 10 of the replies that she marked "fail" on `facts` and `said_did`. Of the grader models that meet these limits, use the cheapest.
-4. **The judge models to compare.** Recommended: four models from three companies other than OpenAI (Luna is an OpenAI model, and a judge can prefer the replies of its own family). Prices are per million tokens, input and output, from the OpenRouter list on 2026-10-05. The cost of one run is an estimate for 48 turns at about 3,500 tokens in and 400 tokens out each, without reasoning tokens.
-
-| Judge | Input USD | Output USD | One graded run, about |
-|---|---|---|---|
-| `deepseek/deepseek-v4-flash` | 0.03 | 1.28 | 0.03 USD |
-| `google/gemini-3.8-flash` | 0.75 | 3.75 | 0.20 USD (or the free Gemini key, if the daily quota is enough) |
-| `anthropic/claude-haiku-4.5` | 1.00 | 5.00 | 0.27 USD |
-| `anthropic/claude-sonnet-5.5` | 2.00 | 10.00 | 0.53 USD (the reference) |
-
-The calibration of all four on 50 labelled replies costs about 1 USD.
+2. **The judge model (decided).** Zheyun decided on 2026-10-05: use `deepseek/deepseek-v4-flash` on OpenRouter (0.03 USD input and 1.28 USD output per million tokens, about 0.03 USD for one graded run of 48 turns). It is not an OpenAI model, so it has no reason to prefer the replies of Luna. Zheyun does not label replies. Task 6 checks the grader with replies whose faults are known.
+3. **When the grader is good enough.** Recommended: on the test set of Task 6, the grader finds 9 of 10 planted faults or more for each criterion, and it says "fail" for at most 1 in 10 of the correct replies. If DeepSeek does not meet this, try `anthropic/claude-haiku-4.5` (about 0.27 USD a run).
 
 ## Global Constraints
 
@@ -52,9 +42,9 @@ The calibration of all four on 50 labelled replies costs about 1 USD.
 | `src/scout/agent/graph.py` | No `calculate` route (if decision 1 is the recommended choice) |
 | `src/scout/eval/chat.py` | Each turn record keeps the cards, the actions and the rounds |
 | `src/scout/eval/grade.py` | New. The rubric, the grader call, the agreement numbers |
-| `src/scout/cli.py` | `scout grade`, `scout label`, `scout calibrate` |
+| `src/scout/cli.py` | `scout grade`, `scout check-grader` |
 | `config/models.yaml` | New role `judge` |
-| `eval/labels/replies.yaml` | New. Zheyun's labels (decision 2) |
+| `eval/grader/known_faults.yaml` | New. Replies with planted faults and their right grades |
 | `tests/` | Tests for each change |
 
 ---
@@ -273,28 +263,28 @@ class Grade(BaseModel):
 
 def grade_turn(llm, record: dict, history: str) -> Grade: ...
 def grade_results(llm, results: dict) -> dict: ...  # adds "grades" to each measured turn, and a summary
-def agreement(labels: list[dict], grades: list[dict]) -> dict: ...  # per criterion: agreement, kappa, false pass
+def check_grader(items: list[dict], grades: list[dict]) -> dict: ...  # per criterion: faults found, correct replies failed
 ```
 
-- [ ] **Step 4: Add the role and the command.** `config/models.yaml` gets the role `judge` (the model from Task 6). `Role` gets `"judge"`. `scout grade <results.json> [--judge provider:model]` grades a saved results file and writes `<name>-graded.json`. The chat run and the grading are separate, so one chat run can be graded by several judges.
+- [ ] **Step 4: Add the role and the command.** `config/models.yaml` gets the role `judge` with `deepseek/deepseek-v4-flash`. `Role` gets `"judge"`. `scout grade <results.json> [--judge provider:model]` grades a saved results file and writes `<name>-graded.json`. The chat run and the grading are separate, so one chat run can be graded by several judges.
 
-- [ ] **Step 5: Tests** with `FakeLLM`: the grade is written for measured turns only, an outage turn is not graded, and `agreement` gives the right numbers for a small table.
+- [ ] **Step 5: Tests** with `FakeLLM`: the grade is written for measured turns only, an outage turn is not graded, and `check_grader` gives the right numbers for a small table.
 
 - [ ] **Step 6: Commit.**
 
 ---
 
-### Task 6: Zheyun's labels and the choice of the judge (Zheyun)
+### Task 6: Check the grader with known faults
 
-- [ ] **Step 1: `scout label <results.json>`.** For each measured turn, the command shows the cards, the conversation, the actions and the reply. Zheyun types `p`, `f` or `n` for each criterion, and a note when she wants. The labels go into `eval/labels/replies.yaml` (decision 2). She can stop and continue later.
+Zheyun does not label replies. Claude makes a test set where the right grade is known, because Claude plants the faults.
 
-- [ ] **Step 2: Zheyun labels 30 to 50 replies.** Claude chooses the turns so that each criterion has some failures: the turns with rejected rounds, the calculations, the unclear removals and the off-topic questions. Claude does not label.
-
-- [ ] **Step 3: `scout calibrate --judge provider:model`.** Grades the labelled turns and prints, for each criterion, the agreement, Cohen's kappa and the false passes. Ask Zheyun before this run (about 1 USD for the four judges).
-
-- [ ] **Step 4: Choose the judge** by decision 3, and put it in `config/models.yaml`. Write the table of the four judges into this plan.
-
+- [ ] **Step 1: Take correct replies** from the results of Task 7 Step 1 or of the run of 2026-10-05: replies that passed all Python checks and that Claude reads and finds correct. About 20.
+- [ ] **Step 2: Plant one fault in each copy.** About 40 copies, at least 5 for each criterion: a wrong price or size (`facts`), a wrong sum or an added shipping cost that the shopper did not give (`arithmetic`), "I'll recheck" with no recheck (`said_did`), an invented review (`honest`), an answer to another question (`answers`), a long reply with unneeded text (`plain`). The set goes to `eval/grader/known_faults.yaml`. Each item has the turn, the reply and the expected grade.
+- [ ] **Step 3: `scout check-grader`.** Grades the set and prints, for each criterion, how many planted faults the grader found and how many correct replies it failed. One run costs less than 0.05 USD. Ask Zheyun before it.
+- [ ] **Step 4:** If the grader does not meet decision 3, change the rubric text once and run again. If it still does not meet it, try Haiku. Write the numbers into this plan.
 - [ ] **Step 5: Commit.**
+
+The limit of this test: planted faults are clearer than real faults. So Task 7 also lists each real reply that the grader failed, and Claude reads them.
 
 ---
 
@@ -308,5 +298,5 @@ def agreement(labels: list[dict], grades: list[dict]) -> dict: ...  # per criter
 ## Not in this plan
 
 - The off-topic question that started a search (fault 4). Task 1 shows the reason first. The `answers` criterion measures it.
-- A dedicated judge model (for example the Prometheus family). OpenRouter does not have one. A later comparison on the same labels can be a CV point.
+- A dedicated judge model (for example the Prometheus family). OpenRouter does not have one. A later comparison on the test set of Task 6 can be a CV point.
 - Langfuse scores. Task 14 of phase 2 brings Langfuse. The grades can go there later.
