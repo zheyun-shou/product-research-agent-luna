@@ -3988,7 +3988,36 @@ Two expected values in the scripts were wrong, and Claude changed them: after a 
 
 `gemini-3.8-flash`: the free daily quota of the chat model ran out after the first script. The first script (5 turns) gave 13 of 13 expected values, at 29 to 107 seconds a turn. The quota was already used on 2026-10-04, so this run says nothing about the daily limit. Run the full comparison on a day with a new quota.
 
-**Decision for Zheyun.** Nemotron passed all scripts after the fixes, and it has a larger free quota, but it is slow: it writes about 1,000 output tokens for each call on average, and a turn takes 81 seconds (median). Claude recommends `nvidia/nemotron-3-ultra-550b-a55b` as the `chat` fallback in place of Groq, and `gemini-3.8-flash` stays the main chat model. Run the Gemini comparison before this goes into `config/models.yaml`.
+The results above are for the router version of Task 7: the model chose one `Route` object for each turn.
+
+**Router version, the same 8 scripts with each model, 2026-10-05.** These are the 8 scripts that refer to picks without a number (`en-unclear-exclude`, the 5 `ref` scripts, `en-unclear-brand`, `zh-unclear-red`), 17 turns. The table counts the expected values of the follow-up turns.
+
+| Chat model | Route | Pick numbers | "says" | "not says" | Seconds per turn (median) |
+|---|---|---|---|---|---|
+| `nvidia/nemotron-3-ultra-550b-a55b` | 6 of 6 | 5 of 5 | 2 of 3 | 7 of 8 | 104.2 |
+| `qwen/qwen3.8-27b:free` (OpenRouter) | 6 of 6 | 5 of 5 | 1 of 3 | 6 of 8 | 38.8 |
+| `ministral-14b-latest` (Mistral free) | 1 of 6 | 0 of 5 | 0 of 3 | 8 of 8 | 4.3 |
+
+The misses of Nemotron and Qwen are the same kind: the words fit several picks ("the red one"), and the model guessed one or removed all. The Groq `openai/gpt-oss-120b` run of the tool-call version is not valid: the daily quota ran out, and the program of that time counted the failed turns as model faults.
+
+**Tool-call version in the repository, 2026-10-05.** Nemotron, 13 scripts (the 8 above and the 5 free-wording scripts), 28 turns. The first run found that Nemotron writes its tool calls as text with outer brackets that do not match, so 33 of 96 calls counted as "no tool call". Claude changed the client to read each JSON object on its own, and to show the model its last reply on a retry. The second run, on commit 9daab73 with the review fixes:
+
+| Measure | Result |
+|---|---|
+| Turns not measured | 1 of 28 (the NVIDIA rate limit) |
+| Expected values that agree | route 11 of 11, pick numbers 7 of 7, picks 11 of 11, phase 13 of 13, budget 1 of 1, searched 1 of 1, says 2 of 4, not says 7 of 9 |
+| Actions (tool calls) that passed in round 1 | 12 of 14; all 14 passed in the end |
+| Summaries that passed in round 1 | 12 of 23; all 23 passed in the end |
+| Chat calls | 78 (0 not valid), 103,762 tokens in, 105,020 out |
+| Seconds per turn | median 94.5, maximum 291.4 |
+
+The 5 free-wording scripts all passed: "Drop the FOHERE and show me some more" removed pick 4 and showed new products, "第3个太宽了不要，预算降到6000" removed pick 3 and changed the budget, the undo brought the Severin back, and the why and off-topic questions only got a reply. The router version cannot do two things in one message. On the 8 scripts of the table, the tool-call version gave route 5 of 5, pick numbers 4 of 4, says 1 of 3 and not says 5 of 7 (1 turn not measured).
+
+The 2 values that did not agree are the same fault in 2 scripts. "Remove the Bomann" (3 picks are Bomann) and "去掉红色那个" ("remove that red one", 2 picks are red) removed all picks that fit. The model set `one_pick` to false, so Python did not ask. The results file is `eval/results/chat-nvidia_nemotron-3-ultra-550b-a55b-20261005-0657.json`.
+
+**Decision for Zheyun.**
+1. The chat model. Nemotron has the best judgement of the free models, but a turn takes about 95 seconds. Zheyun brings a stronger API key on 2026-10-06. Run all 24 scripts with it and with `gemini-3.8-flash` after the quota resets, then choose the main model and the fallback in `config/models.yaml`.
+2. Removing several picks. When the model removes 2 or more picks and the shopper did not give their numbers, Python could ask first: "Do you mean all of these: pick 2, 3 and 5, or one of them?" This costs one more turn when the shopper meant all. Claude did not build this. Run the stronger model first: if it sets `one_pick` correctly, this check is not necessary.
 
 - [x] **Step 8: Commit**
 
