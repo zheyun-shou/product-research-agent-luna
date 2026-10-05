@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, model_validator
 from scout.config import ROOT
 
 PROFILES_DIR = ROOT / "profiles"
+DRAFTS_DIR = ROOT / "data" / "profiles"  # categories that the chat model drafted; not in Git
 
 
 class ProfileAttribute(BaseModel):
@@ -40,6 +41,7 @@ class CategoryProfile(BaseModel):
     sources: dict[str, list[str]]
     search_terms_sv: str | None = None
     kinds: list[ProductKind] = Field(default_factory=list)
+    draft: bool = False  # drafted by the chat model, not checked by a person
 
     @model_validator(mode="after")
     def _unique_names(self) -> "CategoryProfile":
@@ -55,9 +57,22 @@ class CategoryProfile(BaseModel):
         return next((k for k in self.kinds if k.name == name), None)
 
 
-def load_profile(category: str, profiles_dir: Path = PROFILES_DIR) -> CategoryProfile:
-    path = profiles_dir / f"{category}.yaml"
-    if not path.exists():
-        available = ", ".join(sorted(p.stem for p in profiles_dir.glob("*.yaml"))) or "none"
-        raise FileNotFoundError(f"No profile for '{category}'. Available: {available}")
-    return CategoryProfile.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+def load_profile(category: str, profiles_dir: Path = PROFILES_DIR, drafts_dir: Path = DRAFTS_DIR) -> CategoryProfile:
+    for folder in (profiles_dir, drafts_dir):
+        path = folder / f"{category}.yaml"
+        if path.exists():
+            return CategoryProfile.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+    available = ", ".join(profile_names(profiles_dir, drafts_dir)) or "none"
+    raise FileNotFoundError(f"No profile for '{category}'. Available: {available}")
+
+
+def profile_names(profiles_dir: Path = PROFILES_DIR, drafts_dir: Path = DRAFTS_DIR) -> list[str]:
+    return sorted({p.stem for folder in (profiles_dir, drafts_dir) for p in folder.glob("*.yaml")})
+
+
+def save_draft(profile: CategoryProfile, drafts_dir: Path = DRAFTS_DIR) -> Path:
+    drafts_dir.mkdir(parents=True, exist_ok=True)
+    path = drafts_dir / f"{profile.category}.yaml"
+    path.write_text(yaml.safe_dump(profile.model_dump(mode="json"), allow_unicode=True, sort_keys=False),
+                    encoding="utf-8")
+    return path

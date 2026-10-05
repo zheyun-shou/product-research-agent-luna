@@ -221,3 +221,16 @@ def test_a_browser_problem_ends_the_turn_with_a_message():
     state = run(build_graph(world.deps(llm), InMemorySaver()), "t1", "A fridge with a freezer")
     assert "Something went wrong in the step 'search' (RuntimeError" in state["messages"][-1]["content"]
     assert world.picked == [] and state["needs"]["kind"] == "fridge_freezer"
+
+
+def test_a_product_without_a_category_gets_a_draft_profile():
+    from tests.test_clarify import HEADPHONES
+    world, saved = World(), []
+    deps = world.deps(FakeLLM([CategoryChoice(new_category="headphones"), HEADPHONES,
+                               ClarifyReply(needs=Needs(), ready=False, question="Over-ear or in-ear?")]))
+    deps.save_draft = saved.append
+    deps.load_profile = lambda name: saved[0] if name == "headphones" else FRIDGE
+    state = run(build_graph(deps, InMemorySaver()), "t1", "I need headphones")
+    assert saved[0].draft and state["needs"]["category"] == "headphones"
+    assert state["messages"][-2]["content"].startswith("There was no category for headphones, so I drafted one.")
+    assert state["messages"][-1]["content"] == "Over-ear or in-ear?"

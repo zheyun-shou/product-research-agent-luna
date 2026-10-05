@@ -4,7 +4,7 @@ from typing import Any, Callable
 
 from langgraph.graph import END, START, StateGraph
 
-from scout.agent.clarify import clarify, pick_category
+from scout.agent.clarify import clarify, draft_profile, pick_category
 from scout.agent.followup import act
 from scout.agent.history import assistant, compact, history_text, last_user_text, user_numbers
 from scout.agent.lookup import ImageAnswer, Lookup
@@ -43,6 +43,7 @@ class Deps:
     page_texts: Callable[[list[int]], dict] | None = None
     query: Callable[[CategoryProfile, Needs], list[Card]] | None = None
     read_images: Callable[[list[str], str], Any] | None = None
+    save_draft: Callable[[CategoryProfile], Any] | None = None  # without it, no new category is drafted
 
 
 def crawl_text(report: CrawlReport, terms: str, page: int) -> str:
@@ -106,16 +107,28 @@ def build_graph(deps: Deps, checkpointer=None):
         needs, history = needs_of(state), history_text(state)
         if needs.category is None:
             names = deps.profile_names()
-            category = pick_category(llm, history, [deps.load_profile(n) for n in names])
-            if category is None:
+            choice = pick_category(llm, history, [deps.load_profile(n) for n in names])
+            drafted = []
+            if choice.category is None and choice.new_category and deps.save_draft:
+                profile = draft_profile(llm, choice.new_category, history, names)
+                deps.save_draft(profile)
+                choice.category = profile.category
+                kinds = ", ".join(k.label for k in profile.kinds)
+                facts = ", ".join(a.label for a in profile.attributes)
+                drafted = [assistant(f"There was no category for {choice.new_category}, so I drafted one. Kinds: "
+                                     f"{kinds}. Facts that I compare: {facts}. It is a draft that nobody has checked "
+                                     "yet. Tell me if something important is missing.")]
+            if choice.category is None:
                 return {"phase": "clarify", "route": {}, "messages": [assistant(
                     f"I can search these categories now: {', '.join(names)}. Which one do you want?")]}
-            needs.category = category
+            needs.category = choice.category
+        else:
+            drafted = []
         reply = clarify(llm, deps.load_profile(needs.category), needs, history, user_numbers(state))
         update = {"needs": reply.needs.model_dump(mode="json"), "route": {}}
         if reply.ready:
-            return {**update, "phase": "search"}
-        return {**update, "phase": "clarify", "messages": [assistant(reply.question)]}
+            return {**update, "phase": "search", **({"messages": drafted} if drafted else {})}
+        return {**update, "phase": "clarify", "messages": [*drafted, assistant(reply.question)]}
 
     def search_node(state, config):
         needs = needs_of(state)

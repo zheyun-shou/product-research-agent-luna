@@ -7,7 +7,7 @@ from scout.extract.page import enrich_record
 from scout.extract.screen import screen_titles
 from scout.picks.pipeline import make_picks, refetcher, shortlist
 from scout.picks.rank import load_cards_by_ids
-from scout.profiles import PROFILES_DIR, load_profile
+from scout.profiles import load_profile, profile_names, save_draft
 from scout.sources.amazon_se.adapter import AmazonSeAdapter
 from scout.sources.browser import BrowserSession
 
@@ -47,7 +47,8 @@ def shared_deps(conn, llm, crawl, refetch, k: int = 5, size_check: bool = True, 
 
     return Deps(
         llm=llm,
-        profile_names=lambda: sorted(p.stem for p in PROFILES_DIR.glob("*.yaml")),
+        profile_names=profile_names,
+        save_draft=save_draft,
         load_profile=load_profile,
         count=count,
         crawl=crawl,

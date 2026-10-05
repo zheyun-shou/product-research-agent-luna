@@ -49,7 +49,10 @@ Lookup tools return their result to the model, and the model continues in the sa
 - `query_products(kind, conditions, budget, limit)`: stored products of the category that match, as cards.
 - `read_images(pick, question)`: the worker model reads the product images and answers the question. Prices never come from images (spec 4.4).
 
-### Task 4: Draft a new category
+### Task 4: Draft a new category (done)
+
+The category step gives `new_category` when the shopper names a product that no category covers. Python checks the form of the draft (name, kinds, units, no price or rating attributes). The shopper sees the kinds and the facts of the draft, and that nobody has checked it.
+
 
 When no category fits, the chat model drafts a category profile (kinds, attributes, questions, Swedish search words). Python validates it and saves it in `data/profiles/` (not in Git). The shopper is told that the category is a draft.
 

@@ -1,12 +1,13 @@
 """Clarify the needs: compare what the shopper said with the category profile, and ask until the needs are clear."""
+import re
 from decimal import Decimal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from scout.llm.client import LLMOutputError
 from scout.llm.feedback import retry_prompt
 from scout.needs import Needs, check_needs
-from scout.profiles import CategoryProfile
+from scout.profiles import CategoryProfile, ProductKind, ProfileAttribute
 
 SYSTEM = """You help a shopper say what they want, before a search on amazon.se.
 You get the category profile, the needs so far and the conversation. Return the updated needs.
@@ -42,16 +43,81 @@ class ClarifyReply(BaseModel):
 
 class CategoryChoice(BaseModel):
     category: str | None = None
+    new_category: str | None = Field(None, description="When no category fits but the shopper names a product: a "
+                                                       "short English name of it, for example 'headphones'")
 
 
-def pick_category(llm, history: str, profiles: list[CategoryProfile]) -> str | None:
-    """The model sees the kinds of each category, so "a wine cabinet" finds the fridge category."""
+def pick_category(llm, history: str, profiles: list[CategoryProfile]) -> CategoryChoice:
+    """The model sees the kinds of each category, so "a wine cabinet" finds the fridge category. A category that
+    is not in the list counts as none."""
     names = [p.category for p in profiles]
     lines = [f"- {p.category} ({p.display_name}). Kinds: {'; '.join(k.label for k in p.kinds) or 'none'}"
              for p in profiles]
     prompt = "Categories:\n" + "\n".join(lines) + f"\n\nConversation:\n{history}"
     choice = llm.structured("chat", CATEGORY_SYSTEM, prompt, CategoryChoice)
-    return choice.category if choice.category in names else None
+    if choice.category not in names:
+        choice.category = None
+    if choice.category:
+        choice.new_category = None
+    return choice
+
+
+DRAFT_SYSTEM = """You draft a category profile for a shopping assistant that searches amazon.se.
+The profile says which kinds of products the category has, which facts matter when a shopper compares them, and
+what to ask the shopper.
+- category: a short lowercase English name with underscores, for example "headphones".
+- kinds: two to six kinds that shoppers choose between. search_terms_sv are the Swedish words that a shopper
+  types on amazon.se for that kind.
+- attributes: four to eight facts that product pages state and shoppers compare. type is number, enum, boolean
+  or text. A number has a unit. An enum has its values. kind is hard when a wrong value means that the product
+  cannot be used (for example a size that must fit), else soft. Never use price, rating or reviews: the system
+  has them already.
+- questions_for_user: three to five short questions in English that help choose.
+- complaint_types: the problems that buyers of this category often report."""
+
+
+class DraftProfile(BaseModel):
+    category: str
+    display_name: str
+    search_terms_sv: str
+    kinds: list[ProductKind]
+    attributes: list[ProfileAttribute]
+    questions_for_user: list[str]
+    complaint_types: list[str] = Field(default_factory=list)
+
+
+def check_draft(draft: DraftProfile, names: list[str]) -> list[str]:
+    errors = []
+    if not re.fullmatch(r"[a-z][a-z0-9_]{1,40}", draft.category):
+        errors.append("category must be lowercase English letters and underscores")
+    if draft.category in names:
+        errors.append(f"the category {draft.category} exists already")
+    if not draft.kinds:
+        errors.append("give at least one kind")
+    if len(draft.attributes) < 2:
+        errors.append("give at least two attributes")
+    errors += [f"attribute {a.name} is a number, so it needs a unit" for a in draft.attributes
+               if a.type == "number" and not a.unit]
+    errors += [f"attribute {a.name}: the system has {a.name} already" for a in draft.attributes
+               if a.name in {"price", "rating", "review_count"}]
+    if len({a.name for a in draft.attributes}) != len(draft.attributes):
+        errors.append("attribute names must be unique")
+    if not draft.questions_for_user:
+        errors.append("give at least one question")
+    return errors
+
+
+def draft_profile(llm, wanted: str, history: str, names: list[str], max_rounds: int = 3) -> CategoryProfile:
+    """The chat model drafts a profile for a category that does not exist. Python checks its form."""
+    base = f"The shopper wants: {wanted}\nCategories that exist: {', '.join(names)}\n\nConversation:\n{history}"
+    draft, errors = None, []
+    for _ in range(max_rounds):
+        draft = llm.structured("chat", DRAFT_SYSTEM, retry_prompt(base, draft, errors), DraftProfile)
+        errors = check_draft(draft, names)
+        llm.mark_checked(not errors, errors)
+        if not errors:
+            return CategoryProfile(**draft.model_dump(), sources={"products": ["amazon_se"]}, draft=True)
+    raise LLMOutputError(f"The draft profile was still not valid after {max_rounds} tries: {errors}")
 
 
 def describe_profile(profile: CategoryProfile) -> str:

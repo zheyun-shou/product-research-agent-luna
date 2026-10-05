@@ -1,7 +1,9 @@
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
-from scout.profiles import CategoryProfile, load_profile
+from scout.profiles import CategoryProfile, load_profile, profile_names, save_draft
 
 
 def test_fridge_profile_loads():
@@ -38,3 +40,15 @@ def test_fridge_kinds_have_swedish_search_terms():
     assert profile.search_terms_sv == "kylskåp"
     assert profile.kind("fridge_freezer").search_terms_sv == "kyl och frys"
     assert profile.kind("nothing") is None and profile.kind(None) is None
+
+
+def test_a_saved_draft_loads_and_is_listed(tmp_path):
+    fixed, drafts = tmp_path / "profiles", tmp_path / "drafts"
+    fixed.mkdir()
+    (fixed / "fridge.yaml").write_text((Path(__file__).parents[1] / "profiles" / "fridge.yaml").read_text(
+        encoding="utf-8"), encoding="utf-8")
+    draft = load_profile("fridge", fixed, drafts).model_copy(update={"category": "headphones", "draft": True})
+    save_draft(draft, drafts)
+    assert profile_names(fixed, drafts) == ["fridge", "headphones"]
+    assert load_profile("headphones", fixed, drafts).draft is True
+    assert load_profile("fridge", fixed, drafts).draft is False
