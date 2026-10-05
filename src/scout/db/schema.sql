@@ -56,3 +56,14 @@ CREATE TABLE IF NOT EXISTS fetch_log (
     duration_ms  integer,
     note         text NOT NULL DEFAULT ''
 );
+
+
+CREATE TABLE IF NOT EXISTS eliminations (
+    id          bigserial PRIMARY KEY,
+    thread_id   text NOT NULL,
+    product_id  bigint NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    reason      text NOT NULL DEFAULT '',
+    removed_by  text NOT NULL CHECK (removed_by IN ('user', 'agent')),
+    created_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS eliminations_thread ON eliminations (thread_id);

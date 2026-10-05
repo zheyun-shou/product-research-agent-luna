@@ -86,3 +86,23 @@ def test_stored_attributes(db):
     save_record(db, rec, "fridge")
     assert stored_attributes(db, "amazon_se", "B0AAAAAAA1")["height"]["value"] == 203.0
     assert stored_attributes(db, "amazon_se", "B0NOTSTORED") == {}
+
+
+from scout.db.store import add_eliminations, eliminated_products, known_source_ids, restore_products
+from tests.test_picks_db import save
+
+
+def test_rejected_products_belong_to_one_thread_and_can_come_back(db):
+    save(db, "product_full.html", "B0AAAAAAA1")
+    product_id = db.execute("SELECT id FROM products").fetchone()["id"]
+    add_eliminations(db, "t1", [product_id], "too loud")
+    add_eliminations(db, "t2", [product_id], "too big")
+    assert eliminated_products(db, "t1") == {product_id}
+    assert eliminated_products(db, "t3") == set()
+    restore_products(db, "t1", [product_id])
+    assert eliminated_products(db, "t1") == set() and eliminated_products(db, "t2") == {product_id}
+
+
+def test_known_source_ids_finds_stored_listings(db):
+    save(db, "product_full.html", "B0AAAAAAA1")
+    assert known_source_ids(db, "amazon_se", ["B0AAAAAAA1", "B0AAAAAAA9"]) == {"B0AAAAAAA1"}

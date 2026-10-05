@@ -3,7 +3,7 @@ import pytest
 from scout.config import load_settings
 from scout.db.conn import connect, init_schema
 
-TABLES = "price_history, variants, listings, products, fetch_log"
+TABLES = "eliminations, price_history, variants, listings, products, fetch_log"
 
 
 @pytest.fixture

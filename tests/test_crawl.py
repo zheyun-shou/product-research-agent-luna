@@ -186,3 +186,24 @@ def test_incomplete_page_is_fetched_again_without_asking(db, tmp_path):
     report = crawl(db, AmazonSeAdapter(browser, tmp_path), "fridge", "kylskåp", on_problem=never_called)
     assert browser.fetched.count(product_url("B0AAAAAAA1")) == 2
     assert report.saved == 3
+
+
+def test_a_later_crawl_can_start_at_page_2_and_skip_stored_listings(db, tmp_path):
+    crawl(db, AmazonSeAdapter(site(), tmp_path), "fridge", "kylskåp", on_problem=never_called)
+    browser = site()
+    browser.pages[search_url("kylskåp", 2)] = [html("search_basic.html")]
+    report = crawl(db, AmazonSeAdapter(browser, tmp_path), "fridge", "kylskåp", on_problem=never_called,
+                   first_page=2, skip_known=True)
+    assert browser.fetched == [search_url("kylskåp", 2)]
+    assert (report.known, report.detail_pages) == (3, 0)
+
+
+def test_stored_listings_get_the_rating_of_the_result_card(db, tmp_path):
+    crawl(db, AmazonSeAdapter(site(), tmp_path), "fridge", "kylskåp", on_problem=never_called)
+    db.execute("UPDATE listings SET rating = NULL, review_count = NULL")
+    browser = site()
+    browser.pages[search_url("kylskåp", 2)] = [html("search_basic.html")]
+    crawl(db, AmazonSeAdapter(browser, tmp_path), "fridge", "kylskåp", on_problem=never_called,
+          first_page=2, skip_known=True)
+    row = db.execute("SELECT rating, review_count FROM listings WHERE source_id = 'B0AAAAAAA1'").fetchone()
+    assert (row["rating"], row["review_count"]) == (Decimal("4.5"), 1234)

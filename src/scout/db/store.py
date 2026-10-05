@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import psycopg
 from psycopg.types.json import Jsonb
 
-from scout.sources.base import ProductRecord
+from scout.sources.base import Candidate, ProductRecord
 
 
 @dataclass(frozen=True)
@@ -105,3 +105,38 @@ def stored_attributes(conn: psycopg.Connection, source: str, source_id: str) -> 
         (source, source_id),
     ).fetchone()
     return dict(row["attributes"]) if row else {}
+
+
+def known_source_ids(conn: psycopg.Connection, source: str, source_ids: list[str]) -> set[str]:
+    rows = conn.execute("SELECT source_id FROM listings WHERE source = %s AND source_id = ANY(%s)",
+                        (source, source_ids)).fetchall()
+    return {row["source_id"] for row in rows}
+
+
+def refresh_listings(conn: psycopg.Connection, candidates: list[Candidate]) -> None:
+    """Write the rating and the review count of fresh result cards to the stored listings."""
+    for cand in candidates:
+        if cand.rating is None and cand.review_count is None:
+            continue
+        conn.execute("UPDATE listings SET rating = COALESCE(%s, rating), review_count = COALESCE(%s, review_count) "
+                     "WHERE source = %s AND source_id = %s",
+                     (cand.rating, cand.review_count, cand.source, cand.source_id))
+    conn.commit()
+
+
+def add_eliminations(conn: psycopg.Connection, thread_id: str, product_ids: list[int], reason: str,
+                     removed_by: str = "user") -> None:
+    for product_id in product_ids:
+        conn.execute("INSERT INTO eliminations (thread_id, product_id, reason, removed_by) VALUES (%s, %s, %s, %s)",
+                     (thread_id, product_id, reason, removed_by))
+    conn.commit()
+
+
+def eliminated_products(conn: psycopg.Connection, thread_id: str) -> set[int]:
+    rows = conn.execute("SELECT product_id FROM eliminations WHERE thread_id = %s", (thread_id,)).fetchall()
+    return {row["product_id"] for row in rows}
+
+
+def restore_products(conn: psycopg.Connection, thread_id: str, product_ids: list[int]) -> None:
+    conn.execute("DELETE FROM eliminations WHERE thread_id = %s AND product_id = ANY(%s)", (thread_id, product_ids))
+    conn.commit()

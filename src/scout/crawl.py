@@ -6,7 +6,7 @@ from typing import Callable
 
 import psycopg
 
-from scout.db.store import log_fetch, save_record, stored_attributes
+from scout.db.store import known_source_ids, log_fetch, refresh_listings, save_record, stored_attributes
 from scout.llm.client import LLMOutputError, LLMUnavailable
 from scout.sources.base import Candidate, ProductRecord, RawPage, SessionStatus
 
@@ -22,6 +22,7 @@ class CrawlReport:
     candidates: int = 0
     over_budget: int = 0
     off_topic: int = 0
+    known: int = 0
     dropped: list[Candidate] = field(default_factory=list)
     detail_pages: int = 0
     saved: int = 0
@@ -69,12 +70,14 @@ def crawl(
     budget: Decimal | None = None,
     enrich: Enricher | None = None,
     screen: Screener | None = None,
+    first_page: int = 1,
+    skip_known: bool = False,
 ) -> CrawlReport:
     if not getattr(adapter, "terms_check", ""):
         raise RuntimeError(f"Adapter {adapter.name} has no terms check recorded, so it stays disabled.")
     report = CrawlReport()
     candidates, seen = [], set()
-    for number in range(1, max_pages + 1):
+    for number in range(first_page, first_page + max_pages):
         url = adapter.search_url(query, number)
         page = fetch_checked(adapter, conn, url, on_problem, report.notes)
         if page is None:
@@ -101,6 +104,11 @@ def crawl(
             candidates = kept
         except (LLMUnavailable, LLMOutputError) as exc:
             report.notes.append(f"Title screening skipped: {exc}")
+    if skip_known and candidates:
+        known = known_source_ids(conn, candidates[0].source, [c.source_id for c in candidates])
+        report.known = len(known)
+        refresh_listings(conn, [c for c in candidates if c.source_id in known])
+        candidates = [c for c in candidates if c.source_id not in known]
     for cand in candidates[:max_details]:
         page = fetch_checked(adapter, conn, cand.url, on_problem, report.notes)
         if page is None:
