@@ -1,18 +1,24 @@
 """Command line for product-scout."""
+import contextlib
 import json
 import sys
+import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import List, Optional
 
 import typer
+from langgraph.checkpoint.postgres import PostgresSaver
 from pydantic import BaseModel
 
+from scout.agent.graph import build_graph
+from scout.agent.history import assistant
+from scout.agent.live import LazyBrowser, live_deps
 from scout.config import ROOT, load_settings
 from scout.crawl import crawl as run_crawl
 from scout.crawl import fetch_checked
-from scout.db.conn import connect, init_schema
+from scout.db.conn import connect, connect_checkpoints, end_transaction, init_schema
 from scout.db.store import save_record
 from scout.extract.page import enrich_record
 from scout.extract.screen import screen_titles
@@ -268,3 +274,60 @@ def trace_ping() -> None:
         span.update(output="pong")
     tracer.flush()
     typer.echo("Sent one trace named 'chat turn' in session 'trace-ping'.")
+
+
+@app.command()
+def chat(thread: Optional[str] = typer.Option(None, help="the ID of a conversation to continue"),
+         k: int = 5) -> None:
+    """Talk with the agent. It clarifies your needs, searches amazon.se and answers follow-up questions."""
+    settings = load_settings()
+    tracer = tracer_from_env()
+    llm = LLM(load_llm_config(), tracer=tracer)
+    thread_id = thread or uuid.uuid4().hex[:8]
+    config = {"configurable": {"thread_id": thread_id}}
+    browser = LazyBrowser(settings)
+    with connect(settings.database_url) as conn, connect_checkpoints(settings.database_url) as cp_conn:
+        saver = PostgresSaver(cp_conn)
+        saver.setup()
+        graph = build_graph(live_deps(conn, llm, browser, ask_user, typer.echo, tracer, k), saver)
+        messages = graph.get_state(config).values.get("messages", [])
+        if messages:
+            typer.echo(f"Continuing conversation {thread_id}. The last reply was:\n\n{messages[-1]['content']}")
+        else:
+            typer.echo(f"Conversation {thread_id}. To continue it later: scout chat --thread {thread_id}")
+        typer.echo("Type q to stop.")
+        try:
+            while True:
+                text = typer.prompt("\nyou", prompt_suffix="> ").strip()
+                if text.lower() in {"q", "quit", "exit"}:
+                    break
+                before = len(graph.get_state(config).values.get("messages", []))
+                try:
+                    with tracer.turn(thread_id, text) as span:
+                        state = graph.invoke({"messages": [{"role": "user", "content": text}]}, config)
+                        replies = [m["content"] for m in state["messages"][before + 1:]]
+                        span.update(output="\n\n".join(replies))
+                except Exception as exc:  # the nodes catch most problems; this keeps the conversation open
+                    replies = [f"Something went wrong ({type(exc).__name__}: {exc}). You can try again."]
+                    end_transaction(conn)
+                    with contextlib.suppress(Exception):  # the thread gets the message, and the failed turn ends
+                        graph.update_state(config, {"messages": [assistant(replies[0])]}, as_node="calculate")
+                end_transaction(conn)
+                for reply in replies:
+                    typer.echo(f"\n{reply}")
+        finally:
+            browser.close()
+            tracer.flush()
+    report_llm_use(llm)
+
+
+@app.command()
+def threads(limit: int = 20) -> None:
+    """List the stored conversations, newest first."""
+    with connect_checkpoints(load_settings().database_url) as cp_conn:
+        PostgresSaver(cp_conn).setup()
+        rows = cp_conn.execute(
+            "SELECT thread_id, max(checkpoint->>'ts') AS last FROM checkpoints "
+            "GROUP BY thread_id ORDER BY last DESC LIMIT %s", (limit,)).fetchall()
+    for row in rows:
+        typer.echo(f"{row['thread_id']}  last turn {row['last'][:16]} UTC")

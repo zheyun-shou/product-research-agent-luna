@@ -1,0 +1,66 @@
+"""The real dependencies of the chat graph: Postgres, the amazon.se browser and the LLM."""
+from scout.agent.graph import Deps
+from scout.crawl import crawl as run_crawl
+from scout.db.store import add_eliminations, eliminated_products, restore_products
+from scout.extract.page import enrich_record
+from scout.extract.screen import screen_titles
+from scout.picks.pipeline import make_picks, refetcher, shortlist
+from scout.picks.rank import load_cards_by_ids
+from scout.profiles import PROFILES_DIR, load_profile
+from scout.sources.amazon_se.adapter import AmazonSeAdapter
+from scout.sources.browser import BrowserSession
+
+
+class LazyBrowser:
+    """Opens the product-scout Chrome profile only when a step needs amazon.se."""
+
+    def __init__(self, settings):
+        self._settings, self._session, self._adapter = settings, None, None
+
+    def adapter(self) -> AmazonSeAdapter:
+        if self._adapter is None:
+            self._session = BrowserSession(self._settings.browser_profile_dir).__enter__()
+            self._adapter = AmazonSeAdapter(self._session, self._settings.snapshot_dir)
+        return self._adapter
+
+    def close(self) -> None:
+        if self._session is not None:
+            self._session.__exit__(None, None, None)
+            self._session, self._adapter = None, None
+
+
+def live_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, k: int = 5) -> Deps:
+    screened: dict[tuple[str, int], bool] = {}  # a title is screened one time in a session
+
+    def count(profile, needs, excluded):
+        return len(shortlist(conn, profile, needs, llm, excluded, screened).ranked)
+
+    def crawl(profile, needs, page):
+        return run_crawl(conn, browser.adapter(), profile.category, needs.search_terms(profile),
+                         on_problem=on_problem, first_page=page, max_pages=1, max_details=20,
+                         budget=needs.budget_sek(), skip_known=True,
+                         enrich=lambda rec: enrich_record(rec, profile, llm),
+                         screen=lambda cands: screen_titles(cands, profile, llm, needs.wanted(profile)))
+
+    def picks(profile, needs, excluded, kept, first):
+        short = shortlist(conn, profile, needs, llm, set(excluded) | {c.product_id for c in [*kept, *first]}, screened)
+
+        def refetch(card):  # the browser opens only when there is a card to check
+            return refetcher(browser.adapter(), conn, profile.category, on_problem)(card)
+
+        return make_picks(short, needs, k, refetch, llm, kept=kept, first=first)
+
+    return Deps(
+        llm=llm,
+        profile_names=lambda: sorted(p.stem for p in PROFILES_DIR.glob("*.yaml")),
+        load_profile=load_profile,
+        count=count,
+        crawl=crawl,
+        picks=picks,
+        cards=lambda ids: load_cards_by_ids(conn, ids),
+        eliminate=lambda thread, ids, reason: add_eliminations(conn, thread, ids, reason),
+        eliminated=lambda thread: eliminated_products(conn, thread),
+        restore=lambda thread, ids: restore_products(conn, thread, ids),
+        say=say,
+        tracer=tracer,
+    )
