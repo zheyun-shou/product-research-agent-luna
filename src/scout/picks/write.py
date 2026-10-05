@@ -158,6 +158,7 @@ def write_picks(llm, cards: list[Card], conditions_text: str, language: str = "E
     for _ in range(max_rounds):
         text = llm.structured("chat", SYSTEM.format(language=language), retry_prompt(base, text, errors), PicksText)
         errors = check_picks(text, by_id, conditions_text)
+        llm.mark_checked(not errors)
         if not errors:
             return text, []
     return passed_picks(text, errors), errors

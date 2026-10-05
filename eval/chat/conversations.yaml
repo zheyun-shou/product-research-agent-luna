@@ -95,12 +95,13 @@
 
 # References to picks. The first turn gives the same 5 picks from the stored products:
 # 1 Severin (red, 61.5 cm wide), 2 Bomann 175 L (red, 49.5 cm), 3 Bomann side-by-side (90 cm),
-# 4 FOHERE 90 L (41 dB), 5 Bomann KG7357 (no sizes on its card).
+# 4 FOHERE 90 L (41 dB), 5 Bomann 315 L (no sizes on its card).
+# The first turn checks the picks. When they differ, the later turns of the script are not measured.
 - id: en-ref-it
   note: '"it" is the pick of the turn before.'
   turns:
     - say: A fridge with a freezer, any size, budget 9000. Search now.
-      expect: {phase: picks}
+      expect: {phase: picks, picks: [Severin RKG 8930, KG 320, SBS 7344, FOHERE, 315L]}
     - say: How loud is pick 4?
       expect: {route: answer}
     - say: Too loud for me. Remove it.
@@ -110,7 +111,7 @@
   note: Only pick 1 is a Severin.
   turns:
     - say: A fridge with a freezer, any size, budget 9000. Search now.
-      expect: {phase: picks}
+      expect: {phase: picks, picks: [Severin RKG 8930, KG 320, SBS 7344, FOHERE, 315L]}
     - say: I don't want the Severin.
       expect: {route: exclude, pick_numbers: [1], not_says: Which}
 
@@ -118,7 +119,7 @@
   note: Pick 3 is 90 cm wide. Its title says so.
   turns:
     - say: A fridge with a freezer, any size, budget 9000. Search now.
-      expect: {phase: picks}
+      expect: {phase: picks, picks: [Severin RKG 8930, KG 320, SBS 7344, FOHERE, 315L]}
     - say: Remove the widest one.
       expect: {route: exclude, pick_numbers: [3], not_says: Which}
 
@@ -126,14 +127,14 @@
   note: Only the card of pick 5 has no sizes. Its title does not say so.
   turns:
     - say: A fridge with a freezer, any size, budget 9000. Search now.
-      expect: {phase: picks}
+      expect: {phase: picks, picks: [Severin RKG 8930, KG 320, SBS 7344, FOHERE, 315L]}
     - say: Drop the one without dimensions.
       expect: {route: exclude, pick_numbers: [5], not_says: Which}
 
 - id: zh-ref-second
   turns:
     - say: 要一个带冷冻的冰箱，尺寸无所谓，预算9000克朗，直接搜
-      expect: {phase: picks}
+      expect: {phase: picks, picks: [Severin RKG 8930, KG 320, SBS 7344, FOHERE, 315L]}
     - say: 第二个我不要
       expect: {route: exclude, pick_numbers: [2], not_says: Which}
 
@@ -141,7 +142,7 @@
   note: Picks 2, 3 and 5 are Bomann, and the shopper says "the Bomann". The agent must ask.
   turns:
     - say: A fridge with a freezer, any size, budget 9000. Search now.
-      expect: {phase: picks}
+      expect: {phase: picks, picks: [Severin RKG 8930, KG 320, SBS 7344, FOHERE, 315L]}
     - say: Remove the Bomann.
       expect: {says: Which, not_says: Removed}
 
@@ -149,7 +150,7 @@
   note: Picks 1 and 2 are red. The agent must ask.
   turns:
     - say: 要一个带冷冻的冰箱，尺寸无所谓，预算9000克朗，直接搜
-      expect: {phase: picks}
+      expect: {phase: picks, picks: [Severin RKG 8930, KG 320, SBS 7344, FOHERE, 315L]}
     - say: 去掉红色那个
       expect: {says: Which, not_says: Removed}
 
@@ -158,7 +159,7 @@
   note: One message removes a pick and asks for more.
   turns:
     - say: A fridge with a freezer, any size, budget 9000. Search now.
-      expect: {phase: picks}
+      expect: {phase: picks, picks: [Severin RKG 8930, KG 320, SBS 7344, FOHERE, 315L]}
     - say: Drop the FOHERE and show me some more.
       expect: {route: more, pick_numbers: [4], searched: true}
 
@@ -166,7 +167,7 @@
   note: One message removes a pick and lowers the budget.
   turns:
     - say: 要一个带冷冻的冰箱，尺寸无所谓，预算9000克朗，直接搜
-      expect: {phase: picks}
+      expect: {phase: picks, picks: [Severin RKG 8930, KG 320, SBS 7344, FOHERE, 315L]}
     - say: 第3个太宽了不要，预算降到6000
       expect: {route: change_needs, pick_numbers: [3], budget: 6000}
 
@@ -174,7 +175,7 @@
   note: The shopper takes a removal back.
   turns:
     - say: A fridge with a freezer, any size, budget 9000. Search now.
-      expect: {phase: picks}
+      expect: {phase: picks, picks: [Severin RKG 8930, KG 320, SBS 7344, FOHERE, 315L]}
     - say: Remove pick 1.
       expect: {route: exclude, pick_numbers: [1]}
     - say: Sorry, I want the Severin back.
@@ -184,7 +185,7 @@
   note: A question about the order. The agent only answers.
   turns:
     - say: A fridge with a freezer, any size, budget 9000. Search now.
-      expect: {phase: picks}
+      expect: {phase: picks, picks: [Severin RKG 8930, KG 320, SBS 7344, FOHERE, 315L]}
     - say: Why is the Severin first and not the Bomann with 1779 ratings?
       expect: {route: answer, not_says: Removed}
 

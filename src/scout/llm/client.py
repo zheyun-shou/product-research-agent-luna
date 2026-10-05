@@ -38,6 +38,7 @@ class CallRecord:
     seconds: float
     schema: str = ""
     valid: bool = True  # False when the reply did not match the schema
+    checked: bool | None = None  # set by the step that checks the reply: True when the reply passed
 
 
 def inline_refs(schema: dict) -> dict:
@@ -114,6 +115,11 @@ class LLM:
     def _target(self, role: Role) -> ModelConfig:
         role_cfg = self.config.roles[role]
         return role_cfg.fallback if role in self.fallbacks else role_cfg
+
+    def mark_checked(self, passed: bool) -> None:
+        """The step that checked the last reply gives the result. The evaluation reads it from the call record."""
+        if self.calls:
+            self.calls[-1].checked = passed
 
     def model_for(self, role: Role) -> str:
         return self._target(role).model

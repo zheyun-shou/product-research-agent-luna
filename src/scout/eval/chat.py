@@ -9,21 +9,18 @@ from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import BaseModel, ConfigDict, Field
 
 from scout.agent.graph import Deps, build_graph
+from scout.agent.live import shared_deps
 from scout.crawl import CrawlReport
 from scout.needs import Needs
-from scout.picks.pipeline import make_picks, shortlist
-from scout.picks.rank import Card, load_cards_by_ids
-from scout.profiles import PROFILES_DIR, load_profile
+from scout.picks.rank import Card
 from scout.sources.base import ProductRecord
 
-# The steps whose output Python checks, by schema name, and the reply text when the last round still failed.
-CHECKED = {"ClarifyReply": ("clarify", "The needs were still not valid"),
-           "PicksText": ("summaries", "did not pass the checks"),
-           "Act": ("actions", "so I changed nothing"),
-           "CalcPlan": ("calculations", "I could not turn this request")}
+# The steps whose output Python checks, by schema name. Each step marks its last call record as passed or not.
+CHECKED = {"ClarifyReply": "clarify", "PicksText": "summaries", "Act": "actions", "CalcPlan": "calculations"}
 
-
+# A node caught an outage (quota, server) or a program error. The model is then not measured in this turn.
 NODE_ERRORS = ("I cannot finish this step now", "Something went wrong in the step")
+PICKS_DIFFER = "The picks of an earlier turn differ from the script, so the references to them cannot be scored."
 
 
 class Expect(BaseModel):
@@ -41,6 +38,7 @@ class Expect(BaseModel):
     searched: bool | None = None
     says: str | None = None                 # a text in the replies of the turn
     not_says: str | None = None             # a text that no reply of the turn may have
+    picks: list[str] | None = None          # a text in the title of each pick, in order. Later turns refer to them
 
 
 class Turn(BaseModel):
@@ -71,27 +69,17 @@ def stored_record(card: Card) -> ProductRecord:
 
 
 def offline_deps(conn, llm, k: int = 5) -> tuple[Deps, list]:
-    """Deps over the stored products. A search only records its words and page. Rejections stay in memory."""
+    """The same deps as scout chat, over the stored products. A search only records its words and page. There is no
+    size check, because the records do not hold the page text. Rejections stay in memory."""
     removed: dict[str, set[int]] = {}
-    screened: dict[tuple[str, int], bool] = {}
     searches: list[tuple[str, int]] = []
 
     def crawl(profile, needs, page):
         searches.append((needs.search_terms(profile), page))
         return CrawlReport(notes=["Evaluation run: no search on amazon.se, only the stored products."])
 
-    def picks(profile, needs, excluded, kept, first):
-        short = shortlist(conn, profile, needs, llm, set(excluded) | {c.product_id for c in [*kept, *first]}, screened)
-        return make_picks(short, needs, k, stored_record, llm, kept=kept, first=first)
-
-    deps = Deps(
-        llm=llm,
-        profile_names=lambda: sorted(p.stem for p in PROFILES_DIR.glob("*.yaml")),
-        load_profile=load_profile,
-        count=lambda profile, needs, excluded: len(shortlist(conn, profile, needs, llm, excluded, screened).ranked),
-        crawl=crawl,
-        picks=picks,
-        cards=lambda ids: load_cards_by_ids(conn, ids),
+    deps = shared_deps(
+        conn, llm, crawl, lambda profile: stored_record, k, size_check=False,
         eliminate=lambda thread, ids, reason: removed.setdefault(thread, set()).update(ids),
         eliminated=lambda thread: set(removed.get(thread, set())),
         restore=lambda thread, ids: removed.setdefault(thread, set()).difference_update(ids),
@@ -115,6 +103,7 @@ def compare(expect: Expect, state: dict, route: dict | None, searched: bool, rep
         "pick_numbers": (route or {}).get("pick_numbers"),
         "searched": searched,
     }
+    titles = [p.get("title") or "" for p in state.get("picks") or []]
     checks = []
     for name, wanted in expect.model_dump(exclude_none=True, exclude_defaults=True).items():
         if name in ("says", "not_says"):
@@ -122,18 +111,38 @@ def compare(expect: Expect, state: dict, route: dict | None, searched: bool, rep
             ok = got if name == "says" else not got
             checks.append({"check": name, "expected": wanted, "actual": got, "ok": ok})
             continue
+        if name == "picks":
+            ok = len(titles) == len(wanted) and all(w in t for w, t in zip(wanted, titles))
+            checks.append({"check": name, "expected": wanted, "actual": [t[:40] for t in titles], "ok": ok})
+            continue
         if name == "conditions":
             wanted = sorted(wanted)
         checks.append({"check": name, "expected": wanted, "actual": actual[name], "ok": actual[name] == wanted})
     return checks
 
 
-def run_scripts(scripts: list[Script], deps: Deps, searches: list, llm, progress=lambda text: None) -> list[dict]:
-    """Run each script in a new thread. Return one record for each turn."""
+def step_results(calls) -> dict:
+    """The rounds of each checked step in a turn, and if its last round passed. A round is a reply that matched the
+    schema. A step that ended with a reply that did not match the schema did not pass."""
+    steps = {}
+    for schema, step in CHECKED.items():
+        mine = [c for c in calls if c.schema == schema]
+        rounds = sum(1 for c in mine if c.valid)
+        if rounds:
+            passed = mine[-1].valid and mine[-1].checked is True
+            steps[step] = {"rounds": rounds, "passed": passed, "first_round": passed and rounds == 1}
+    return steps
+
+
+def run_scripts(scripts: list[Script], deps: Deps, searches: list, llm, progress=lambda text: None,
+                after_turn=lambda: None) -> list[dict]:
+    """Run each script in a new thread. Return one record for each turn. `after_turn` runs after each turn, for
+    example to end the database transaction."""
     records = []
     for script in scripts:
         graph = build_graph(deps, InMemorySaver())
         config = {"configurable": {"thread_id": f"eval-{script.id}"}}
+        picks_differ = False
         for number, turn in enumerate(script.turns, 1):
             calls_before, searches_before, started = len(llm.calls), len(searches), time.monotonic()
             before = len(graph.get_state(config).values.get("messages", []))
@@ -145,38 +154,38 @@ def run_scripts(scripts: list[Script], deps: Deps, searches: list, llm, progress
                         route = update["act"]["route"]
             except Exception as exc:  # report it, and go on with the next turn
                 error = f"{type(exc).__name__}: {exc}"
+            after_turn()
             state = graph.get_state(config).values
             replies = [m["content"] for m in state.get("messages", [])[before + 1:]]
-            # A node caught the problem (quota, server, browser), so the model was not measured in this turn.
             error = error or next((r for r in replies if r.startswith(NODE_ERRORS)), None)
             calls = llm.calls[calls_before:]
-            steps = {}
-            for schema, (step, failed_text) in CHECKED.items():
-                rounds = sum(1 for c in calls if c.schema == schema and c.valid)
-                if rounds:
-                    passed = not any(failed_text in r for r in replies)
-                    steps[step] = {"rounds": rounds, "passed": passed, "first_round": passed and rounds == 1}
+            checks = compare(turn.expect, state, route, len(searches) > searches_before, replies)
+            not_measured = PICKS_DIFFER if picks_differ else error
+            picks_differ = picks_differ or any(c["check"] == "picks" and not c["ok"] for c in checks)
             records.append({
                 "script": script.id, "turn": number, "say": turn.say, "replies": replies, "error": error,
-                "checks": compare(turn.expect, state, route, len(searches) > searches_before, replies),
-                "steps": steps, "seconds": round(time.monotonic() - started, 1),
+                "measured": not_measured is None, "not_measured": not_measured,
+                "checks": checks, "steps": step_results(calls), "seconds": round(time.monotonic() - started, 1),
                 "calls": [{"role": c.role, "model": c.model, "schema": c.schema, "valid": c.valid,
                            "input_tokens": c.input_tokens, "output_tokens": c.output_tokens} for c in calls],
             })
             failed = sum(not c["ok"] for c in records[-1]["checks"])
             progress(f"{script.id} turn {number}: {records[-1]['seconds']} s, {len(calls)} LLM calls, "
-                     f"{failed} values do not agree{', error' if error else ''}")
+                     f"{failed} values do not agree{', error' if error else ''}"
+                     f"{', not measured' if not_measured else ''}")
     return records
 
 
 def summarize(records: list[dict]) -> dict:
+    """The expected values and the checked steps count only in measured turns. Calls, tokens and time count in all."""
+    measured = [r for r in records if r["measured"]]
     checks = Counter()
-    for record in records:
+    for record in measured:
         for check in record["checks"]:
             checks[(check["check"], check["ok"])] += 1
     names = sorted({name for name, _ in checks})
     steps = {}
-    for record in records:
+    for record in measured:
         for step, result in record["steps"].items():
             entry = steps.setdefault(step, {"ran": 0, "first_round": 0, "passed": 0})
             entry["ran"] += 1
@@ -194,6 +203,7 @@ def summarize(records: list[dict]) -> dict:
     return {
         "turns": len(records),
         "errors": sum(1 for r in records if r["error"]),
+        "not_measured": len(records) - len(measured),
         "checks": {name: {"ok": checks[(name, True)], "total": checks[(name, True)] + checks[(name, False)]}
                    for name in names},
         "steps": steps,
@@ -203,9 +213,10 @@ def summarize(records: list[dict]) -> dict:
 
 
 def summary_text(summary: dict) -> str:
-    lines = [f"turns {summary['turns']}, turns with an error {summary['errors']}, "
+    lines = [f"turns {summary['turns']}, turns with an error {summary['errors']}, not measured "
+             f"{summary['not_measured']} (an outage, a program error, or picks that differ from the script), "
              f"seconds per turn: median {summary['seconds']['median']}, max {summary['seconds']['max']}",
-             "Expected values:"]
+             "Expected values (measured turns only):"]
     lines += [f"  {name}: {c['ok']} of {c['total']}" for name, c in summary["checks"].items()]
     lines.append("Checked steps (a round is one reply of the model that matched the schema):")
     lines += [f"  {step}: ran {s['ran']}, passed in round 1: {s['first_round']}, passed in the end: {s['passed']}"

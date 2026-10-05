@@ -1,6 +1,7 @@
 import pytest
 
 from scout.extract.screen import Keep
+from scout.llm.client import LLMUnavailable
 from scout.needs import Needs
 from scout.picks.pipeline import make_picks, shortlist
 from scout.picks.rank import load_cards_by_ids
@@ -80,3 +81,12 @@ def test_kept_cards_need_no_new_check_and_first_cards_are_checked_first(db):
     checked.clear()
     back = make_picks(short, needs, 1, counting, None, kept=[top], first=[second])  # a product came back
     assert [c.listing_id for c in back.chosen] == [second.listing_id] and checked == [second.listing_id]
+
+
+def test_without_the_page_text_there_is_no_size_check(db):
+    stock(db)
+    needs = Needs(category="fridge")
+    llm = FakeLLM([LLMUnavailable("busy")])  # only the summaries ask the model
+    result = make_picks(shortlist(db, FRIDGE, needs, None), needs, 2, refetch, llm, size_check=False)
+    assert [role for role, _ in llm.requests] == ["chat"]
+    assert "Size check skipped: the pages were not fetched again." in result.notes

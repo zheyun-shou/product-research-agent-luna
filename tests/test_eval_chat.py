@@ -1,8 +1,8 @@
 from scout.agent.clarify import CategoryChoice, ClarifyReply
 from scout.agent.followup import RemovePicks
 from scout.config import ROOT
-from scout.eval.chat import Expect, Script, Turn, load_scripts, run_scripts, summarize
-from scout.llm.client import QuotaExhausted
+from scout.eval.chat import PICKS_DIFFER, Expect, Script, Turn, load_scripts, run_scripts, summarize
+from scout.llm.client import LLMOutputError, QuotaExhausted
 from scout.needs import Needs
 from tests.fakes import FakeLLM
 from tests.test_graph import World, ready
@@ -40,5 +40,36 @@ def test_a_turn_that_a_node_ended_counts_as_an_error():
     llm = FakeLLM([QuotaExhausted("The free daily quota is used up.")])
     script = Script(id="s", turns=[Turn(say="a fridge", expect=Expect(phase="clarify"))])
     records = run_scripts([script], world.deps(llm), world.crawls, llm)
-    assert records[0]["error"].startswith("I cannot finish this step now")
-    assert summarize(records)["errors"] == 1
+    assert records[0]["error"].startswith("I cannot finish this step now") and not records[0]["measured"]
+    summary = summarize(records)
+    assert summary["errors"] == 1 and summary["not_measured"] == 1
+    assert summary["checks"] == {}  # an outage does not lower the score of the model
+
+
+def test_a_step_that_ends_without_a_passing_round_did_not_pass():
+    world = World()
+    llm = FakeLLM([CategoryChoice(category="fridge"), ready(),
+                   [RemovePicks(picks=[9], words="remove 9", one_pick=True)], LLMOutputError("no valid tool calls")])
+    script = Script(id="s", turns=[Turn(say="a fridge with a freezer"), Turn(say="remove 9")])
+    records = run_scripts([script], world.deps(llm), world.crawls, llm)
+    assert records[1]["error"] is None and records[1]["measured"]  # a model failure is measured
+    assert records[1]["steps"]["actions"] == {"rounds": 1, "passed": False, "first_round": False}
+    assert summarize(records)["steps"]["actions"] == {"ran": 1, "first_round": 0, "passed": 0}
+
+
+def test_when_the_picks_differ_the_later_turns_are_not_measured():
+    world = World()
+    llm = FakeLLM([CategoryChoice(category="fridge"), ready(), [RemovePicks(picks=[1], words="remove 1",
+                                                                             one_pick=True)]])
+    script = Script(id="s", turns=[
+        Turn(say="a fridge with a freezer", expect=Expect(phase="picks", picks=["Fridge 2", "Fridge 1"])),
+        Turn(say="remove 1", expect=Expect(pick_numbers=[1])),
+    ])
+    ends = []
+    records = run_scripts([script], world.deps(llm), world.crawls, llm, after_turn=lambda: ends.append(1))
+    assert records[0]["checks"][1] == {"check": "picks", "expected": ["Fridge 2", "Fridge 1"],
+                                       "actual": ["Fridge 1", "Fridge 2"], "ok": False}
+    assert records[0]["measured"] and records[1]["not_measured"] == PICKS_DIFFER
+    summary = summarize(records)
+    assert summary["checks"] == {"phase": {"ok": 1, "total": 1}, "picks": {"ok": 0, "total": 1}}
+    assert summary["not_measured"] == 1 and len(ends) == 2  # the transaction ends after each turn

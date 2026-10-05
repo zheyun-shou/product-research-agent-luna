@@ -84,4 +84,5 @@ def test_act_retries_with_the_problems_and_gives_up_after_three_rounds():
     assert result.reply == good[0] and result.action == "answer"
     assert "the number 80" in llm.requests[1][1] and '"tool":"reply"' in llm.requests[1][1]
     assert [c.schema for c in llm.calls] == ["Act", "Act"]
+    assert [c.checked for c in llm.calls] == [False, True]  # the evaluation reads the result from the records
     assert run_act([bad] * 3, "How tall?")[0] is None

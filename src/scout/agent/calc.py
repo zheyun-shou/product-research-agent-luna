@@ -101,12 +101,15 @@ def calculate(llm, cards: list[Card], history: str, said: set[Decimal], max_roun
     for _ in range(max_rounds):
         plan = llm.structured("chat", SYSTEM, retry_prompt(base, plan, errors), CalcPlan)
         if not plan.steps:
+            llm.mark_checked(True)
             return plan.explanation
         try:
             _, lines = run_plan(plan, cards, said | CONSTANTS)
         except CalcError as exc:
             errors = [str(exc)]
+            llm.mark_checked(False)
             continue
+        llm.mark_checked(True)
         allowed = said | {Decimal(n) for n in range(1, len(cards) + 1)}
         explanation = plan.explanation if not unchecked_numbers(plan.explanation, allowed) else "Result:"
         return "\n".join([explanation, *lines, "Python did the arithmetic. Results are rounded to 2 decimals."])

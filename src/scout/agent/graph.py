@@ -77,8 +77,10 @@ def build_graph(deps: Deps, checkpointer=None):
             with deps.tracer.span(name) as span:
                 try:
                     return fn(state, config)
-                except (LLMUnavailable, LLMOutputError) as exc:
+                except LLMUnavailable as exc:
                     text = f"I cannot finish this step now. {exc}"
+                except LLMOutputError as exc:
+                    text = f"The model did not give a usable reply for this step. {exc} You can say it in other words."
                 except Exception as exc:  # a browser or database problem must not end the conversation
                     span.update(level="ERROR", status_message=repr(exc))
                     text = (f"Something went wrong in the step '{name}' ({type(exc).__name__}: {exc}). "

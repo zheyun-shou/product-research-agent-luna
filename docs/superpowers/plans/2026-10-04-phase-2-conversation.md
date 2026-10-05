@@ -12,7 +12,19 @@
 
 **Video:** a walkthrough of this plan, with captions and voice, is at https://claude.ai/artifact/BRmWUvhE8E82DBwQQYeLNx. Fig. 4 of the diagram (https://claude.ai/artifact/4jJqCkVudUFU24kTyXsiqZ) shows one turn of the conversation.
 
-**Dry run.** On 2026-10-04 Claude applied all code of this plan in a temporary Git worktree, on commit f676761. 204 tests passed: the 163 tests of phase 1 and 41 new ones. Then Claude ran one real clarify turn of `scout chat` in Chinese ("a fridge, 60 cm wide, 186 cm high, budget 9000 kronor"). The agent stored width<=60, height<=186 and budget 9000. It asked about the kind (with or without a freezer part), the depth and the noise. No browser opened. The chat role used 2 calls on Groq, because the Gemini chat quota was used up. Claude then deleted that thread and the worktree. Later on 2026-10-04, Zheyun added decisions 7 and 8. Claude applied the changed plan again in a new worktree: 207 tests passed (163 and 44 new). On 2026-10-05 Zheyun reviewed the plan. Decisions 9 to 13 and Task 12 come from that review. Claude applied the plan a third time: 220 tests passed (163 and 57 new), and Task 12 ran the 12 scripted conversations with Nemotron 3 Ultra. The Gemini chat quota ran out after the first script. The results are under Task 12. Later on 2026-10-05, the scripts showed that every tested model guesses or removes too much when the shopper's words do not name one pick. Zheyun then decided that the chat model acts through tool calls after the picks (decision 1), with the checks of decision 14 and an undo (decision 15). Claude applied the changed plan in a fourth worktree: 233 tests passed (163 and 70 new), and Task 12 ran 24 scripted conversations. Task 13 was not part of any run. The tasks below are still not done in the repository.
+**Done in the repository.** On 2026-10-05 Claude did Tasks 1 to 12 in the repository, one commit for each task, and 233 tests passed. The repository then had the same files as a fresh build from this plan, except the new dependencies in `pyproject.toml` and the order of the imports in `cli.py`. The steps "Run the tests to see them fail" stay open: the code and its tests came from the dry runs, so Claude added them together. Four steps stay open because they need a real browser or a chat quota: Task 3 Step 7, Task 10 Step 7, Task 11 Step 7 and Task 12 Step 7.
+
+**Code review.** After Task 12, a code review on 2026-10-05 found that some numbers of `scout eval-chat` were not correct. Claude changed the code after the commit of Task 12, so the code blocks of this plan show the earlier version of these parts. The changes are:
+
+- Each checked step (clarify, summaries, actions, calculations) marks its last call record as passed or not passed (`LLM.mark_checked`). The evaluation reads this mark. Before, it looked for one failure sentence in the replies, so a step that stopped with an exception counted as passed.
+- A model that gives no usable reply (`LLMOutputError`) now gets its own message. It is a model failure and counts in the score. An outage (quota, server) or a program error makes the turn "not measured". Its expected values and steps do not count. Calls, tokens and time still count.
+- Turn 1 of each script that refers to picks checks the 5 pick titles (`picks` in `Expect`). When they differ, the later turns of that script are not measured, because the worker model, not the chat model, changed the picks.
+- `scout eval-chat` ends the database transaction after each turn, as `scout chat` does. Before the run, it stops on an unknown provider, a missing API key or an unknown script id.
+- `scout chat` and `scout eval-chat` build their dependencies with one function (`shared_deps` in `agent/live.py`), so the evaluation runs the same picks pipeline. The evaluation does not check the sizes, because the stored records do not hold the page text, and the picks say so.
+
+237 tests passed after these changes.
+
+**Dry run.** On 2026-10-04 Claude applied all code of this plan in a temporary Git worktree, on commit f676761. 204 tests passed: the 163 tests of phase 1 and 41 new ones. Then Claude ran one real clarify turn of `scout chat` in Chinese ("a fridge, 60 cm wide, 186 cm high, budget 9000 kronor"). The agent stored width<=60, height<=186 and budget 9000. It asked about the kind (with or without a freezer part), the depth and the noise. No browser opened. The chat role used 2 calls on Groq, because the Gemini chat quota was used up. Claude then deleted that thread and the worktree. Later on 2026-10-04, Zheyun added decisions 7 and 8. Claude applied the changed plan again in a new worktree: 207 tests passed (163 and 44 new). On 2026-10-05 Zheyun reviewed the plan. Decisions 9 to 13 and Task 12 come from that review. Claude applied the plan a third time: 220 tests passed (163 and 57 new), and Task 12 ran the 12 scripted conversations with Nemotron 3 Ultra. The Gemini chat quota ran out after the first script. The results are under Task 12. Later on 2026-10-05, the scripts showed that every tested model guesses or removes too much when the shopper's words do not name one pick. Zheyun then decided that the chat model acts through tool calls after the picks (decision 1), with the checks of decision 14 and an undo (decision 15). Claude applied the changed plan in a fourth worktree: 233 tests passed (163 and 70 new), and Task 12 ran 24 scripted conversations. Task 13 was not part of any run.
 
 ## Global Constraints
 
@@ -123,7 +135,7 @@ tests/
 - Create: `tests/test_trace.py`
 - Modify: `src/scout/cli.py` (command `trace-ping`)
 
-- [ ] **Step 1: Add the dependencies**
+- [x] **Step 1: Add the dependencies**
 
 In `pyproject.toml`, add these lines to `dependencies`:
 
@@ -136,7 +148,7 @@ In `pyproject.toml`, add these lines to `dependencies`:
 Run: `uv pip install -e ".[dev]"`
 Expected: the three packages and their dependencies (`langchain-core`, `opentelemetry-sdk`, `psycopg-pool`) install.
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 Add to `tests/fakes.py`:
 
@@ -262,7 +274,7 @@ def test_a_hung_request_stops_after_the_timeout(monkeypatch):
 Run: `python -m pytest tests/test_trace.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'scout.trace'`.
 
-- [ ] **Step 4: Write the tracer**
+- [x] **Step 4: Write the tracer**
 
 Create `src/scout/trace.py`:
 
@@ -340,7 +352,7 @@ def tracer_from_env():
     return NoTracer()
 ```
 
-- [ ] **Step 5: Record each LLM attempt**
+- [x] **Step 5: Record each LLM attempt**
 
 In `src/scout/llm/client.py`, add two fields at the end of `CallRecord`. The scripted conversations of Task 12 count the check rounds of each step with them.
 
@@ -401,7 +413,7 @@ In `LLM`, add `TIMEOUT = 120  # seconds for one request` after `MAX_ATTEMPTS`, a
 
 The library waits 600 seconds and tries 2 more times by default, so one hung request could stop a chat turn for 30 minutes. This happened in a scripted run on 2026-10-05. A timeout is an `APIConnectionError`, so `_structured` already treats it as "unavailable".
 
-- [ ] **Step 6: Add `scout trace-ping`**
+- [x] **Step 6: Add `scout trace-ping`**
 
 In `src/scout/cli.py`:
 
@@ -424,12 +436,12 @@ def trace_ping() -> None:
     typer.echo("Sent one trace named 'chat turn' in session 'trace-ping'.")
 ```
 
-- [ ] **Step 7: Run all tests**
+- [x] **Step 7: Run all tests**
 
 Run: `python -m pytest -q`
 Expected: all tests pass, including the 5 new ones.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add pyproject.toml src/scout/trace.py src/scout/llm/client.py src/scout/cli.py tests/fakes.py tests/test_trace.py
@@ -447,7 +459,7 @@ git commit -m "Optional Langfuse tracing: one generation per LLM attempt; trace-
 - Create: `tests/test_needs.py`
 - Modify: `tests/test_profiles.py`, `tests/test_screen.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `tests/test_profiles.py`:
 
@@ -530,7 +542,7 @@ def test_check_needs_finds_unknown_names_and_invented_numbers():
 Run: `python -m pytest tests/test_needs.py tests/test_profiles.py tests/test_screen.py -v`
 Expected: FAIL. `scout.needs` does not exist, and the profile has no `kinds`.
 
-- [ ] **Step 3: Add kinds to the profile model**
+- [x] **Step 3: Add kinds to the profile model**
 
 In `src/scout/profiles.py`, add before `CategoryProfile`:
 
@@ -579,7 +591,7 @@ Put this question first in `questions_for_user`:
   - What kind of fridge do you want? With a freezer part, without one, a mini fridge, a wine cooler or a cool box?
 ```
 
-- [ ] **Step 4: Write the needs model**
+- [x] **Step 4: Write the needs model**
 
 Create `src/scout/needs.py`:
 
@@ -672,7 +684,7 @@ def check_needs(needs: Needs, profile: CategoryProfile, said: set[Decimal] | Non
     return errors
 ```
 
-- [ ] **Step 5: Screen for the wanted kind**
+- [x] **Step 5: Screen for the wanted kind**
 
 In `src/scout/extract/screen.py`, change `screen_titles`:
 
@@ -684,12 +696,12 @@ def screen_titles(cands: list[T], profile: CategoryProfile, llm, wanted: str | N
     return [c for n, c in enumerate(cands) if n in keep]
 ```
 
-- [ ] **Step 6: Run all tests**
+- [x] **Step 6: Run all tests**
 
 Run: `python -m pytest -q`
 Expected: all tests pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add profiles/fridge.yaml src/scout/profiles.py src/scout/needs.py src/scout/extract/screen.py tests/test_needs.py tests/test_profiles.py tests/test_screen.py
@@ -709,7 +721,7 @@ git commit -m "Needs model with checks against the user's numbers; product kinds
 - Create: `tests/test_picks_pipeline.py`
 - Modify: `tests/test_picks_write.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `tests/test_picks_write.py`:
 
@@ -831,7 +843,7 @@ def test_kept_cards_need_no_new_check_and_first_cards_are_checked_first(db):
 Run: `python -m pytest tests/test_picks_pipeline.py tests/test_picks_write.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'scout.picks.pipeline'`, and the two new tests in `test_picks_write.py` fail.
 
-- [ ] **Step 3: Share the claim checks**
+- [x] **Step 3: Share the claim checks**
 
 In `src/scout/picks/write.py`, add these functions before `check_picks`. The follow-up answers in Task 7 use them too.
 
@@ -953,7 +965,7 @@ Import `retry_prompt` from `scout.llm.feedback`. In `format_picks`, replace the 
                      else "Some summaries did not pass the checks. Those picks show only the facts.")
 ```
 
-- [ ] **Step 4: Load cards by listing ID**
+- [x] **Step 4: Load cards by listing ID**
 
 The conversation state keeps only listing IDs. Add to `src/scout/picks/rank.py`:
 
@@ -975,7 +987,7 @@ def load_cards_by_ids(conn: psycopg.Connection, listing_ids: list[int]) -> list[
     return [by_id[i] for i in listing_ids if i in by_id]
 ```
 
-- [ ] **Step 5: Write the pipeline**
+- [x] **Step 5: Write the pipeline**
 
 Create `src/scout/picks/pipeline.py`:
 
@@ -1089,7 +1101,7 @@ def refetcher(adapter, conn: psycopg.Connection, category: str, on_problem: OnPr
     return refetch
 ```
 
-- [ ] **Step 6: Make `scout picks` use the pipeline**
+- [x] **Step 6: Make `scout picks` use the pipeline**
 
 In `src/scout/cli.py`, replace the body of `picks` with:
 
@@ -1125,10 +1137,10 @@ Expected: all tests pass.
 Run: `scout picks fridge --budget 9000 --where "height<=186" --where "width<=60" --no-llm`
 Expected: the same 5 picks and facts as the `--no-llm` run in phase 1 Task 14, unless the prices changed. The command still opens the browser for the recheck.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
-git add src/scout/picks src/scout/cli.py tests/test_picks_pipeline.py
+git add src/scout/picks src/scout/llm/feedback.py src/scout/cli.py tests/test_picks_pipeline.py tests/test_picks_write.py
 git commit -m "One picks pipeline for the command and the agent; shared claim checks; cards by listing ID"
 ```
 
@@ -1141,7 +1153,7 @@ git commit -m "One picks pipeline for the command and the agent; shared claim ch
 - Modify: `src/scout/db/schema.sql`, `src/scout/db/store.py`
 - Modify: `tests/conftest.py`, `tests/test_crawl.py`, `tests/test_store.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `tests/test_crawl.py`:
 
@@ -1201,7 +1213,7 @@ TABLES = "eliminations, price_history, variants, listings, products, fetch_log"
 Run: `python -m pytest tests/test_crawl.py tests/test_store.py -v`
 Expected: FAIL. `crawl` has no `first_page` argument, and the table `eliminations` does not exist.
 
-- [ ] **Step 3: Add the table and the store functions**
+- [x] **Step 3: Add the table and the store functions**
 
 Add to `src/scout/db/schema.sql`:
 
@@ -1257,7 +1269,7 @@ def restore_products(conn: psycopg.Connection, thread_id: str, product_ids: list
 
 Import `Candidate` from `scout.sources.base` in `store.py`, if it is not imported. Run `scout db-init` one time, so that the main database gets the new table.
 
-- [ ] **Step 4: Change the crawl**
+- [x] **Step 4: Change the crawl**
 
 In `src/scout/crawl.py`:
 
@@ -1278,12 +1290,12 @@ In `src/scout/crawl.py`:
 
 The agent uses `skip_known=True`, because the recheck before the picks fetches the stored products again anyway. The result card refreshes the rating and the review count of a stored product. The card price is not written, because a card can show the price of another variant. The recheck reads the price of each pick. `scout crawl` keeps the old behaviour.
 
-- [ ] **Step 5: Run all tests**
+- [x] **Step 5: Run all tests**
 
 Run: `python -m pytest -q`
 Expected: all tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/scout/crawl.py src/scout/db tests/conftest.py tests/test_crawl.py tests/test_store.py
@@ -1300,7 +1312,7 @@ The state keeps all messages. The chat model sees a summary of the old turns and
 - Create: `src/scout/agent/__init__.py`, `src/scout/agent/history.py`
 - Create: `tests/test_history.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/test_history.py`:
 
@@ -1347,7 +1359,7 @@ def test_compact_waits_until_the_history_is_long():
 Run: `python -m pytest tests/test_history.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'scout.agent'`.
 
-- [ ] **Step 3: Write the module**
+- [x] **Step 3: Write the module**
 
 Create `src/scout/agent/__init__.py`:
 
@@ -1433,12 +1445,12 @@ def compact(state: dict, llm) -> dict:
     return {"summary": reply.summary, "summarized": upto}
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `python -m pytest tests/test_history.py -v`
 Expected: 3 passed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/scout/agent tests/test_history.py
@@ -1453,7 +1465,7 @@ git commit -m "Conversation history for the chat model: summary of old turns, re
 - Create: `src/scout/agent/clarify.py`
 - Create: `tests/test_clarify.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/test_clarify.py`:
 
@@ -1507,7 +1519,7 @@ def test_pick_category_accepts_only_known_names():
 Run: `python -m pytest tests/test_clarify.py -v`
 Expected: FAIL with `ModuleNotFoundError`.
 
-- [ ] **Step 3: Write the clarify step**
+- [x] **Step 3: Write the clarify step**
 
 Create `src/scout/agent/clarify.py`:
 
@@ -1588,12 +1600,12 @@ def clarify(llm, profile: CategoryProfile, needs: Needs, history: str, said: set
     raise LLMOutputError(f"The needs were still not valid after {max_rounds} tries: {errors}")
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `python -m pytest tests/test_clarify.py -v`
 Expected: 4 passed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/scout/agent/clarify.py tests/test_clarify.py
@@ -1623,7 +1635,7 @@ The model sees the full cards, not only the titles, so it can find "the widest o
 
 Some models write the tool calls as JSON text in place of real tool calls. Nemotron 3 Ultra did this in 1 of 2 tries on 2026-10-05. The client reads these calls too.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/test_llm_tools.py`:
 
@@ -1811,7 +1823,7 @@ def test_act_retries_with_the_problems_and_gives_up_after_three_rounds():
 Run: `python -m pytest tests/test_llm_tools.py tests/test_followup.py -v`
 Expected: FAIL with `ImportError` (no `text_tool_calls`) and `ModuleNotFoundError`.
 
-- [ ] **Step 3: Add tool calls to the LLM client**
+- [x] **Step 3: Add tool calls to the LLM client**
 
 In `src/scout/llm/client.py`, add `import re` after `import os`. Change the first line of the file to `"""One calling interface for OpenAI-compatible endpoints (Gemini, Groq) with structured output and tool calls."""`. Add these functions before `strip_fences`:
 
@@ -1952,7 +1964,7 @@ Add this method to `FakeLLM` in `tests/fakes.py`, after `structured`:
         return reply
 ```
 
-- [ ] **Step 4: Write the module**
+- [x] **Step 4: Write the module**
 
 Create `src/scout/agent/followup.py`:
 
@@ -2161,12 +2173,12 @@ def act(llm, picks: list[dict], cards: list[Card], removed: list[dict], history:
     return None
 ```
 
-- [ ] **Step 5: Run the tests**
+- [x] **Step 5: Run the tests**
 
 Run: `python -m pytest tests/test_llm_tools.py tests/test_followup.py -v`
 Expected: 13 passed.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/scout/llm/client.py tests/fakes.py src/scout/agent/followup.py tests/test_llm_tools.py tests/test_followup.py
@@ -2183,7 +2195,7 @@ The chat model writes the steps. Python does the arithmetic and shows the formul
 - Create: `src/scout/agent/calc.py`
 - Create: `tests/test_calc.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/test_calc.py`:
 
@@ -2255,7 +2267,7 @@ def test_a_formula_in_number_goes_back_to_the_model():
 Run: `python -m pytest tests/test_calc.py -v`
 Expected: FAIL with `ModuleNotFoundError`.
 
-- [ ] **Step 3: Write the tool**
+- [x] **Step 3: Write the tool**
 
 Create `src/scout/agent/calc.py`:
 
@@ -2376,12 +2388,12 @@ def calculate(llm, cards: list[Card], history: str, said: set[Decimal], max_roun
             "You can write the calculation in other words.")
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `python -m pytest tests/test_calc.py -v`
 Expected: 6 passed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/scout/agent/calc.py tests/test_calc.py
@@ -2418,7 +2430,7 @@ Each node except `compact` catches all errors. The node then gives a short messa
 
 The search reads result page 1 again when the budget is higher than the lowest budget of the earlier reads of these words. `searches` keeps the last page and that budget for each set of search words. `seen` keeps the products that the thread showed since the needs last changed. Each pick in the state keeps its doubtful sizes and its note, so a kept pick and an answer show them without a new page load.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/test_graph.py`:
 
@@ -2653,7 +2665,7 @@ def test_a_browser_problem_ends_the_turn_with_a_message():
 Run: `python -m pytest tests/test_graph.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'scout.agent.graph'`.
 
-- [ ] **Step 3: Write the state**
+- [x] **Step 3: Write the state**
 
 Create `src/scout/agent/state.py`:
 
@@ -2676,7 +2688,7 @@ class ChatState(TypedDict, total=False):
     route: dict        # what the follow-up tools of this turn did, and the next step
 ```
 
-- [ ] **Step 4: Write the graph**
+- [x] **Step 4: Write the graph**
 
 Create `src/scout/agent/graph.py`:
 
@@ -2917,17 +2929,17 @@ def build_graph(deps: Deps, checkpointer=None):
     return graph.compile(checkpointer=checkpointer)
 ```
 
-- [ ] **Step 5: Run the tests**
+- [x] **Step 5: Run the tests**
 
 Run: `python -m pytest tests/test_graph.py -v`
 Expected: 13 passed.
 
-- [ ] **Step 6: Run all tests**
+- [x] **Step 6: Run all tests**
 
 Run: `python -m pytest -q`
 Expected: all tests pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/scout/agent/state.py src/scout/agent/graph.py tests/test_graph.py
@@ -2944,7 +2956,7 @@ git commit -m "Conversation graph: clarify, search when stored data is not enoug
 - Modify: `src/scout/cli.py` (commands `chat` and `threads`)
 - Create: `tests/test_chat_db.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/test_chat_db.py`:
 
@@ -2997,7 +3009,7 @@ def test_a_failed_statement_does_not_block_the_next_turn():
 Run: `python -m pytest tests/test_chat_db.py -v`
 Expected: FAIL with `ImportError: cannot import name 'connect_checkpoints'`.
 
-- [ ] **Step 3: Add the checkpoint connection**
+- [x] **Step 3: Add the checkpoint connection**
 
 Add to `src/scout/db/conn.py`:
 
@@ -3019,12 +3031,12 @@ def connect_checkpoints(url: str) -> psycopg.Connection:
 
 The checkpointer creates its own tables (`checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `checkpoint_migrations`) in the same database. `PostgresSaver.setup()` creates them when they do not exist.
 
-- [ ] **Step 4: Run the test**
+- [x] **Step 4: Run the test**
 
 Run: `python -m pytest tests/test_chat_db.py -v`
 Expected: 2 passed.
 
-- [ ] **Step 5: Write the live dependencies**
+- [x] **Step 5: Write the live dependencies**
 
 Create `src/scout/agent/live.py`:
 
@@ -3097,7 +3109,7 @@ def live_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, k: int =
     )
 ```
 
-- [ ] **Step 6: Add the commands**
+- [x] **Step 6: Add the commands**
 
 Add to `src/scout/cli.py`:
 
@@ -3178,7 +3190,7 @@ Expected: all tests pass.
 Run: `scout chat`, then type `I want a fridge`, then `q`.
 Expected: the agent asks which kind of fridge you want. No browser window opens. Then `scout threads` shows the new thread.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/scout/db/conn.py src/scout/agent/live.py src/scout/cli.py tests/test_chat_db.py
@@ -3197,7 +3209,7 @@ The phase 1 check (`drop_implausible_sizes`) catches only sizes that cannot hold
 - Modify: `src/scout/picks/pipeline.py`
 - Create: `tests/test_doubt.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/test_doubt.py`:
 
@@ -3252,7 +3264,7 @@ def test_cards_without_sizes_need_no_call():
 Run: `python -m pytest tests/test_doubt.py -v`
 Expected: FAIL with `ModuleNotFoundError`.
 
-- [ ] **Step 3: Write the check**
+- [x] **Step 3: Write the check**
 
 Create `src/scout/extract/doubt.py`:
 
@@ -3316,7 +3328,7 @@ def check_sizes(items: list[tuple[Card, ProductRecord]], llm) -> dict[int, str]:
     return notes
 ```
 
-- [ ] **Step 4: Show doubtful values**
+- [x] **Step 4: Show doubtful values**
 
 In `src/scout/picks/write.py`, use `attribute_text` (Task 3) in `_card_json` for the attributes:
 
@@ -3330,7 +3342,7 @@ In `format_picks`, change the line that builds `attrs`:
         attrs = ", ".join(f"{k}: {attribute_text(v)}" for k, v in card.attributes.items())
 ```
 
-- [ ] **Step 5: Check the sizes in the pipeline**
+- [x] **Step 5: Check the sizes in the pipeline**
 
 In `src/scout/picks/pipeline.py`, import `check_sizes` from `scout.extract.doubt`. Then change `make_picks`. It keeps the fresh records of the recheck, and it checks the sizes before it writes the summaries. A kept card was not fetched again, so it keeps the doubts of the turn that showed it (Task 9).
 
@@ -3374,7 +3386,7 @@ def make_picks(short: Shortlist, needs: Needs, k: int, refetch: Refetch, llm, la
     return PicksResult(chosen, texts, errors, notes, short.dropped, needs.text(), card_notes)
 ```
 
-- [ ] **Step 6: Run all tests**
+- [x] **Step 6: Run all tests**
 
 Run: `python -m pytest -q`
 Expected: all tests pass.
@@ -3384,7 +3396,7 @@ Expected: all tests pass.
 Run: `scout picks fridge --budget 9000 --where "height<=186" --where "width<=60"`
 Expected: if the FOHERE 90 l fridge (B0F9Y2XN3J) is a pick, its height or depth shows "(doubtful)", and a note gives the reason. Write the result under this step, also when the worker does not flag it.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/scout/extract/doubt.py src/scout/picks tests/test_doubt.py
@@ -3402,7 +3414,7 @@ Zheyun asked for this in her review on 2026-10-05: three real conversations (Tas
 - Create: `src/scout/eval/chat.py`, `eval/chat/conversations.yaml`, `tests/test_eval_chat.py`
 - Modify: `src/scout/cli.py` (command `eval-chat`)
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/test_eval_chat.py`:
 
@@ -3458,7 +3470,7 @@ def test_a_turn_that_a_node_ended_counts_as_an_error():
 Run: `python -m pytest tests/test_eval_chat.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'scout.eval.chat'`.
 
-- [ ] **Step 3: Write the evaluation**
+- [x] **Step 3: Write the evaluation**
 
 Create `src/scout/eval/chat.py`:
 
@@ -3683,7 +3695,7 @@ def summary_text(summary: dict) -> str:
 
 A round is one reply of the model that matched the schema. A reply with wrong JSON does not count as a round, but the summary counts it per model.
 
-- [ ] **Step 4: Write the scripts**
+- [x] **Step 4: Write the scripts**
 
 Create `eval/chat/conversations.yaml`:
 
@@ -3888,7 +3900,7 @@ Create `eval/chat/conversations.yaml`:
 
 Zheyun checks the expected values before the numbers go anywhere. A wrong expected value makes a correct agent look wrong.
 
-- [ ] **Step 5: Add the command and the NVIDIA provider**
+- [x] **Step 5: Add the command and the NVIDIA provider**
 
 In `config/models.yaml`, add under `providers`:
 
@@ -3940,7 +3952,7 @@ def eval_chat(
     typer.echo(f"saved {out}")
 ```
 
-- [ ] **Step 6: Run all tests**
+- [x] **Step 6: Run all tests**
 
 Run: `python -m pytest -q`
 Expected: all tests pass.
@@ -3978,11 +3990,11 @@ Two expected values in the scripts were wrong, and Claude changed them: after a 
 
 **Decision for Zheyun.** Nemotron passed all scripts after the fixes, and it has a larger free quota, but it is slow: it writes about 1,000 output tokens for each call on average, and a turn takes 81 seconds (median). Claude recommends `nvidia/nemotron-3-ultra-550b-a55b` as the `chat` fallback in place of Groq, and `gemini-3.8-flash` stays the main chat model. Run the Gemini comparison before this goes into `config/models.yaml`.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add config/models.yaml src/scout/eval/chat.py src/scout/cli.py eval/chat tests/test_eval_chat.py eval/results
-git commit -m "Scripted conversations: eval-chat scores the needs, the routes and the check rounds of each chat model"
+git commit -m "Scripted conversations: eval-chat scores the needs, the tool calls and the check rounds of each chat model"
 ```
 
 ---

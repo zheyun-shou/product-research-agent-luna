@@ -73,11 +73,12 @@ def shortlist(conn: psycopg.Connection, profile: CategoryProfile, needs: Needs, 
 
 
 def make_picks(short: Shortlist, needs: Needs, k: int, refetch: Refetch, llm, language: str = "English",
-               kept: Sequence[Card] = (), first: Sequence[Card] = ()) -> PicksResult:
+               kept: Sequence[Card] = (), first: Sequence[Card] = (), size_check: bool = True) -> PicksResult:
     """Recheck the top cards on the live pages, check their sizes, then write summaries with checked numbers.
 
     `kept` cards stay picks without a new check. `first` cards are checked before the shortlist. When kept and
-    first are more than k, the last kept cards go.
+    first are more than k, the last kept cards go. Without `size_check` the worker does not check the sizes, because
+    the records do not hold the page text.
     """
     kept = list(kept)[:max(0, k - len(first))]
     fetched: dict[int, ProductRecord] = {}
@@ -98,11 +99,13 @@ def make_picks(short: Shortlist, needs: Needs, k: int, refetch: Refetch, llm, la
     texts, errors = None, []
     if chosen and llm is not None:
         try:
-            doubts = check_sizes([(c, fetched[c.listing_id]) for c in chosen if c.listing_id in fetched], llm)
-            for listing_id, doubt in doubts.items():
+            items = [(c, fetched[c.listing_id]) for c in chosen if c.listing_id in fetched] if size_check else []
+            for listing_id, doubt in check_sizes(items, llm).items():
                 card_notes[listing_id] = f"{card_notes[listing_id]} {doubt}" if listing_id in card_notes else doubt
         except (LLMUnavailable, LLMOutputError) as exc:
             notes.append(f"Size check skipped: {exc}")
+        if not size_check:
+            notes.append("Size check skipped: the pages were not fetched again.")
         try:
             texts, errors = write_picks(llm, chosen, needs.text(), language)
         except LLMUnavailable as exc:

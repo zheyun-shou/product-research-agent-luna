@@ -2,7 +2,7 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
-from scout.llm.client import CallRecord
+from scout.llm.client import CallRecord, LLMUnavailable
 from scout.sources.base import RawPage
 
 NOW = datetime(2026, 10, 3, 10, 15, tzinfo=timezone.utc)
@@ -34,22 +34,26 @@ class FakeLLM:
         self.requests = []
         self.calls = []
 
-    def structured(self, role, system, user, schema):
+    def _reply(self, role, user, name):
         self.requests.append((role, user))
-        self.calls.append(CallRecord(role, f"fake-{role}", 0, 0, 0.0, schema.__name__))
         reply = self.replies.pop(0)
+        if isinstance(reply, LLMUnavailable):
+            raise reply  # no reply came, so there is no call record
+        self.calls.append(CallRecord(role, f"fake-{role}", 0, 0, 0.0, name, valid=not isinstance(reply, Exception)))
         if isinstance(reply, Exception):
             raise reply
         return reply
 
+    def structured(self, role, system, user, schema):
+        return self._reply(role, user, schema.__name__)
+
     def tools(self, role, system, user, tools, name="tools"):
         """The queued reply is the list of tool objects that the model calls."""
-        self.requests.append((role, user))
-        self.calls.append(CallRecord(role, f"fake-{role}", 0, 0, 0.0, name))
-        reply = self.replies.pop(0)
-        if isinstance(reply, Exception):
-            raise reply
-        return reply
+        return self._reply(role, user, name)
+
+    def mark_checked(self, passed):
+        if self.calls:
+            self.calls[-1].checked = passed
 
     def model_for(self, role):
         return f"fake-{role}"

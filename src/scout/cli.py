@@ -26,7 +26,7 @@ from scout.extract.screen import screen_titles
 from scout.eval.chat import load_scripts, offline_deps, run_scripts, summarize, summary_text
 from scout.eval.prices import evaluate_prices, extract_from_snapshot, read_labels, write_template
 from scout.llm.client import LLM, LLMOutputError, LLMUnavailable
-from scout.llm.config import RoleConfig, load_llm_config
+from scout.llm.config import LLMConfig, RoleConfig, load_llm_config
 from scout.needs import ConditionSpec, Needs, check_needs
 from scout.picks.pipeline import make_picks, refetcher, shortlist
 from scout.picks.rank import parse_condition
@@ -351,11 +351,22 @@ def eval_chat(
         provider, model = chat.split(":", 1)
         config.roles["chat"] = RoleConfig(provider=provider, model=model, rpm=rpm)
     config.roles["chat"].fallback = None  # one chat model for each run, so the numbers belong to it
-    llm = LLM(config)
-    todo = [s for s in load_scripts(scripts) if only is None or s.id in only.split(",")]
+    all_scripts = load_scripts(scripts)
+    unknown = set(only.split(",")) - {s.id for s in all_scripts} if only else set()
+    try:  # a wrong provider, a missing key or a wrong script id must stop the run before it saves numbers
+        config = LLMConfig.model_validate(config.model_dump())
+        llm = LLM(config)
+        for role in ("chat", "worker"):
+            llm.client(config.roles[role].provider)
+        if unknown:
+            raise ValueError(f"no scripts with the ids {sorted(unknown)}")
+    except (ValueError, RuntimeError) as exc:
+        typer.echo(f"Cannot run: {exc}")
+        raise typer.Exit(1)
+    todo = [s for s in all_scripts if only is None or s.id in only.split(",")]
     with connect(settings.database_url) as conn:
         deps, searches = offline_deps(conn, llm, k)
-        records = run_scripts(todo, deps, searches, llm, typer.echo)
+        records = run_scripts(todo, deps, searches, llm, typer.echo, after_turn=lambda: end_transaction(conn))
     summary = {"chat_model": llm.model_for("chat"), "worker_model": llm.model_for("worker"),
                "run_at": datetime.now(timezone.utc).isoformat(), **summarize(records)}
     slug = re.sub(r"[^\w.-]", "_", llm.model_for("chat"))  # "a/b:free" is not a file name on Windows

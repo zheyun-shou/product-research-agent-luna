@@ -196,6 +196,7 @@ def act(llm, picks: list[dict], cards: list[Card], removed: list[dict], history:
     for _ in range(max_rounds):
         calls = llm.tools("chat", ACT_SYSTEM, retry_prompt(base, last, errors), TOOLS, name="Act")
         errors = check_act(calls, cards, {r["product_id"] for r in removed}, allowed, last_user)
+        llm.mark_checked(not errors)
         if not errors:
             return collect(calls, picks)
         last = ToolCalls(calls=[{"tool": tool_name(type(c)), "args": c.model_dump()} for c in calls])

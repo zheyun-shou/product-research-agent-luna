@@ -29,26 +29,19 @@ class LazyBrowser:
             self._session, self._adapter = None, None
 
 
-def live_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, k: int = 5) -> Deps:
+def shared_deps(conn, llm, crawl, refetch, k: int = 5, size_check: bool = True, **rest) -> Deps:
+    """The parts of the dependencies that scout chat and scout eval-chat share, so both run the same picks.
+
+    `refetch(profile)` gives the function that rechecks one card. `rest` holds the elimination store, say and tracer.
+    """
     screened: dict[tuple[str, int], bool] = {}  # a title is screened one time in a session
 
     def count(profile, needs, excluded):
         return len(shortlist(conn, profile, needs, llm, excluded, screened).ranked)
 
-    def crawl(profile, needs, page):
-        return run_crawl(conn, browser.adapter(), profile.category, needs.search_terms(profile),
-                         on_problem=on_problem, first_page=page, max_pages=1, max_details=20,
-                         budget=needs.budget_sek(), skip_known=True,
-                         enrich=lambda rec: enrich_record(rec, profile, llm),
-                         screen=lambda cands: screen_titles(cands, profile, llm, needs.wanted(profile)))
-
     def picks(profile, needs, excluded, kept, first):
         short = shortlist(conn, profile, needs, llm, set(excluded) | {c.product_id for c in [*kept, *first]}, screened)
-
-        def refetch(card):  # the browser opens only when there is a card to check
-            return refetcher(browser.adapter(), conn, profile.category, on_problem)(card)
-
-        return make_picks(short, needs, k, refetch, llm, kept=kept, first=first)
+        return make_picks(short, needs, k, refetch(profile), llm, kept=kept, first=first, size_check=size_check)
 
     return Deps(
         llm=llm,
@@ -58,6 +51,25 @@ def live_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, k: int =
         crawl=crawl,
         picks=picks,
         cards=lambda ids: load_cards_by_ids(conn, ids),
+        **rest,
+    )
+
+
+def live_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, k: int = 5) -> Deps:
+    def crawl(profile, needs, page):
+        return run_crawl(conn, browser.adapter(), profile.category, needs.search_terms(profile),
+                         on_problem=on_problem, first_page=page, max_pages=1, max_details=20,
+                         budget=needs.budget_sek(), skip_known=True,
+                         enrich=lambda rec: enrich_record(rec, profile, llm),
+                         screen=lambda cands: screen_titles(cands, profile, llm, needs.wanted(profile)))
+
+    def refetch(profile):
+        def one(card):  # the browser opens only when there is a card to check
+            return refetcher(browser.adapter(), conn, profile.category, on_problem)(card)
+        return one
+
+    return shared_deps(
+        conn, llm, crawl, refetch, k,
         eliminate=lambda thread, ids, reason: add_eliminations(conn, thread, ids, reason),
         eliminated=lambda thread: eliminated_products(conn, thread),
         restore=lambda thread, ids: restore_products(conn, thread, ids),
