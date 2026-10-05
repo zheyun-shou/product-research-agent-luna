@@ -53,6 +53,9 @@ class ProductRecord(BaseModel):
     specs: dict[str, str] = Field(default_factory=dict)
     bullets: list[str] = Field(default_factory=list)
     text: str = ""
+    description: str = ""  # the product description and the A+ text of the seller
+    reviews: list[dict] = Field(default_factory=list)  # title, rating, date, verified, text; never the author
+    images: list[str] = Field(default_factory=list)  # image URLs: the product images, then the A+ images
     attributes: dict[str, dict] = Field(default_factory=dict)
     llm_fields: list[str] = Field(default_factory=list)
 

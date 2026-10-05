@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from scout.db.store import log_fetch, save_record, stored_attributes
+from scout.db.store import log_fetch, page_texts, save_record, stored_attributes
 from scout.sources.amazon_se.product import parse_product_page
 
 pytestmark = pytest.mark.db
@@ -106,3 +106,12 @@ def test_rejected_products_belong_to_one_thread_and_can_come_back(db):
 def test_known_source_ids_finds_stored_listings(db):
     save(db, "product_full.html", "B0AAAAAAA1")
     assert known_source_ids(db, "amazon_se", ["B0AAAAAAA1", "B0AAAAAAA9"]) == {"B0AAAAAAA1"}
+
+
+def test_the_page_text_of_the_newest_page_is_kept(db):
+    ids = save_record(db, record(), "fridge")
+    texts = page_texts(db, [ids.listing_id])[ids.listing_id]
+    assert texts["reviews"][0]["title"] == "Bra men högljudd" and texts["bullets"]
+    older = record(when=NOW - timedelta(days=1)).model_copy(update={"description": "old"})
+    save_record(db, older, "fridge")
+    assert page_texts(db, [ids.listing_id])[ids.listing_id]["description"] != "old"

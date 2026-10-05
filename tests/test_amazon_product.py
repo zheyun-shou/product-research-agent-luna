@@ -109,3 +109,13 @@ def test_size_line_gives_height_width_depth_in_cm(line, sizes):
 def test_size_line_without_letters_is_not_read():
     # "65,8 x 59,5 x 203 cm" does not say which number is the height.
     assert parse("product_full.html", "https://www.amazon.se/dp/B0AAAAAAA1").attributes == {}
+
+
+def test_description_reviews_and_images_without_the_reviewer_name():
+    rec = parse("product_full.html", "https://www.amazon.se/dp/B0AAAAAAA1")
+    assert rec.description.startswith("Rymligt kylskåp med frysdel.") and "Tyst kompressor, 35 dB." in rec.description
+    assert rec.reviews == [{"title": "Bra men högljudd", "rating": "4.0", "date": "Granskad i Sverige den 2 maj 2026",
+                            "verified": True, "text": "Kyler bra, men surrar på natten."}]
+    assert "Anna" not in str(rec.reviews)
+    assert rec.images == ["https://m.media-amazon.com/images/I/big-1.jpg",
+                          "https://m.media-amazon.com/images/S/aplus-1.jpg"]

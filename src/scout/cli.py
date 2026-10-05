@@ -21,7 +21,7 @@ from scout.config import ROOT, load_settings
 from scout.crawl import crawl as run_crawl
 from scout.crawl import fetch_checked
 from scout.db.conn import connect, connect_checkpoints, end_transaction, init_schema
-from scout.db.store import save_record
+from scout.db.store import save_page_text, save_record
 from scout.extract.page import enrich_record
 from scout.extract.screen import screen_titles
 from scout.eval.chat import load_scripts, offline_deps, run_scripts, summarize, summary_text
@@ -67,6 +67,27 @@ def db_init() -> None:
     with connect(load_settings().database_url) as conn:
         init_schema(conn)
     typer.echo("Tables are ready.")
+
+
+@app.command("backfill-text")
+def backfill_text() -> None:
+    """Store the description, the reviews and the image links of each stored product from its newest snapshot.
+    No browser opens."""
+    settings = load_settings()
+    with connect(settings.database_url) as conn:
+        init_schema(conn)
+        listings = conn.execute("SELECT id, source_id FROM listings WHERE source = %s", (SOURCE,)).fetchall()
+        done = 0
+        for row in listings:
+            pages = sorted((settings.snapshot_dir / SOURCE / "product" / row["source_id"]).glob("*.html"))
+            if not pages:
+                continue
+            fetched = datetime.strptime(pages[-1].stem, "%Y%m%dT%H%M%S").replace(tzinfo=timezone.utc)
+            rec = parse_product_page(pages[-1].read_text(encoding="utf-8"), product_url(row["source_id"]), fetched)
+            save_page_text(conn, row["id"], rec)
+            done += 1
+        conn.commit()
+    typer.echo(f"Stored the page text of {done} of {len(listings)} listings.")
 
 
 @app.command()

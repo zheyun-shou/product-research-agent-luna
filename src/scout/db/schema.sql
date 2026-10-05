@@ -67,3 +67,14 @@ CREATE TABLE IF NOT EXISTS eliminations (
     created_at  timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS eliminations_thread ON eliminations (thread_id);
+
+-- The text of the newest product page of each listing: what the chat model reads with read_product.
+CREATE TABLE IF NOT EXISTS page_texts (
+    listing_id   bigint PRIMARY KEY REFERENCES listings(id) ON DELETE CASCADE,
+    fetched_at   timestamptz NOT NULL,
+    specs        jsonb NOT NULL DEFAULT '{}'::jsonb,
+    bullets      jsonb NOT NULL DEFAULT '[]'::jsonb,
+    description  text NOT NULL DEFAULT '',
+    reviews      jsonb NOT NULL DEFAULT '[]'::jsonb,
+    images       jsonb NOT NULL DEFAULT '[]'::jsonb
+);

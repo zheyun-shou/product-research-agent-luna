@@ -31,7 +31,9 @@ Also: a number in a reply that is on one of the cards needs no claim. Other numb
 - Shipping and duty: the model still asks, because they depend on the seller.
 - The grader rubric follows these decisions.
 
-### Task 2: Store the product text
+### Task 2: Store the product text (done)
+
+On 2026-10-06, `scout backfill-text` stored the text of 23 of the 24 stored listings: 114 reviews and 284 image links. The reviewer names are not kept.
 
 - New table `page_texts`: listing, fetch time, description, bullets, specs, reviews (title, rating, date, text), image URLs.
 - The parser reads the description, the A+ text, the reviews on the page and the image URLs.

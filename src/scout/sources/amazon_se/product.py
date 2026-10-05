@@ -70,6 +70,9 @@ def parse_product_page(html: str, url: str, fetched_at: datetime) -> ProductReco
         attributes=_sizes(specs, product_url(asin)),
         bullets=bullets,
         text=_page_text(soup, specs, bullets),
+        description=_description(soup),
+        reviews=_reviews(soup),
+        images=_images(html, soup),
     )
 
 
@@ -187,3 +190,31 @@ def _page_text(soup: BeautifulSoup, specs: dict[str, str], bullets: list[str]) -
     lines += bullets
     lines.append(_text(soup.select_one("#productDescription")))
     return "\n".join(line for line in lines if line)[:MAX_TEXT]
+
+
+def _description(soup: BeautifulSoup) -> str:
+    parts = [_text(soup.select_one(selector)) for selector in ("#productDescription", "#aplus")]
+    return "\n\n".join(part for part in parts if part)[:MAX_TEXT]
+
+
+def _reviews(soup: BeautifulSoup) -> list[dict]:
+    """The reviews on the product page. The name of the reviewer is not kept."""
+    reviews = []
+    for el in soup.select('[data-hook="review"]'):
+        stars = _text(el.select_one('[data-hook="review-star-rating"], [data-hook="cmps-review-star-rating"]'))
+        body = el.select_one('[data-hook="reviewRichContentContainer"], [data-hook="review-body"]')
+        reviews.append({
+            "title": _text(el.select_one('[data-hook="reviewTitle"], [data-hook="review-title"]')),
+            "rating": str(parse_rating(stars)) if stars and parse_rating(stars) is not None else None,
+            "date": _text(el.select_one('[data-hook="review-date"]')),
+            "verified": el.select_one('[data-hook="avp-badge"]') is not None,
+            "text": _text(body),
+        })
+    return [r for r in reviews if r["text"]]
+
+
+def _images(html: str, soup: BeautifulSoup) -> list[str]:
+    """The large product images, then the images of the A+ text. Prices never come from images (spec 4.4)."""
+    urls = re.findall(r'"hiRes":"(https://[^"]+)"', html)
+    urls += [img.get("data-src") or img.get("src") or "" for img in soup.select("#aplus img")]
+    return list(dict.fromkeys(u for u in urls if u.startswith("https://") and not u.endswith(".gif")))

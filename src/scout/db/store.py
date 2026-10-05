@@ -54,11 +54,34 @@ def save_record(conn: psycopg.Connection, rec: ProductRecord, category: str) -> 
             "INSERT INTO price_history (variant_id, price, currency, in_stock, fetched_at) VALUES (%s, %s, %s, %s, %s)",
             (variant_id, rec.price, rec.currency, rec.in_stock, rec.fetched_at),
         )
+        save_page_text(conn, listing_id, rec)
         conn.commit()
     except Exception:
         conn.rollback()
         raise
     return SavedIds(product_id, listing_id, variant_id)
+
+
+def save_page_text(conn: psycopg.Connection, listing_id: int, rec: ProductRecord) -> None:
+    """Keep the text of the newest page. A record without page text (for example from a search page) changes
+    nothing."""
+    if not (rec.specs or rec.bullets or rec.description or rec.reviews):
+        return
+    conn.execute(
+        """INSERT INTO page_texts (listing_id, fetched_at, specs, bullets, description, reviews, images)
+           VALUES (%s, %s, %s, %s, %s, %s, %s)
+           ON CONFLICT (listing_id) DO UPDATE SET fetched_at = EXCLUDED.fetched_at, specs = EXCLUDED.specs,
+               bullets = EXCLUDED.bullets, description = EXCLUDED.description, reviews = EXCLUDED.reviews,
+               images = EXCLUDED.images
+           WHERE page_texts.fetched_at <= EXCLUDED.fetched_at""",
+        (listing_id, rec.fetched_at, Jsonb(rec.specs), Jsonb(rec.bullets), rec.description, Jsonb(rec.reviews),
+         Jsonb(rec.images)),
+    )
+
+
+def page_texts(conn: psycopg.Connection, listing_ids: list[int]) -> dict[int, dict]:
+    rows = conn.execute("SELECT * FROM page_texts WHERE listing_id = ANY(%s)", (listing_ids,)).fetchall()
+    return {row["listing_id"]: dict(row) for row in rows}
 
 
 # Sellers without a brand use these names. Two listings with such a brand are not the same product.
