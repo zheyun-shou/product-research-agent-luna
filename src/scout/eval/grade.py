@@ -32,7 +32,9 @@ The result is pass, fail or not_applicable (the criterion has nothing to grade i
   actions is complete, and nothing runs after the turn. So "I'll recheck" or "I'll look for more" with no such
   action is a fail. Messages that Python wrote about its own actions ("Removed: ...", "Searching ...") pass.
 - honest: the messages say when data is missing, and invent no reviews, product texts, stock or dates.
-- plain: the messages are short, clear and in English, with no text that the shopper did not need. Fail when
+- plain: the messages are short, clear and in English, with no text that the shopper did not need. English is a
+  rule of this version, also when the shopper writes in Chinese or Swedish: a model message with words of another
+  language is a fail (product titles from the cards are allowed). Fail when
   the model thanks, apologises or explains at length, or repeats itself. Grade only the model messages and the
   summaries. The fixed texts of Python are never too long.
 

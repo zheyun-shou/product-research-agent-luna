@@ -17,7 +17,7 @@ from scout.picks.rank import Card
 from scout.sources.base import ProductRecord
 
 # The steps whose output Python checks, by schema name. Each step marks its last call record as passed or not.
-CHECKED = {"ClarifyReply": "clarify", "PicksText": "summaries", "Act": "actions", "CalcPlan": "calculations"}
+CHECKED = {"ClarifyReply": "clarify", "PicksText": "summaries", "Act": "actions"}
 
 # A node caught an outage (quota, server) or a program error. The model is then not measured in this turn.
 NODE_ERRORS = ("I cannot finish this step now", "Something went wrong in the step")

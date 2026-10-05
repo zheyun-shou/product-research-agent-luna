@@ -36,10 +36,10 @@ number that the shopper wrote; a pick number. Write in English."""
 DONE = [
     (re.compile(r"\b(removed|deleted|excluded|took out|taken out)\b", re.I), {"remove_picks"}),
     (re.compile(r"\b(restored|brought back|added back|put back)\b", re.I), {"restore_picks"}),
-    (re.compile(r"\bI(?:'ve| have)? (re-?checked|checked (again|the (current )?(prices?|stock)))\b", re.I),
+    (re.compile(r"\bI(?:['’]ve| have)? (re-?checked|checked (again|the (current )?(prices?|stock)))\b", re.I),
      {"next_step:recheck"}),
 ]
-PROMISE = re.compile(r"\b(I'?ll|I will|I'?m going to|I am going to|let me|I'?m now|I am now)\b(?P<rest>.*)", re.I)
+PROMISE = re.compile(r"\b(I['’]?ll|I will|I['’]?m|I am|let me)\b(?P<rest>.*)", re.I)
 WILL_DO = [
     (re.compile(r"\b(remove|delete|exclude|drop|take out)\b", re.I), {"remove_picks"}),
     (re.compile(r"\b(restore|bring back|add back|put back)\b", re.I), {"restore_picks"}),
@@ -50,7 +50,7 @@ WILL_DO = [
 ]
 # Words that say the shopper means each pick that fits.
 ALL_WORDS = re.compile(r"\b(all|both|every|each|these|those|them)\b|全部|所有|都|两个|三个|这些|它们", re.I)
-NOT_DONE = re.compile(r"\b(can'?t|cannot|can not|unable|not able|won'?t|will not|didn'?t|did not|if you|would you|"
+NOT_DONE = re.compile(r"\b(can['’]?t|cannot|can not|unable|not able|won['’]?t|will not|didn['’]?t|did not|if you|would you|"
                       r"should I|want me to)\b", re.I)
 
 

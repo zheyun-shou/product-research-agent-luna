@@ -1,5 +1,6 @@
 # Test set for `scout check-grader`, built on 2026-10-05 from the Luna run of 21:44.
-# ok-* items: replies that Claude read and found correct against the cards. Each criterion must pass
+# ok-* items: replies that Claude read and found correct against the cards (ok-recheck has one real fault in a
+# summary that Claude missed and the grader found). Each criterion must pass
 # (not_applicable also counts as not failed). Other items: a copy with one planted fault. Only that
 # criterion is scored.
 - id: ok-height
@@ -342,7 +343,7 @@
     \ by their titles and were left out.\nSize check skipped: the pages were not fetched again."
   expected:
     answers: pass
-    facts: pass
+    facts: fail
     arithmetic: pass
     said_did: pass
     honest: pass
