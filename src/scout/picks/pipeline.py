@@ -6,6 +6,7 @@ import psycopg
 
 from scout.crawl import OnProblem, fetch_checked
 from scout.db.store import save_record
+from scout.extract.doubt import check_sizes
 from scout.extract.screen import screen_titles
 from scout.llm.client import LLMOutputError, LLMUnavailable
 from scout.needs import Needs
@@ -73,20 +74,35 @@ def shortlist(conn: psycopg.Connection, profile: CategoryProfile, needs: Needs, 
 
 def make_picks(short: Shortlist, needs: Needs, k: int, refetch: Refetch, llm, language: str = "English",
                kept: Sequence[Card] = (), first: Sequence[Card] = ()) -> PicksResult:
-    """Recheck the top cards on the live pages, then write summaries with checked numbers.
+    """Recheck the top cards on the live pages, check their sizes, then write summaries with checked numbers.
 
     `kept` cards stay picks without a new check. `first` cards are checked before the shortlist. When kept and
     first are more than k, the last kept cards go.
     """
     kept = list(kept)[:max(0, k - len(first))]
+    fetched: dict[int, ProductRecord] = {}
+
+    def refetch_and_keep(card: Card) -> ProductRecord | None:
+        rec = refetch(card)
+        if rec is not None:
+            fetched[card.listing_id] = rec
+        return rec
+
     taken = {c.product_id for c in [*kept, *first]}
     ranked = [*first, *(c for c in short.ranked if c.product_id not in taken)]
-    new, recheck_notes = recheck_picks(ranked, k - len(kept), refetch, needs.budget_sek(), needs.rank_conditions())
+    new, recheck_notes = recheck_picks(ranked, k - len(kept), refetch_and_keep, needs.budget_sek(),
+                                       needs.rank_conditions())
     chosen = [*kept, *new]
     card_notes = {c.listing_id: short.size_notes[c.listing_id] for c in chosen if c.listing_id in short.size_notes}
     notes = short.notes + recheck_notes
     texts, errors = None, []
     if chosen and llm is not None:
+        try:
+            doubts = check_sizes([(c, fetched[c.listing_id]) for c in chosen if c.listing_id in fetched], llm)
+            for listing_id, doubt in doubts.items():
+                card_notes[listing_id] = f"{card_notes[listing_id]} {doubt}" if listing_id in card_notes else doubt
+        except (LLMUnavailable, LLMOutputError) as exc:
+            notes.append(f"Size check skipped: {exc}")
         try:
             texts, errors = write_picks(llm, chosen, needs.text(), language)
         except LLMUnavailable as exc:

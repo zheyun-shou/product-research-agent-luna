@@ -77,7 +77,7 @@ def _card_json(card: Card) -> str:
         "in_stock": card.in_stock,
         "rating": str(card.rating) if card.rating is not None else None,
         "review_count": card.review_count,
-        "attributes": {k: f"{v.get('value')} {v.get('unit') or ''}".strip() for k, v in card.attributes.items()},
+        "attributes": {k: attribute_text(v) for k, v in card.attributes.items()},
         "missing": card.missing,
     }, ensure_ascii=False)
 
@@ -172,7 +172,7 @@ def format_picks(picks: list[Card], texts: PicksText | None, notes: list[str],
         rating = f"{card.rating} ({card.review_count} ratings)" if card.rating is not None else "no ratings"
         lines.append(f"{n}. {card.title}")
         lines.append(f"   {price} | {rating} | rechecked {card.fetched_at:%Y-%m-%d %H:%M} UTC | id {card.listing_id}")
-        attrs = ", ".join(f"{k}: {v.get('value')} {v.get('unit') or ''}".strip() for k, v in card.attributes.items())
+        attrs = ", ".join(f"{k}: {attribute_text(v)}" for k, v in card.attributes.items())
         if attrs:
             lines.append(f"   {attrs}")
         if card.missing:
