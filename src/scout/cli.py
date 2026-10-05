@@ -31,6 +31,7 @@ from scout.sources.amazon_se.urls import BASE_URL, SOURCE, page_kind, product_ur
 from scout.sources.base import SessionStatus
 from scout.sources.browser import BrowserSession
 from scout.sources.snapshots import save_html
+from scout.trace import tracer_from_env
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -284,3 +285,18 @@ def llm_ping() -> None:
         if fallback is not None:
             reply = llm._structured(role, fallback, "Reply in JSON.", ask, _Ping)
             typer.echo(f"{role} fallback ({fallback.model}): {[(i.name, i.value) for i in reply.items]}")
+
+
+@app.command("trace-ping")
+def trace_ping() -> None:
+    """Check the Langfuse keys and send one test trace."""
+    load_settings()  # loads .env
+    tracer = tracer_from_env()
+    if not tracer.enabled:
+        typer.echo("LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY are not set, so tracing is off.")
+        raise typer.Exit(1)
+    typer.echo(f"keys accepted: {tracer.auth_check()}")
+    with tracer.turn("trace-ping", "ping") as span:
+        span.update(output="pong")
+    tracer.flush()
+    typer.echo("Sent one trace named 'chat turn' in session 'trace-ping'.")

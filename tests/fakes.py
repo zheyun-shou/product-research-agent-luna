@@ -2,6 +2,7 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
+from scout.llm.client import CallRecord
 from scout.sources.base import RawPage
 
 NOW = datetime(2026, 10, 3, 10, 15, tzinfo=timezone.utc)
@@ -31,9 +32,11 @@ class FakeLLM:
     def __init__(self, replies):
         self.replies = list(replies)
         self.requests = []
+        self.calls = []
 
     def structured(self, role, system, user, schema):
         self.requests.append((role, user))
+        self.calls.append(CallRecord(role, f"fake-{role}", 0, 0, 0.0, schema.__name__))
         reply = self.replies.pop(0)
         if isinstance(reply, Exception):
             raise reply
@@ -41,3 +44,44 @@ class FakeLLM:
 
     def model_for(self, role):
         return f"fake-{role}"
+
+
+from contextlib import contextmanager
+
+
+class FakeSpan:
+    def __init__(self, events, kind):
+        self.events, self.kind = events, kind
+
+    def update(self, **fields):
+        self.events.append(("update", self.kind, fields))
+
+
+class FakeTracer:
+    """Records turns, spans and generations as tuples in events."""
+
+    enabled = True
+
+    def __init__(self):
+        self.events = []
+
+    @contextmanager
+    def _record(self, event):
+        self.events.append(event)
+        try:
+            yield FakeSpan(self.events, event[0])
+        except Exception:
+            self.events.append(("error", event[0]))
+            raise
+
+    def turn(self, thread_id, text):
+        return self._record(("turn", thread_id))
+
+    def span(self, name, **fields):
+        return self._record(("span", name))
+
+    def generation(self, name, model, **fields):
+        return self._record(("generation", name, model))
+
+    def flush(self):
+        self.events.append(("flush",))

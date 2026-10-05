@@ -10,6 +10,7 @@ from pydantic import BaseModel, ValidationError
 
 from scout.llm.config import LLMConfig, ModelConfig
 from scout.llm.ratelimit import RateLimiter
+from scout.trace import NoTracer
 
 Role = Literal["chat", "worker"]
 T = TypeVar("T", bound=BaseModel)
@@ -34,6 +35,8 @@ class CallRecord:
     input_tokens: int
     output_tokens: int
     seconds: float
+    schema: str = ""
+    valid: bool = True  # False when the reply did not match the schema
 
 
 def inline_refs(schema: dict) -> dict:
@@ -64,8 +67,10 @@ def strip_fences(text: str) -> str:
 
 class LLM:
     MAX_ATTEMPTS = 3
+    TIMEOUT = 120  # seconds for one request
 
-    def __init__(self, config: LLMConfig, clients: dict[str, Any] | None = None, sleep=time.sleep, clock=time.monotonic):
+    def __init__(self, config: LLMConfig, clients: dict[str, Any] | None = None, sleep=time.sleep,
+                 clock=time.monotonic, tracer=None):
         self.config = config
         self._clients = dict(clients or {})
         self._sleep = sleep
@@ -73,6 +78,7 @@ class LLM:
         self._limiters: dict[tuple[str, str], RateLimiter] = {}
         self.calls: list[CallRecord] = []
         self.fallbacks: dict[str, str] = {}  # role -> why it moved to its fallback model
+        self._tracer = tracer or NoTracer()
 
     def _target(self, role: Role) -> ModelConfig:
         role_cfg = self.config.roles[role]
@@ -87,7 +93,9 @@ class LLM:
             key = os.environ.get(settings.api_key_env)
             if not key:
                 raise RuntimeError(f"{settings.api_key_env} is not set. Put it in .env in the project root.")
-            self._clients[provider] = OpenAI(base_url=settings.base_url, api_key=key)
+            # A hung request counts as unavailable after TIMEOUT seconds. _structured does its own retries.
+            self._clients[provider] = OpenAI(base_url=settings.base_url, api_key=key, timeout=self.TIMEOUT,
+                                             max_retries=0)
         return self._clients[provider]
 
     def structured(self, role: Role, system: str, user: str, schema: type[T]) -> T:
@@ -116,9 +124,18 @@ class LLM:
             limiter.wait()
             started = self._clock()
             try:
-                response = client.chat.completions.create(
-                    model=role_cfg.model, messages=messages, response_format=response_format
-                )
+                with self._tracer.generation(
+                    f"{role} {schema.__name__}", role_cfg.model, input=messages,
+                    metadata={"provider": role_cfg.provider, "attempt": attempt},
+                ) as gen:
+                    response = client.chat.completions.create(
+                        model=role_cfg.model, messages=messages, response_format=response_format
+                    )
+                    text = response.choices[0].message.content or ""
+                    usage = getattr(response, "usage", None)
+                    tokens_in = getattr(usage, "prompt_tokens", 0) or 0
+                    tokens_out = getattr(usage, "completion_tokens", 0) or 0
+                    gen.update(output=text, usage_details={"input": tokens_in, "output": tokens_out})
             except RateLimitError as exc:
                 # Gemini says PerDay, Groq says "per day".
                 if "perday" in str(exc).lower().replace(" ", ""):
@@ -141,17 +158,12 @@ class LLM:
                                                           f"schema:\n{json.dumps(schema_dict)}"}] + messages[1:]
                 last_error = str(exc)
                 continue
-            text = response.choices[0].message.content or ""
-            usage = getattr(response, "usage", None)
-            self.calls.append(CallRecord(
-                role, role_cfg.model,
-                getattr(usage, "prompt_tokens", 0) or 0,
-                getattr(usage, "completion_tokens", 0) or 0,
-                self._clock() - started,
-            ))
+            record = CallRecord(role, role_cfg.model, tokens_in, tokens_out, self._clock() - started, schema.__name__)
+            self.calls.append(record)
             try:
                 return schema.model_validate_json(strip_fences(text))
             except ValidationError as exc:
+                record.valid = False
                 last_error = str(exc)
                 messages = messages + [
                     {"role": "assistant", "content": text},
