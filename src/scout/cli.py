@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import typer
+import yaml
 from langgraph.checkpoint.postgres import PostgresSaver
 from pydantic import BaseModel
 
@@ -24,6 +25,7 @@ from scout.db.store import save_record
 from scout.extract.page import enrich_record
 from scout.extract.screen import screen_titles
 from scout.eval.chat import load_scripts, offline_deps, run_scripts, summarize, summary_text
+from scout.eval.grade import check_grader, good_enough, grade_results, grade_turn, grades_text
 from scout.eval.prices import evaluate_prices, extract_from_snapshot, read_labels, write_template
 from scout.llm.client import LLM, LLMOutputError, LLMUnavailable
 from scout.llm.config import LLMConfig, RoleConfig, load_llm_config
@@ -381,3 +383,54 @@ def eval_chat(
             typer.echo(f"{record['script']} turn {record['turn']}: error {record['error']}")
     typer.echo(summary_text(summary))
     typer.echo(f"saved {out}")
+
+
+def judge_llm(judge: Optional[str]) -> LLM:
+    """The LLM with the judge role from models.yaml, or from --judge provider:model. Stops when it cannot run."""
+    config = load_llm_config()
+    try:
+        if judge:
+            provider, model = judge.split(":", 1)
+            config.roles["judge"] = RoleConfig(provider=provider, model=model, rpm=60)
+        if "judge" not in config.roles:
+            raise ValueError("models.yaml has no judge role")
+        config = LLMConfig.model_validate(config.model_dump())
+        llm = LLM(config)
+        llm.client(config.roles["judge"].provider)
+    except (ValueError, RuntimeError) as exc:
+        typer.echo(f"Cannot run: {exc}")
+        raise typer.Exit(1)
+    return llm
+
+
+@app.command("grade")
+def grade(
+    results: Path,
+    judge: Optional[str] = typer.Option(None, help="provider:model for the grader, for example "
+                                                   "openrouter:deepseek/deepseek-v4-flash"),
+) -> None:
+    """Grade the replies of a saved eval-chat results file. Writes <name>-graded.json next to it."""
+    llm = judge_llm(judge)
+    data = grade_results(llm, json.loads(results.read_text(encoding="utf-8")), typer.echo)
+    out = results.with_name(f"{results.stem}-graded.json")
+    out.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    typer.echo(grades_text(data["summary"]["grades"]))
+    report_llm_use(llm)
+    typer.echo(f"saved {out}")
+
+
+@app.command("check-grader")
+def check_grader_command(
+    items: Path = ROOT / "eval" / "grader" / "known_faults.yaml",
+    judge: Optional[str] = typer.Option(None, help="provider:model for the grader"),
+) -> None:
+    """Grade the test set with planted faults, and show how many faults the grader found."""
+    llm = judge_llm(judge)
+    test_set = yaml.safe_load(items.read_text(encoding="utf-8"))
+    grades = [grade_turn(llm, item, item.get("history") or []) for item in test_set]
+    typer.echo(f"Grader: {llm.model_for('judge')}, {len(test_set)} items")
+    for name, row in check_grader(test_set, grades).items():
+        typer.echo(f"  {name}: found {row['found']} of {row['faults']} planted faults, failed {row['failed']} of "
+                   f"{row['correct']} correct replies, {'good enough' if good_enough(row) else 'NOT good enough'}"
+                   + (f", missed {', '.join(row['missed'])}" if row["missed"] else ""))
+    report_llm_use(llm)

@@ -235,7 +235,7 @@ The grader is a model of another company than the chat model. It reads one turn 
 
 **Files:** `src/scout/eval/grade.py`, `src/scout/eval/chat.py`, `src/scout/llm/client.py`, `src/scout/cli.py`, `config/models.yaml`, `tests/test_grade.py`.
 
-- [ ] **Step 1: Write the rubric.** Each criterion is `pass`, `fail` or `not_applicable`.
+- [x] **Step 1: Write the rubric.** Each criterion is `pass`, `fail` or `not_applicable`.
 
 | Criterion | Pass when |
 |---|---|
@@ -246,9 +246,9 @@ The grader is a model of another company than the chat model. It reads one turn 
 | `honest` | The reply says when data is missing or old, and does not invent reviews, texts or stock |
 | `plain` | The reply is short, clear and in English, with no text that the shopper did not need |
 
-- [ ] **Step 2: Keep what the grader needs in each turn record.** `run_scripts` adds `cards` (the `card_text` lines that the chat model saw) and `actions` (the route: tools, removed picks, restored products, step).
+- [x] **Step 2: Keep what the grader needs in each turn record.** `run_scripts` adds `cards` (the `card_text` lines that the chat model saw) and `actions` (the route: tools, removed picks, restored products, step).
 
-- [ ] **Step 3: Write `grade.py`.**
+- [x] **Step 3: Write `grade.py`.**
 
 ```python
 class CriterionGrade(BaseModel):
@@ -266,11 +266,13 @@ def grade_results(llm, results: dict) -> dict: ...  # adds "grades" to each meas
 def check_grader(items: list[dict], grades: list[dict]) -> dict: ...  # per criterion: faults found, correct replies failed
 ```
 
-- [ ] **Step 4: Add the role and the command.** `config/models.yaml` gets the role `judge` with `deepseek/deepseek-v4-flash`. `Role` gets `"judge"`. `scout grade <results.json> [--judge provider:model]` grades a saved results file and writes `<name>-graded.json`. The chat run and the grading are separate, so one chat run can be graded by several judges.
+- [x] **Step 4: Add the role and the command.** `config/models.yaml` gets the role `judge` with `deepseek/deepseek-v4-flash`. `Role` gets `"judge"`. `scout grade <results.json> [--judge provider:model]` grades a saved results file and writes `<name>-graded.json`. The chat run and the grading are separate, so one chat run can be graded by several judges.
 
-- [ ] **Step 5: Tests** with `FakeLLM`: the grade is written for measured turns only, an outage turn is not graded, and `check_grader` gives the right numbers for a small table.
+- [x] **Step 5: Tests** with `FakeLLM`: the grade is written for measured turns only, an outage turn is not graded, and `check_grader` gives the right numbers for a small table.
 
-- [ ] **Step 6: Commit.**
+In the repository, `Grade` has one field for each criterion in place of a list, so the grader cannot leave out a criterion. Each turn record also has `new_cards` (the picks after the turn, for the summaries) and `searched`.
+
+- [x] **Step 6: Commit.**
 
 ---
 

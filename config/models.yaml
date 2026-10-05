@@ -28,3 +28,7 @@ roles:
     provider: gemini
     model: gemini-3.5-flash-lite
     rpm: 15
+  judge:  # the grader of eval-chat, chosen on 2026-10-05: not an OpenAI model like the chat model, and cheap
+    provider: openrouter
+    model: deepseek/deepseek-v4-flash
+    rpm: 60

@@ -9,6 +9,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import BaseModel, ConfigDict, Field
 
 from scout.agent.graph import Deps, build_graph
+from scout.agent.followup import card_text
 from scout.agent.live import shared_deps
 from scout.crawl import CrawlReport
 from scout.needs import Needs
@@ -134,6 +135,11 @@ def step_results(calls) -> dict:
     return steps
 
 
+def cards_text(deps: Deps, picks: list[dict]) -> list[str]:
+    """The numbered cards as the chat model sees them, for the grader."""
+    return [card_text(n, c) for n, c in enumerate(deps.cards([p["listing_id"] for p in picks]), 1)] if picks else []
+
+
 def run_scripts(scripts: list[Script], deps: Deps, searches: list, llm, progress=lambda text: None,
                 after_turn=lambda: None) -> list[dict]:
     """Run each script in a new thread. Return one record for each turn. `after_turn` runs after each turn, for
@@ -145,7 +151,8 @@ def run_scripts(scripts: list[Script], deps: Deps, searches: list, llm, progress
         picks_differ = False
         for number, turn in enumerate(script.turns, 1):
             calls_before, searches_before, started = len(llm.calls), len(searches), time.monotonic()
-            before = len(graph.get_state(config).values.get("messages", []))
+            values = graph.get_state(config).values
+            before, shown = len(values.get("messages", [])), values.get("picks", [])
             route, error = None, None
             try:
                 for update in graph.stream({"messages": [{"role": "user", "content": turn.say}]}, config,
@@ -159,6 +166,7 @@ def run_scripts(scripts: list[Script], deps: Deps, searches: list, llm, progress
             replies = [m["content"] for m in state.get("messages", [])[before + 1:]]
             error = error or next((r for r in replies if r.startswith(NODE_ERRORS)), None)
             calls = llm.calls[calls_before:]
+            after = state.get("picks", [])
             checks = compare(turn.expect, state, route, len(searches) > searches_before, replies)
             not_measured = PICKS_DIFFER if picks_differ else error
             picks_differ = picks_differ or any(c["check"] == "picks" and not c["ok"] for c in checks)
@@ -166,6 +174,8 @@ def run_scripts(scripts: list[Script], deps: Deps, searches: list, llm, progress
                 "script": script.id, "turn": number, "say": turn.say, "replies": replies, "error": error,
                 "measured": not_measured is None, "not_measured": not_measured,
                 "checks": checks, "steps": step_results(calls), "seconds": round(time.monotonic() - started, 1),
+                "cards": cards_text(deps, shown), "actions": route, "searched": len(searches) > searches_before,
+                "new_cards": cards_text(deps, after) if after != shown else [],
                 "rounds": [{"schema": c.schema, "passed": c.checked, "problems": c.problems, "output": c.output}
                            for c in calls if c.checked is not None],
                 "calls": [{"role": c.role, "model": c.model, "schema": c.schema, "valid": c.valid,

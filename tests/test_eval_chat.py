@@ -85,3 +85,5 @@ def test_each_turn_keeps_the_rounds_and_why_python_rejected_them():
     assert [r["passed"] for r in rounds] == [False, True]
     assert rounds[0]["problems"] == ["there is no pick 9"] and rounds[1]["problems"] == []
     assert '"picks": [9]' in rounds[0]["output"]
+    assert records[0]["cards"] == [] and records[0]["new_cards"][0].startswith("Pick 1: Fridge 1 | price=")
+    assert records[1]["cards"] == records[0]["new_cards"] and records[1]["actions"]["pick_numbers"] == [2]

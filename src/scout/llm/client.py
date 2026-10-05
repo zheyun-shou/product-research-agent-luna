@@ -13,7 +13,7 @@ from scout.llm.config import LLMConfig, ModelConfig
 from scout.llm.ratelimit import RateLimiter
 from scout.trace import NoTracer
 
-Role = Literal["chat", "worker"]
+Role = Literal["chat", "worker", "judge"]
 T = TypeVar("T", bound=BaseModel)
 
 
