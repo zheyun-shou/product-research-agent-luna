@@ -72,6 +72,10 @@ def test_a_wrong_call_is_sent_back_and_tried_again():
     assert "no tool call" in completions.requests[2]["messages"][-1]["content"]
     assert completions.requests[2]["messages"][-2] == {"role": "assistant", "content": "I removed it."}
     assert [c.valid for c in llm.calls] == [False, False, True]
+    assert json.loads(llm.calls[0].output) == [["delete", '{"picks": [2]}']]
+    assert json.loads(llm.calls[1].output) == "I removed it."
+    llm.mark_checked(False, ["there is no pick 2"])
+    assert (llm.calls[-1].checked, llm.calls[-1].problems) == (False, ["there is no pick 2"])
 
 
 def test_three_wrong_replies_raise():

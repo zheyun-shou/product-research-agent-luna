@@ -1,4 +1,5 @@
 """Test doubles shared by several test files."""
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -26,6 +27,14 @@ class FakeBrowser:
         return path
 
 
+def output_text(reply) -> str:
+    if isinstance(reply, list):
+        return json.dumps([[type(c).__name__, c.model_dump(mode="json")] for c in reply])
+    if hasattr(reply, "model_dump_json"):
+        return reply.model_dump_json()
+    return str(reply)
+
+
 class FakeLLM:
     """Returns queued replies (or raises queued exceptions) and records the prompts."""
 
@@ -39,7 +48,8 @@ class FakeLLM:
         reply = self.replies.pop(0)
         if isinstance(reply, LLMUnavailable):
             raise reply  # no reply came, so there is no call record
-        self.calls.append(CallRecord(role, f"fake-{role}", 0, 0, 0.0, name, valid=not isinstance(reply, Exception)))
+        self.calls.append(CallRecord(role, f"fake-{role}", 0, 0, 0.0, name, valid=not isinstance(reply, Exception),
+                                     output=output_text(reply)))
         if isinstance(reply, Exception):
             raise reply
         return reply
@@ -51,9 +61,10 @@ class FakeLLM:
         """The queued reply is the list of tool objects that the model calls."""
         return self._reply(role, user, name)
 
-    def mark_checked(self, passed):
+    def mark_checked(self, passed, problems=()):
         if self.calls:
             self.calls[-1].checked = passed
+            self.calls[-1].problems = list(problems)
 
     def model_for(self, role):
         return f"fake-{role}"

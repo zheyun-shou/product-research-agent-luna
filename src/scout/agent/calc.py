@@ -107,7 +107,7 @@ def calculate(llm, cards: list[Card], history: str, said: set[Decimal], max_roun
             _, lines = run_plan(plan, cards, said | CONSTANTS)
         except CalcError as exc:
             errors = [str(exc)]
-            llm.mark_checked(False)
+            llm.mark_checked(False, errors)
             continue
         llm.mark_checked(True)
         allowed = said | {Decimal(n) for n in range(1, len(cards) + 1)}

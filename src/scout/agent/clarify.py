@@ -69,7 +69,7 @@ def clarify(llm, profile: CategoryProfile, needs: Needs, history: str, said: set
             errors.append("ready is true, but the kind is not known")
         if not reply.ready and not reply.question.strip():
             errors.append("ready is false, so question must not be empty")
-        llm.mark_checked(not errors)
+        llm.mark_checked(not errors, errors)
         if not errors:
             return reply
     raise LLMOutputError(f"The needs were still not valid after {max_rounds} tries: {errors}")

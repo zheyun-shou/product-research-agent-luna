@@ -73,3 +73,16 @@ def test_when_the_picks_differ_the_later_turns_are_not_measured():
     summary = summarize(records)
     assert summary["checks"] == {"phase": {"ok": 1, "total": 1}, "picks": {"ok": 0, "total": 1}}
     assert summary["not_measured"] == 1 and len(ends) == 2  # the transaction ends after each turn
+
+
+def test_each_turn_keeps_the_rounds_and_why_python_rejected_them():
+    world = World()
+    llm = FakeLLM([CategoryChoice(category="fridge"), ready(),
+                   [RemovePicks(picks=[9], words="remove 9", one_pick=True)],
+                   [RemovePicks(picks=[2], words="remove 2", one_pick=True)]])
+    script = Script(id="s", turns=[Turn(say="a fridge with a freezer"), Turn(say="remove 9, no, remove 2")])
+    records = run_scripts([script], world.deps(llm), world.crawls, llm)
+    rounds = [r for r in records[1]["rounds"] if r["schema"] == "Act"]
+    assert [r["passed"] for r in rounds] == [False, True]
+    assert rounds[0]["problems"] == ["there is no pick 9"] and rounds[1]["problems"] == []
+    assert '"picks": [9]' in rounds[0]["output"]

@@ -166,6 +166,8 @@ def run_scripts(scripts: list[Script], deps: Deps, searches: list, llm, progress
                 "script": script.id, "turn": number, "say": turn.say, "replies": replies, "error": error,
                 "measured": not_measured is None, "not_measured": not_measured,
                 "checks": checks, "steps": step_results(calls), "seconds": round(time.monotonic() - started, 1),
+                "rounds": [{"schema": c.schema, "passed": c.checked, "problems": c.problems, "output": c.output}
+                           for c in calls if c.checked is not None],
                 "calls": [{"role": c.role, "model": c.model, "schema": c.schema, "valid": c.valid,
                            "input_tokens": c.input_tokens, "output_tokens": c.output_tokens} for c in calls],
             })

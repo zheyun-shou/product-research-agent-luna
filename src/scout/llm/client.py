@@ -3,7 +3,7 @@ import json
 import os
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal, TypeVar
 
 from openai import APIConnectionError, BadRequestError, InternalServerError, OpenAI, RateLimitError
@@ -39,6 +39,8 @@ class CallRecord:
     schema: str = ""
     valid: bool = True  # False when the reply did not match the schema
     checked: bool | None = None  # set by the step that checks the reply: True when the reply passed
+    output: str = ""  # the reply text, or the tool calls as JSON
+    problems: list[str] = field(default_factory=list)  # what the checking step found
 
 
 def inline_refs(schema: dict) -> dict:
@@ -118,10 +120,11 @@ class LLM:
         role_cfg = self.config.roles[role]
         return role_cfg.fallback if role in self.fallbacks else role_cfg
 
-    def mark_checked(self, passed: bool) -> None:
+    def mark_checked(self, passed: bool, problems=()) -> None:
         """The step that checked the last reply gives the result. The evaluation reads it from the call record."""
         if self.calls:
             self.calls[-1].checked = passed
+            self.calls[-1].problems = list(problems)
 
     def model_for(self, role: Role) -> str:
         return self._target(role).model
@@ -204,7 +207,8 @@ class LLM:
                                                           f"schema:\n{json.dumps(schema_dict)}"}] + messages[1:]
                 last_error = str(exc)
                 continue
-            record = CallRecord(role, role_cfg.model, tokens_in, tokens_out, self._clock() - started, schema.__name__)
+            record = CallRecord(role, role_cfg.model, tokens_in, tokens_out, self._clock() - started, schema.__name__,
+                                output=text)
             self.calls.append(record)
             try:
                 return schema.model_validate_json(strip_fences(text))
@@ -263,7 +267,8 @@ class LLM:
                 last_error = "unavailable"
                 self._sleep(15 * attempt)
                 continue
-            record = CallRecord(role, role_cfg.model, tokens_in, tokens_out, self._clock() - started, name)
+            record = CallRecord(role, role_cfg.model, tokens_in, tokens_out, self._clock() - started, name,
+                                output=json.dumps(raw or message.content or "", ensure_ascii=False))
             self.calls.append(record)
             problems, calls = [], []
             for tool, args in raw:

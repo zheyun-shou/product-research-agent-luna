@@ -55,9 +55,9 @@ The results file must show why Python rejected a round. Without this, fault 2 ab
 
 **Files:** `src/scout/llm/client.py`, `src/scout/agent/followup.py`, `src/scout/agent/clarify.py`, `src/scout/picks/write.py`, `src/scout/agent/calc.py`, `src/scout/eval/chat.py`, tests.
 
-- [ ] **Step 1: Write the failing tests.** In `tests/test_eval_chat.py`, a script whose first act round has a number that is not allowed. The turn record has `rounds` with 2 items: the first has `passed: false`, the problem text and the reply text; the second has `passed: true`.
+- [x] **Step 1: Write the failing tests.** In `tests/test_eval_chat.py`, a script whose first act round has a number that is not allowed. The turn record has `rounds` with 2 items: the first has `passed: false`, the problem text and the reply text; the second has `passed: true`.
 
-- [ ] **Step 2: Keep the output and the problems in the call record.**
+- [x] **Step 2: Keep the output and the problems in the call record.**
 
 ```python
 @dataclass
@@ -70,16 +70,16 @@ class CallRecord:
 
 `_structured` sets `output` to the text. `_tool_calls` sets it to `json.dumps(raw)`. `mark_checked(passed, problems=())` also sets `problems`. Each checked step passes its error list.
 
-- [ ] **Step 3: Write the rounds into each turn record.** In `run_scripts`, add for each call with `checked is not None`:
+- [x] **Step 3: Write the rounds into each turn record.** In `run_scripts`, add for each call with `checked is not None`:
 
 ```python
 "rounds": [{"schema": c.schema, "passed": c.checked, "problems": c.problems, "output": c.output}
            for c in calls if c.checked is not None],
 ```
 
-- [ ] **Step 4: Run the tests.** `python -m pytest`. All pass.
+- [x] **Step 4: Run the tests.** `python -m pytest`. All pass.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ---
 
