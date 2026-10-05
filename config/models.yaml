@@ -12,15 +12,18 @@ providers:
   nvidia:
     base_url: https://integrate.api.nvidia.com/v1
     api_key_env: NVIDIA_API_KEY
+  openrouter:  # paid account, prices per model at https://openrouter.ai/models
+    base_url: https://openrouter.ai/api/v1
+    api_key_env: OPENROUTER_API_KEY
 roles:
-  chat:
-    provider: gemini
-    model: gemini-3.8-flash
-    rpm: 10
+  chat:  # chosen on 2026-10-05 after eval-chat: 24 scripts, median 15 s a turn, about 0.07 USD a full run
+    provider: openrouter
+    model: openai/gpt-5.6-luna
+    rpm: 60
     fallback:
-      provider: groq
-      model: openai/gpt-oss-120b
-      rpm: 30
+      provider: gemini
+      model: gemini-3.8-flash
+      rpm: 10
   worker:
     provider: gemini
     model: gemini-3.5-flash-lite
