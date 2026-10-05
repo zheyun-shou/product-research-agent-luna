@@ -30,7 +30,7 @@ def test_check_reply_allows_claims_the_shoppers_numbers_and_pick_numbers():
 
 
 def test_a_clear_removal_and_a_next_step_in_one_reply():
-    result, llm = run_act([[RemovePicks(picks=[3], words="the FOHERE", one_pick=True, reason="too small"),
+    result, llm = run_act([[RemovePicks(picks=[3], words="the FOHERE", reason="too small"),
                             NextStep(step="show_more")]], "Drop the FOHERE and show me more")
     assert result.remove.picks == [3] and result.step == "show_more" and result.action == "more"
     assert result.question is None and result.tools == ["remove_picks", "next_step"]
@@ -38,19 +38,24 @@ def test_a_clear_removal_and_a_next_step_in_one_reply():
     assert "product 9" not in llm.requests[0][1]
 
 
-def test_one_pick_meant_but_several_fit_makes_python_ask():
-    result, _ = run_act([[RemovePicks(picks=[2, 1], words="the Bomann", one_pick=True),
-                          Reply(text="Removed the Bomann.")]], "Remove the Bomann")
+def test_several_picks_without_numbers_make_python_ask():
+    result, _ = run_act([[RemovePicks(picks=[2, 1], words="the Bomann"), Reply(text="Removed the Bomann.")]],
+                        "Remove the Bomann")
     assert result.action == "stop"
-    assert result.question == ("Which pick do you mean: pick 1 (Bomann KG 320), pick 2 (Bomann SBS 7344)? "
-                               "Give its number.")
-    result, _ = run_act([[RemovePicks(picks=[], words="that one", one_pick=True)]], "Remove that one")
+    assert result.question == ("Which do you mean, all of these or only one: pick 1 (Bomann KG 320), pick 2 "
+                               "(Bomann SBS 7344)? Say all, or give the number.")
+    assert run_act([[RemovePicks(picks=[1, 3], words="红色那个")]], "去掉红色那个")[0].action == "stop"
+    result, _ = run_act([[RemovePicks(picks=[], words="that one")]], "Remove that one")
     assert result.question.startswith("Which pick do you want to remove?")
 
 
-def test_several_picks_can_go_when_the_shopper_means_several():
-    result, _ = run_act([[RemovePicks(picks=[1, 2], words="both Bomanns", one_pick=False)]], "Remove both Bomanns")
-    assert result.remove.picks == [1, 2] and result.question is None and result.action == "exclude"
+def test_several_picks_can_go_when_the_shopper_gives_each_number_or_says_all():
+    for words, said in [("both Bomanns", "Remove both Bomanns"), ("1 and 2", "Remove 1 and 2"),
+                        ("红色的", "去掉所有红色的"), ("all", "all")]:
+        result, _ = run_act([[RemovePicks(picks=[1, 2], words=words)]], said)
+        assert result.remove.picks == [1, 2] and result.question is None and result.action == "exclude", said
+    result, _ = run_act([[RemovePicks(picks=[1], words="the red one")]], "Remove the red one")
+    assert result.question is None and result.action == "exclude"
 
 
 def test_a_reply_that_claims_a_removal_without_the_tool_goes_back():
@@ -84,11 +89,11 @@ def test_a_reply_that_promises_an_action_needs_the_call_now():
 
 
 def test_words_must_come_from_the_shopper_and_picks_must_exist():
-    errors = check_act([RemovePicks(picks=[4], words="the loud one", one_pick=True)], CARDS, set(), set(),
+    errors = check_act([RemovePicks(picks=[4], words="the loud one")], CARDS, set(), set(),
                        "Remove the noisy one")
     assert "there is no pick 4" in errors
     assert any("the words 'the loud one' are not in the shopper's last message" in e for e in errors)
-    assert check_act([RemovePicks(picks=[2], words="第二个", one_pick=True)], CARDS, set(), set(), "第二个我不要") == []
+    assert check_act([RemovePicks(picks=[2], words="第二个")], CARDS, set(), set(), "第二个我不要") == []
     assert check_act([NextStep(step="recheck"), NextStep(step="show_more")], CARDS, set(), set(), "x") == [
         "call next_step only once"]
 

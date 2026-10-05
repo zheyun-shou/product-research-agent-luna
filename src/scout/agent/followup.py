@@ -45,6 +45,8 @@ WILL_DO = [
     (re.compile(r"\b(search(ing)?( for)?|look(ing)? for|find(ing)?|show(ing)?)( you)? (more|other|another|new|similar|"
                 r"cheaper)\b", re.I), {"next_step:show_more", "next_step:new_search", "next_step:change_needs"}),
 ]
+# Words that say the shopper means each pick that fits.
+ALL_WORDS = re.compile(r"\b(all|both|every|each|these|those|them)\b|全部|所有|都|两个|三个|这些|它们", re.I)
 NOT_DONE = re.compile(r"\b(can'?t|cannot|can not|unable|not able|won'?t|will not|didn'?t|did not|if you|would you|"
                       r"should I|want me to)\b", re.I)
 
@@ -55,8 +57,6 @@ class RemovePicks(BaseModel):
     picks: list[int] = Field(description="Each pick number that fits the shopper's words")
     words: str = Field(description="The shopper's words that name the picks, copied exactly, for example 'the "
                                    "Bomann' or 'pick 2'")
-    one_pick: bool = Field(description="True when the words name one pick, for example 'that one', 'it' or 'the "
-                                       "Bomann'")
     reason: str = ""
 
 
@@ -186,17 +186,21 @@ def check_act(calls: list, cards: list[Card], removed_ids: set[int], allowed: se
     return errors
 
 
-def unclear_question(remove: RemovePicks, picks: list[dict]) -> str | None:
-    """Python asks when the words fit no pick, or several picks but the shopper means one."""
+def unclear_question(remove: RemovePicks, picks: list[dict], last_user: str) -> str | None:
+    """Python asks when the words fit no pick, or when they fit several picks and the shopper did not give each
+    number or say all. Models often remove all picks that fit "the red one"."""
     if not remove.picks:
         return "Which pick do you want to remove? Give its number."
-    if remove.one_pick and len(remove.picks) > 1:
-        options = ", ".join(f"pick {n} ({picks[n - 1]['title'][:50]})" for n in sorted(remove.picks))
-        return f"Which pick do you mean: {options}? Give its number."
-    return None
+    if len(remove.picks) < 2:
+        return None
+    named = {int(n) for n in re.findall(r"\d+", last_user)}
+    if set(remove.picks) <= named or ALL_WORDS.search(last_user):
+        return None
+    options = ", ".join(f"pick {n} ({picks[n - 1]['title'][:50]})" for n in remove.picks)
+    return f"Which do you mean, all of these or only one: {options}? Say all, or give the number."
 
 
-def collect(calls: list, picks: list[dict]) -> Act:
+def collect(calls: list, picks: list[dict], last_user: str = "") -> Act:
     act = Act(tools=[tool_name(type(c)) for c in calls])
     for call in calls:
         if isinstance(call, RemovePicks):
@@ -209,7 +213,7 @@ def collect(calls: list, picks: list[dict]) -> Act:
             act.reply = call
     if act.remove:
         act.remove.picks = sorted(set(act.remove.picks))
-        act.question = unclear_question(act.remove, picks)
+        act.question = unclear_question(act.remove, picks, last_user)
     return act
 
 
@@ -225,6 +229,6 @@ def act(llm, picks: list[dict], cards: list[Card], removed: list[dict], history:
         errors = check_act(calls, cards, {r["product_id"] for r in removed}, allowed, last_user)
         llm.mark_checked(not errors, errors)
         if not errors:
-            return collect(calls, picks)
+            return collect(calls, picks, last_user)
         last = ToolCalls(calls=[{"tool": tool_name(type(c)), "args": c.model_dump()} for c in calls])
     return None

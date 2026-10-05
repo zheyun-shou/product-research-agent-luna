@@ -152,7 +152,7 @@ When `remove_picks` has 2 or more picks, Python asks first, unless the shopper g
 
 **Files:** `src/scout/agent/followup.py`, `tests/test_followup.py`, `eval/chat/conversations.yaml`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 | Shopper's message | Picks in the call | Python |
 |---|---|---|
@@ -163,7 +163,7 @@ When `remove_picks` has 2 or more picks, Python asks first, unless the shopper g
 | "去掉所有红色的" | 2, 4 | removes |
 | "Remove the red one" | 2 | removes |
 
-- [ ] **Step 2: Change `unclear_question`.**
+- [x] **Step 2: Change `unclear_question`.**
 
 ```python
 ALL_WORDS = re.compile(r"\b(all|both|every|each|these|those|them)\b|全部|所有|都|两个|三个", re.I)
@@ -183,11 +183,11 @@ def unclear_question(remove: RemovePicks, picks: list[dict], last_user: str) -> 
 
 When the shopper answers "all", the model calls `remove_picks` again, and `ALL_WORDS` lets it pass. Remove the field `one_pick` from `RemovePicks`.
 
-- [ ] **Step 3: Change the expected values.** In `conversations.yaml`, the scripts `en-unclear-brand` and `zh-unclear-red` now expect a question and no removal, as the other unclear scripts do.
+- [x] **Step 3: The expected values.** No change was necessary. The question starts with "Which do you mean, all of these or only one", so the scripts `en-unclear-brand` and `zh-unclear-red` still expect "Which" and not "Removed".
 
-- [ ] **Step 4: Run the tests.** All pass.
+- [x] **Step 4: Run the tests.** All pass.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ---
 

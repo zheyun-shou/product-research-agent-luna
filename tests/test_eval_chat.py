@@ -12,7 +12,7 @@ def test_a_script_is_scored_turn_by_turn():
     world = World()
     llm = FakeLLM([CategoryChoice(category="fridge"), ClarifyReply(needs=Needs(budget=9000), ready=False,
                                                                    question="Which kind?"),
-                   ready(budget=9000), [RemovePicks(picks=[2], words="remove 2", one_pick=True)]])
+                   ready(budget=9000), [RemovePicks(picks=[2], words="remove 2")]])
     script = Script(id="s", turns=[
         Turn(say="a fridge, budget 9000", expect=Expect(phase="clarify", budget=9000, searched=False)),
         Turn(say="with a freezer", expect=Expect(phase="picks", kind="fridge_freezer", conditions=["height<=186"])),
@@ -49,7 +49,7 @@ def test_a_turn_that_a_node_ended_counts_as_an_error():
 def test_a_step_that_ends_without_a_passing_round_did_not_pass():
     world = World()
     llm = FakeLLM([CategoryChoice(category="fridge"), ready(),
-                   [RemovePicks(picks=[9], words="remove 9", one_pick=True)], LLMOutputError("no valid tool calls")])
+                   [RemovePicks(picks=[9], words="remove 9")], LLMOutputError("no valid tool calls")])
     script = Script(id="s", turns=[Turn(say="a fridge with a freezer"), Turn(say="remove 9")])
     records = run_scripts([script], world.deps(llm), world.crawls, llm)
     assert records[1]["error"] is None and records[1]["measured"]  # a model failure is measured
@@ -59,8 +59,7 @@ def test_a_step_that_ends_without_a_passing_round_did_not_pass():
 
 def test_when_the_picks_differ_the_later_turns_are_not_measured():
     world = World()
-    llm = FakeLLM([CategoryChoice(category="fridge"), ready(), [RemovePicks(picks=[1], words="remove 1",
-                                                                             one_pick=True)]])
+    llm = FakeLLM([CategoryChoice(category="fridge"), ready(), [RemovePicks(picks=[1], words="remove 1")]])
     script = Script(id="s", turns=[
         Turn(say="a fridge with a freezer", expect=Expect(phase="picks", picks=["Fridge 2", "Fridge 1"])),
         Turn(say="remove 1", expect=Expect(pick_numbers=[1])),
@@ -78,8 +77,8 @@ def test_when_the_picks_differ_the_later_turns_are_not_measured():
 def test_each_turn_keeps_the_rounds_and_why_python_rejected_them():
     world = World()
     llm = FakeLLM([CategoryChoice(category="fridge"), ready(),
-                   [RemovePicks(picks=[9], words="remove 9", one_pick=True)],
-                   [RemovePicks(picks=[2], words="remove 2", one_pick=True)]])
+                   [RemovePicks(picks=[9], words="remove 9")],
+                   [RemovePicks(picks=[2], words="remove 2")]])
     script = Script(id="s", turns=[Turn(say="a fridge with a freezer"), Turn(say="remove 9, no, remove 2")])
     records = run_scripts([script], world.deps(llm), world.crawls, llm)
     rounds = [r for r in records[1]["rounds"] if r["schema"] == "Act"]

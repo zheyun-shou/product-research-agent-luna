@@ -118,7 +118,7 @@ def test_few_stored_products_start_a_search_with_the_kind_terms():
 def test_follow_ups_in_one_thread():
     world = World()
     llm = FakeLLM([CategoryChoice(category="fridge"), ready(),
-                   [RemovePicks(picks=[1], words="the first one", one_pick=True, reason="too small")],
+                   [RemovePicks(picks=[1], words="the first one", reason="too small")],
                    [Reply(text="Pick 1 is 170 cm high.", claims=[AnswerClaim(pick=1, field="height", value="170")])],
                    [NextStep(step="show_more")]])
     graph = build_graph(world.deps(llm), InMemorySaver())
@@ -155,7 +155,7 @@ def test_recheck_checks_the_shown_picks_first():
 def test_a_kept_pick_keeps_its_size_doubt():
     world = World(doubts={2: "Fridge 2: height may be wrong."})
     llm = FakeLLM([CategoryChoice(category="fridge"), ready(),
-                   [RemovePicks(picks=[1], words="Remove 1", one_pick=True)], [Reply(text="See the picks.")]])
+                   [RemovePicks(picks=[1], words="Remove 1")], [Reply(text="See the picks.")]])
     graph = build_graph(world.deps(llm), InMemorySaver())
     run(graph, "t1", "A fridge with a freezer")
     state = run(graph, "t1", "Remove 1")
@@ -168,18 +168,18 @@ def test_a_kept_pick_keeps_its_size_doubt():
 def test_an_unclear_removal_asks_which_pick_and_removes_nothing():
     world = World()
     llm = FakeLLM([CategoryChoice(category="fridge"), ready(),
-                   [RemovePicks(picks=[1, 2], words="that one", one_pick=True), Reply(text="Removed it.")]])
+                   [RemovePicks(picks=[1, 2], words="that one"), Reply(text="Removed it.")]])
     graph = build_graph(world.deps(llm), InMemorySaver())
     run(graph, "t1", "A fridge with a freezer")
     state = run(graph, "t1", "Remove that one")
-    assert state["messages"][-1]["content"].startswith("Which pick do you mean: pick 1 (Fridge 1), pick 2")
+    assert state["messages"][-1]["content"].startswith("Which do you mean, all of these or only one: pick 1 (Fridge 1), pick 2")
     assert world.removed == {} and shown(state) == [1, 2] and len(world.picked) == 1
 
 
 def test_a_removed_product_can_come_back():
     world = World()
     llm = FakeLLM([CategoryChoice(category="fridge"), ready(),
-                   [RemovePicks(picks=[1], words="pick 1", one_pick=True)],
+                   [RemovePicks(picks=[1], words="pick 1")],
                    [RestorePicks(product_ids=[1]), Reply(text="Pick 1 is back, as you asked.")]])
     graph = build_graph(world.deps(llm), InMemorySaver())
     run(graph, "t1", "A fridge with a freezer")
