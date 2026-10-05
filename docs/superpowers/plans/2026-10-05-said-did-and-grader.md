@@ -1,6 +1,6 @@
 # Said Equals Did, Free Calculations and a Reply Grader
 
-> **How to use this plan.** Zheyun reviews this plan first. Claude starts only after she agrees, and makes the changes that she asks for. Do the tasks in order and commit at the end of each task. Do not run `scout eval-chat` with a paid model until she says so.
+> **How to use this plan.** Zheyun agreed to this plan on 2026-10-05. Do the tasks in order and commit at the end of each task. Do not run `scout eval-chat` with a paid model until she says so.
 
 **Goal:** Give the chat model more freedom, and measure the quality of its replies with a second model. Python keeps the checks that a rule can do well: the facts in each reply agree with the records, and each action that a reply states has a tool call. The model calculates by itself. A grader model scores each reply against a rubric. A test set of replies with known faults shows how far the grader is correct.
 
@@ -21,9 +21,9 @@ The number rule ("each new number must come from a claim, the shopper or Python"
 
 ## Decisions for Zheyun
 
-1. **The calculation tool.** Recommended: remove `calculate` from `next_step`, so the model answers calculations in its reply. Keep `agent/calc.py` until Task 7 shows the grader results for arithmetic, then delete it. Other choice: keep the tool for long rules ("25% moms and 499 SEK shipping"), and let the model calculate only short sums.
+1. **The calculation tool (decided).** Zheyun agreed on 2026-10-05: remove `calculate` from `next_step`, so the model answers calculations in its reply. Keep `agent/calc.py` until Task 7 shows the grader results for arithmetic, then delete it. Other choice: keep the tool for long rules ("25% moms and 499 SEK shipping"), and let the model calculate only short sums.
 2. **The judge model (decided).** Zheyun decided on 2026-10-05: use `deepseek/deepseek-v4-flash` on OpenRouter (0.03 USD input and 1.28 USD output per million tokens, about 0.03 USD for one graded run of 48 turns). It is not an OpenAI model, so it has no reason to prefer the replies of Luna. Zheyun does not label replies. Task 6 checks the grader with replies whose faults are known.
-3. **When the grader is good enough.** Recommended: on the test set of Task 6, the grader finds 9 of 10 planted faults or more for each criterion, and it says "fail" for at most 1 in 10 of the correct replies. If DeepSeek does not meet this, try `anthropic/claude-haiku-4.5` (about 0.27 USD a run).
+3. **When the grader is good enough (decided).** Zheyun agreed on 2026-10-05: on the test set of Task 6, the grader finds 9 of 10 planted faults or more for each criterion, and it says "fail" for at most 1 in 10 of the correct replies. If DeepSeek does not meet this, try `anthropic/claude-haiku-4.5` (about 0.27 USD a run).
 
 ## Global Constraints
 
@@ -284,7 +284,7 @@ Zheyun does not label replies. Claude makes a test set where the right grade is 
 - [ ] **Step 4:** If the grader does not meet decision 3, change the rubric text once and run again. If it still does not meet it, try Haiku. Write the numbers into this plan.
 - [ ] **Step 5: Commit.**
 
-The limit of this test: planted faults are clearer than real faults. So Task 7 also lists each real reply that the grader failed, and Claude reads them.
+The limit of this test: planted faults are clearer than real faults. So Task 7 also lists each real reply that the grader failed, and Claude reads them and a sample of the passed replies. When Claude and the grader often disagree, change the rubric. Claude is not the grader: the grader must run without a person, give the same kind of result each time, and not be the author of the agent.
 
 ---
 
