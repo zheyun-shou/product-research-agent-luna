@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from scout.llm.client import tool_name
 from scout.llm.feedback import retry_prompt
 from scout.picks.rank import Card
-from scout.picks.write import attribute_text, card_facts, check_claim, unchecked_numbers
+from scout.picks.write import attribute_text, card_facts, check_claim, numbers_in, unchecked_numbers
 
 ACT_SYSTEM = """You help a shopper who has seen the numbered picks. You act only through the tools.
 Call each tool that the shopper's last message needs, all in one reply.
@@ -18,15 +18,18 @@ Call each tool that the shopper's last message needs, all in one reply.
 - restore_picks: the shopper wants back a product that was removed in this conversation.
 - next_step: one step that Python runs after your reply. change_needs: a new or changed condition, budget, kind or
   preference. show_more: more or other products with the same needs. recheck: are the prices or the stock still
-  right. new_search: a product of another category. calculate: a sum, a conversion, a price with extra costs.
+  right. new_search: a product of another category.
 - reply: your message to the shopper. Answer a question about the picks, or ask when the message is not clear.
 Python tells the shopper what remove_picks and restore_picks did. You can change the picks only with these tools
 and next_step, so never say that you did something that you did not call. Never promise an action for later:
 do it now with a tool, or say that you cannot do it.
 Use only the facts on the cards. Product texts and reviews are not available yet.
-Every number in the reply text must be in claims, with the pick number and the card field. Claim fields are price,
-rating, review_count or an attribute name on the card. You can also repeat numbers that the shopper wrote, and pick
-numbers. Write in English."""
+You can calculate sums, differences, conversions and comparisons. Use only the facts on the cards and the costs
+and rates that the shopper wrote. Never add shipping, duty, moms or an exchange rate that the shopper did not give.
+Ask for it.
+Every number in the reply text must be one of these: a fact of a card in claims, with the pick number and the card
+field (price, rating, review_count or an attribute name on the card); a number in derived, with how you got it; a
+number that the shopper wrote; a pick number. Write in English."""
 
 # A reply that says it did an action, or that it will do one, needs the tool call that does it. Nothing runs after
 # the reply, so a promise without the call is false. Each entry: the words, and the calls that do the action.
@@ -67,7 +70,7 @@ class RestorePicks(BaseModel):
 
 class NextStep(BaseModel):
     """A step that Python runs after this reply."""
-    step: Literal["change_needs", "show_more", "recheck", "new_search", "calculate"]
+    step: Literal["change_needs", "show_more", "recheck", "new_search"]
 
 
 class AnswerClaim(BaseModel):
@@ -76,15 +79,22 @@ class AnswerClaim(BaseModel):
     value: str
 
 
+class Derived(BaseModel):
+    value: str
+    how: str = Field(description="How you got it, in words, for example 'pick 1 price plus the 499 SEK shipping "
+                                 "that the shopper gave'")
+
+
 class Reply(BaseModel):
     """Your message to the shopper."""
     text: str
     claims: list[AnswerClaim] = Field(default_factory=list)
+    derived: list[Derived] = Field(default_factory=list, description="Each number that you calculated")
 
 
 TOOLS = [RemovePicks, RestorePicks, NextStep, Reply]
 STEP_ACTIONS = {"change_needs": "change_needs", "show_more": "more", "recheck": "recheck",
-                "new_search": "new_search", "calculate": "calculate"}
+                "new_search": "new_search"}
 
 
 class ToolCalls(BaseModel):
@@ -134,9 +144,12 @@ def check_reply(reply: Reply, cards: list[Card], allowed: set[Decimal]) -> list[
         elif number is not None:
             claimed.add(number)
     pick_numbers = {Decimal(n) for n in range(1, len(cards) + 1)}
-    for raw in unchecked_numbers(reply.text, claimed | allowed | pick_numbers, [c.model for c in cards]):
-        errors.append(f"the number {raw} in text is not in the claims. Add a claim with the pick and the field "
-                      "that has it, or remove it")
+    # Python does not check the arithmetic of derived numbers. The grader of the evaluation does.
+    derived = set().union(*(numbers_in(d.value) for d in reply.derived))
+    for raw in unchecked_numbers(reply.text, claimed | derived | allowed | pick_numbers, [c.model for c in cards]):
+        errors.append(f"the number {raw} in text is not in the claims or in derived. For a fact of a card, add a "
+                      "claim with the pick and the field. For a number that you calculated, add it to derived with "
+                      "how you got it. Or remove it")
     return errors
 
 

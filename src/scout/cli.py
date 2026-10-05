@@ -313,7 +313,7 @@ def chat(thread: Optional[str] = typer.Option(None, help="the ID of a conversati
                     replies = [f"Something went wrong ({type(exc).__name__}: {exc}). You can try again."]
                     end_transaction(conn)
                     with contextlib.suppress(Exception):  # the thread gets the message, and the failed turn ends
-                        graph.update_state(config, {"messages": [assistant(replies[0])]}, as_node="calculate")
+                        graph.update_state(config, {"messages": [assistant(replies[0])]}, as_node="recommend")
                 end_transaction(conn)
                 for reply in replies:
                     typer.echo(f"\n{reply}")

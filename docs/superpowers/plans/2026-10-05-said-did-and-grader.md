@@ -195,9 +195,9 @@ When the shopper answers "all", the model calls `remove_picks` again, and `ALL_W
 
 **Files:** `src/scout/agent/followup.py`, `src/scout/agent/graph.py`, `tests/test_followup.py`, `tests/test_graph.py`, the spec and `CLAUDE.md` (after Zheyun agrees).
 
-- [ ] **Step 1: Write the failing tests.** A reply "Pick 1 with shipping costs 6147.51 SEK" with a claim for the price of pick 1 and a derived number 6147.51 passes. The same reply without the derived number gives the problem "the number 6147.51 ...". A wrong claim (price 5000 when the card says 5648.51) still gives a problem.
+- [x] **Step 1: Write the failing tests.** A reply "Pick 1 with shipping costs 6147.51 SEK" with a claim for the price of pick 1 and a derived number 6147.51 passes. The same reply without the derived number gives the problem "the number 6147.51 ...". A wrong claim (price 5000 when the card says 5648.51) still gives a problem.
 
-- [ ] **Step 2: Add derived numbers to `Reply`.**
+- [x] **Step 2: Add derived numbers to `Reply`.**
 
 ```python
 class Derived(BaseModel):
@@ -215,17 +215,17 @@ class Reply(BaseModel):
 
 In `check_reply`, the numbers of `derived` are allowed in the text. Python does not check the arithmetic. The grader does (Task 5). A number of a fact (a size, a rating) must still be a claim, not a derived number. The grader also checks this, because Python cannot tell a fact from a result.
 
-- [ ] **Step 3: Change the prompt.** Replace the number paragraph of `ACT_SYSTEM` with:
+- [x] **Step 3: Change the prompt.** Replace the number paragraph of `ACT_SYSTEM` with:
 
 "You can calculate sums, differences, conversions and comparisons. Use only the facts on the cards and the costs and rates that the shopper wrote. Never add shipping, duty, moms or an exchange rate that the shopper did not give. Ask for it. Every number in the reply text must be a claim (a fact of a card), a number that the shopper wrote, a pick number, or a derived number with how you got it."
 
-- [ ] **Step 4: Remove the `calculate` step** (decision 1). Remove `calculate` from `NextStep` and `STEP_ACTIONS`, and the `calculate` node and edge from the graph. Change the calculation scripts in `conversations.yaml` to expect the route `answer`.
+- [x] **Step 4: Remove the `calculate` step** (decision 1). Remove `calculate` from `NextStep` and `STEP_ACTIONS`, and the `calculate` node and edge from the graph. Change the calculation scripts in `conversations.yaml` to expect the route `answer`. `agent/calc.py` and its tests stay until Task 7.
 
-- [ ] **Step 5: Change the spec and `CLAUDE.md`** as written under "Spec changes".
+- [x] **Step 5: Change the spec and `CLAUDE.md`** as written under "Spec changes".
 
-- [ ] **Step 6: Run the tests.** All pass.
+- [x] **Step 6: Run the tests.** All pass.
 
-- [ ] **Step 7: Commit.**
+- [x] **Step 7: Commit.**
 
 ---
 

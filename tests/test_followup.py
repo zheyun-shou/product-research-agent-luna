@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from scout.agent.followup import (AnswerClaim, NextStep, RemovePicks, Reply, RestorePicks, act, check_act,
+from scout.agent.followup import (AnswerClaim, Derived, NextStep, RemovePicks, Reply, RestorePicks, act, check_act,
                                   check_reply, unbacked_actions)
 from tests.fakes import FakeLLM
 from tests.test_picks_rank import card
@@ -114,3 +114,14 @@ def test_act_retries_with_the_problems_and_gives_up_after_three_rounds():
     assert [c.schema for c in llm.calls] == ["Act", "Act"]
     assert [c.checked for c in llm.calls] == [False, True]  # the evaluation reads the result from the records
     assert run_act([bad] * 3, "How tall?")[0] is None
+
+
+def test_the_model_can_calculate_and_facts_are_still_checked():
+    with_shipping = Reply(text="Pick 1 costs 5000 SEK, so with the 499 SEK shipping it is 5499 SEK.",
+                          claims=[AnswerClaim(pick=1, field="price", value="5000")],
+                          derived=[Derived(value="5499", how="pick 1 price plus the 499 SEK shipping")])
+    assert check_reply(with_shipping, CARDS, {Decimal("499")}) == []
+    no_derived = with_shipping.model_copy(update={"derived": []})
+    assert [e[:22] for e in check_reply(no_derived, CARDS, {Decimal("499")})] == ["the number 5499 in tex"]
+    wrong_fact = with_shipping.model_copy(update={"claims": [AnswerClaim(pick=1, field="price", value="4000")]})
+    assert any("pick 1: price is 5000" in e for e in check_reply(wrong_fact, CARDS, {Decimal("499")}))

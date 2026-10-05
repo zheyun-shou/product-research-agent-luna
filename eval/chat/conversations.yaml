@@ -17,7 +17,7 @@
     - say: 把第二个去掉，评价太少了
       expect: {route: exclude, pick_numbers: [2]}
     - say: 第一个的价格加上499克朗运费是多少？
-      expect: {route: calculate}
+      expect: {route: answer, tools: [reply]}
 
 - id: en-mini-office
   turns:

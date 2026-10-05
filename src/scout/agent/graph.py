@@ -4,7 +4,6 @@ from typing import Any, Callable
 
 from langgraph.graph import END, START, StateGraph
 
-from scout.agent.calc import calculate
 from scout.agent.clarify import clarify, pick_category
 from scout.agent.followup import act
 from scout.agent.history import assistant, compact, history_text, last_user_text, user_numbers
@@ -20,7 +19,7 @@ from scout.trace import NoTracer
 
 MIN_STORED = 10  # after the first search of a thread, fewer stored matches than this start a new search
 
-AFTER_ACT = {"answer": END, "calculate": "calculate", "exclude": "recommend", "restore": "recommend",
+AFTER_ACT = {"answer": END, "exclude": "recommend", "restore": "recommend",
              "change_needs": "clarify", "more": "search", "recheck": "recommend", "new_search": "reset", "stop": END}
 
 
@@ -208,10 +207,6 @@ def build_graph(deps: Deps, checkpointer=None):
             messages.append(assistant(result.reply.text))
         return {"route": route, "removed": removed, "messages": messages}
 
-    def calculate_node(state, config):
-        text = calculate(llm, marked_cards(state.get("picks", [])), history_text(state), user_numbers(state))
-        return {"messages": [assistant(text)]}
-
     def reset_node(state, config):
         return {"needs": {}, "picks": [], "seen": [], "removed": [], "phase": "clarify"}
 
@@ -221,7 +216,7 @@ def build_graph(deps: Deps, checkpointer=None):
     graph = StateGraph(ChatState)
     graph.add_node("compact", compact_node)
     for name, fn in [("clarify", clarify_node), ("search", search_node), ("recommend", recommend_node),
-                     ("act", act_node), ("calculate", calculate_node), ("reset", reset_node)]:
+                     ("act", act_node), ("reset", reset_node)]:
         graph.add_node(name, guarded(name, fn))
     graph.add_edge(START, "compact")
     graph.add_conditional_edges("compact", lambda s: "act" if s.get("phase") == "picks" else "clarify",
@@ -231,6 +226,5 @@ def build_graph(deps: Deps, checkpointer=None):
     graph.add_conditional_edges("search", unless_stopped, ["recommend", END])
     graph.add_edge("recommend", END)
     graph.add_conditional_edges("act", lambda s: s["route"]["action"], AFTER_ACT)
-    graph.add_edge("calculate", END)
     graph.add_edge("reset", "clarify")
     return graph.compile(checkpointer=checkpointer)

@@ -33,7 +33,7 @@ The system makes the list of candidates smaller. The user makes the final select
 - Other review sources: community sites (Zhihu, Reddit, Flashback) and more professional review sites (Rtings, SweClockers and others). These sources also bring the category-level review search (phase 2b below).
 - Xiaohongshu. The posts contain too many advertisements. We cannot trust them as reviews.
 - Video reviews (YouTube, Bilibili). These come later. The difficult part is to get the transcripts. Cost is not the problem.
-- Currency conversion, shipping, duty or moms by default. The system calculates these only when the user tells it how.
+- Currency conversion, shipping, duty or moms by default. The system calculates these only with the costs and rates that the user gives.
 - A list of the removed products in the picks. The database keeps the removed products. The picks do not show them.
 - Tags for the complaint types in reviews. We add tags later if we need counts.
 - An LLM that controls a browser through MCP. The code opens pages in fixed steps. The LLM only reads the cleaned content.
@@ -69,7 +69,7 @@ User: I want a fridge, my requirements are ...
    ↓
 4. Follow-up
    Question about a pick → retrieve and answer
-   Calculation           → Python calculates and shows the formula
+   Calculation           → the chat model calculates in its reply
    User is not satisfied → remove the rejected picks, rank again, go back to phase 3
                            if too few candidates remain, go back to phase 2 and search more
 ```
@@ -236,7 +236,7 @@ The agent makes the picks as structured output. Each claim includes the record I
 | `extract_attribute` | On-demand attribute extraction (4.4) |
 | `exclude_and_rerank` | When the user is not satisfied, remove the rejected products and rank again with the new conditions. Call `fetch_more` if too few candidates remain |
 | `fetch_more` | Fetch a small number of more products from a source |
-| `calculate` | The LLM changes the rule of the user into structured calculation steps. Python does the steps and gives the result and the formula |
+| `calculate` | Removed on 2026-10-05. The chat model calculates in its reply. It writes each calculated number with how it got it, and the grader of the evaluation checks the arithmetic. Python still checks each fact of a card |
 | `recheck_availability` | Check the price and the availability again |
 | `update_profile` | Edit the category profile |
 
@@ -268,7 +268,7 @@ We have not selected the model provider, and it can be a free tier. Thus the LLM
 
 | Role | Steps | Calls for each search |
 |---|---|---|
-| `chat`, a strong model | Write a draft category profile. Compare the message of the user with the profile and ask questions. Write the search terms for each site. Write the picks. Read follow-up questions, select tools, answer questions, change calculation rules into steps | About 10 to 30 |
+| `chat`, a strong model | Write a draft category profile. Compare the message of the user with the profile and ask questions. Write the search terms for each site. Write the picks. Read follow-up questions, select tools, answer questions, calculate | About 10 to 30 |
 | `worker`, a light multimodal model | Extract the fields that the selectors do not find. On-demand attribute extraction. Read images that PaddleOCR-VL cannot read. After v1, decide if two listings are the same product | Tens to about 200 |
 
 - The search terms use the strong model. There are few of them, and bad terms make all later candidates bad. The worker must accept images, so we do not need a third model. bge-m3 (embeddings) and PaddleOCR-VL (images) run on the local computer and are not part of this layer.
@@ -325,7 +325,7 @@ Make a labelled set of about 50 amazon.se product pages across the four categori
 |---|---|
 | Price extraction accuracy | The percentage of extracted prices that are the same as the label |
 | Attribute extraction accuracy | For each attribute, with on-demand extraction included |
-| Calculation correctness | Unit tests cover the Python calculations. About 20 examples test if the LLM changes the words of the user into the correct calculation steps |
+| Calculation correctness | A grader model (DeepSeek V4 Flash) checks the arithmetic of each reply in the scripted conversations. A test set with planted faults shows how often the grader is correct |
 | Source faithfulness | An automatic check for numeric claims. An LLM judges text claims, and manual spot checks calibrate the judge |
 | Availability accuracy | Spot checks by hand of the products that the picks show as available |
 | Product matching accuracy | After v1, with Taobao and external review sources: about 50 pairs labelled by hand. We do not measure it in v1, because v1 has no matching |
@@ -351,7 +351,7 @@ Make a labelled set of about 50 amazon.se product pages across the four categori
 The project is too large for one implementation plan. Thus each phase has its own plan.
 
 1. **Skeleton.** Project structure, Postgres + pgvector, tables, the fridge preset profile, the LLM layer with the `chat` and `worker` roles on a free Gemini key, the dedicated browser profile, the amazon.se adapter with selectors and the captcha check, structured extraction, command-line picks, and the labelled set and evaluation for price extraction on amazon.se.
-2. **Conversation.** The LangGraph conversation loop, checkpoints, clarifying questions, follow-up tools, the calculation tool, Langfuse.
+2. **Conversation.** The LangGraph conversation loop, checkpoints, clarifying questions, follow-up tools, calculations, Langfuse.
 3. **Text and retrieval.** Chunks, bge-m3 embeddings, BM25, RRF, amazon.se shop reviews with the login check, on-demand extraction, pros and complaints in the picks. At the end, professional reviews by model number from one or two public review sites (simple version).
 4. **Images and more categories.** Image reading with PaddleOCR-VL and the worker as the fallback, the other three preset categories, profile generation for new categories.
 5. **Search strategy.** Predicate pushdown, Threshold Algorithm, multi-stage ranking, page limits.
