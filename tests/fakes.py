@@ -54,7 +54,8 @@ class FakeLLM:
             raise reply
         return reply
 
-    def structured(self, role, system, user, schema):
+    def structured(self, role, system, user, schema, images=()):
+        self.images = list(images)
         return self._reply(role, user, schema.__name__)
 
     def tools(self, role, system, user, tools, name="tools", text_reply=None):

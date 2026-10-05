@@ -145,8 +145,9 @@ class LLM:
                                              max_retries=0)
         return self._clients[provider]
 
-    def structured(self, role: Role, system: str, user: str, schema: type[T]) -> T:
-        return self._with_fallback(role, lambda cfg: self._structured(role, cfg, system, user, schema))
+    def structured(self, role: Role, system: str, user: str, schema: type[T], images: list[str] = ()) -> T:
+        """images are data URIs (data:image/jpeg;base64,...) that the model reads with the text."""
+        return self._with_fallback(role, lambda cfg: self._structured(role, cfg, system, user, schema, images))
 
     def tools(self, role: Role, system: str, user: str, tools: list[type[BaseModel]], name: str = "tools",
               text_reply: type[BaseModel] | None = None) -> list:
@@ -170,12 +171,14 @@ class LLM:
                 self.fallbacks[role] = str(exc)
         return call(fallback)
 
-    def _structured(self, role: Role, role_cfg: ModelConfig, system: str, user: str, schema: type[T]) -> T:
+    def _structured(self, role: Role, role_cfg: ModelConfig, system: str, user: str, schema: type[T],
+                    images: list[str] = ()) -> T:
         client = self.client(role_cfg.provider)
         limiter = self._limiters.setdefault(
             (role_cfg.provider, role_cfg.model), RateLimiter(role_cfg.rpm, self._sleep, self._clock))
         schema_dict = inline_refs(schema.model_json_schema())
-        messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+        content = [{"type": "text", "text": user}] + [{"type": "image_url", "image_url": {"url": u}} for u in images]
+        messages = [{"role": "system", "content": system}, {"role": "user", "content": content if images else user}]
         response_format = {"type": "json_schema", "json_schema": {"name": schema.__name__, "schema": schema_dict}}
         last_error = ""
         for attempt in range(1, self.MAX_ATTEMPTS + 1):

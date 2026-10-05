@@ -7,9 +7,10 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from scout.llm.client import tool_name
+from scout.agent.lookup import LOOKUP_TOOLS
 from scout.llm.feedback import retry_prompt
 from scout.picks.rank import Card
-from scout.picks.write import attribute_text, card_facts, check_claim, numbers_in, unchecked_numbers
+from scout.picks.write import card_facts, card_text, check_claim, numbers_in, unchecked_numbers
 
 ACT_SYSTEM = """You help a shopper who has seen the numbered picks. Answer the shopper's last message.
 You can answer in plain text, or call tools, or both. Call each tool that the message needs, all in one reply.
@@ -20,6 +21,8 @@ You can answer in plain text, or call tools, or both. Call each tool that the me
   preference. show_more: more or other products with the same needs. recheck: are the prices or the stock still
   right. new_search: a product of another category.
 - reply: your message to the shopper, when you want to give claims or derived numbers with it.
+- read_product, query_products, read_images: look things up when the cards do not answer the question. Python
+  gives you the results, and then you answer. Do not guess what you can look up.
 Python tells the shopper what remove_picks and restore_picks did. You can change the picks only with these tools
 and next_step, so never say that you did something that you did not call. Never promise an action for later:
 do it now with a tool, or say that you cannot do it.
@@ -50,8 +53,8 @@ WILL_DO = [
 ]
 # Words that say the shopper means each pick that fits.
 ALL_WORDS = re.compile(r"\b(all|both|every|each|these|those|them)\b|全部|所有|都|两个|三个|这些|它们", re.I)
-NOT_DONE = re.compile(r"\b(can['’]?t|cannot|can not|unable|not able|won['’]?t|will not|didn['’]?t|did not|if you|would you|"
-                      r"should I|want me to)\b", re.I)
+NOT_DONE = re.compile(r"\b(can['’]?t|cannot|can not|unable|not able|won['’]?t|will not|didn['’]?t|did not|"
+                      r"if you|would you|should I|want me to)\b", re.I)
 
 
 class RemovePicks(BaseModel):
@@ -110,6 +113,7 @@ class Act:
     step: str | None = None
     reply: Reply | None = None
     question: str | None = None  # Python asks which pick, and nothing else runs
+    lookups: list[str] = field(default_factory=list)  # the lookup tools that ran before the answer
 
     @property
     def action(self) -> str:
@@ -123,13 +127,6 @@ class Act:
         if self.restore:
             return "restore"
         return "answer"
-
-
-def card_text(n: int, card: Card) -> str:
-    attrs = ", ".join(f"{k}={attribute_text(v)}" for k, v in card.attributes.items())
-    stock = {True: "yes", False: "no", None: "not known"}[card.in_stock]
-    return (f"Pick {n}: {card.title} | price={card.price} {card.currency or ''} | in_stock={stock} | "
-            f"rating={card.rating} | review_count={card.review_count} | {attrs or 'no attributes on the card'}")
 
 
 def check_reply(reply: Reply, cards: list[Card], allowed: set[Decimal]) -> list[str]:
@@ -227,17 +224,38 @@ def collect(calls: list, picks: list[dict], last_user: str = "") -> Act:
 
 
 def act(llm, picks: list[dict], cards: list[Card], removed: list[dict], history: str, allowed: set[Decimal],
-        last_user: str, max_rounds: int = 3) -> Act | None:
-    """Return the checked tool calls, or None when no round passed the checks."""
+        last_user: str, max_rounds: int = 3, lookup=None, max_lookups: int = 3) -> Act | None:
+    """Return the checked tool calls, or None when no round passed the checks.
+
+    With lookup, the model can also look things up. Python runs the lookups, adds the results to the prompt and
+    asks again. A lookup round is not a checked round, and the numbers in the results can be used in the reply."""
     gone = "\n".join(f"product {r['product_id']}: {r['title']}" for r in removed) or "none"
     base = ("Cards:\n" + "\n".join(card_text(n, c) for n, c in enumerate(cards, 1))
             + f"\n\nRemoved in this conversation:\n{gone}\n\nConversation:\n{history}")
-    last, errors = None, []
-    for _ in range(max_rounds):
-        calls = llm.tools("chat", ACT_SYSTEM, retry_prompt(base, last, errors), TOOLS, name="Act", text_reply=Reply)
+    tools = TOOLS + (LOOKUP_TOOLS if lookup else [])
+    last, errors, found, looked, rounds = None, [], [], [], 0
+    allowed = set(allowed)
+    while rounds < max_rounds:
+        prompt = base + ("\n\nWhat you looked up in this turn:\n" + "\n\n".join(found) if found else "")
+        calls = llm.tools("chat", ACT_SYSTEM, retry_prompt(prompt, last, errors), tools, name="Act",
+                          text_reply=Reply)
+        asked = [c for c in calls if isinstance(c, tuple(LOOKUP_TOOLS))]
+        if asked and len(looked) < max_lookups:
+            results = [lookup.run(c) for c in asked]
+            found += results
+            looked += [tool_name(type(c)) for c in asked]
+            allowed |= set().union(*(numbers_in(r) for r in results))
+            llm.calls[-1].schema = "Lookup"  # not a checked round of the actions
+            continue
+        rounds += 1
+        calls = [c for c in calls if not isinstance(c, tuple(LOOKUP_TOOLS))]
         errors = check_act(calls, cards, {r["product_id"] for r in removed}, allowed, last_user)
+        if not calls:
+            errors = ["you looked up enough in this turn. Answer the shopper now with what you found"]
         llm.mark_checked(not errors, errors)
         if not errors:
-            return collect(calls, picks, last_user)
+            result = collect(calls, picks, last_user)
+            result.lookups = looked
+            return result
         last = ToolCalls(calls=[{"tool": tool_name(type(c)), "args": c.model_dump()} for c in calls])
     return None

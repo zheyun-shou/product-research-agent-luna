@@ -39,7 +39,9 @@ On 2026-10-06, `scout backfill-text` stored the text of 23 of the 24 stored list
 - The parser reads the description, the A+ text, the reviews on the page and the image URLs.
 - `save_record` stores the text with each new fetch. `scout backfill-text` reads the newest snapshot of each stored product.
 
-### Task 3: Tools that look things up
+### Task 3: Tools that look things up (done)
+
+`read_images` downloads at most 6 images of one product from the image server of amazon.se (m.media-amazon.com), not from its pages. The numbers in the lookup results can be used in the reply. `scout eval-chat` has the same lookups, because it uses `shared_deps`.
 
 Lookup tools return their result to the model, and the model continues in the same turn (at most 3 lookups).
 

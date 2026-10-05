@@ -1,7 +1,8 @@
 """The real dependencies of the chat graph: Postgres, the amazon.se browser and the LLM."""
 from scout.agent.graph import Deps
+from scout.agent.lookup import image_reader
 from scout.crawl import crawl as run_crawl
-from scout.db.store import add_eliminations, eliminated_products, restore_products
+from scout.db.store import add_eliminations, eliminated_products, page_texts, restore_products
 from scout.extract.page import enrich_record
 from scout.extract.screen import screen_titles
 from scout.picks.pipeline import make_picks, refetcher, shortlist
@@ -52,6 +53,9 @@ def shared_deps(conn, llm, crawl, refetch, k: int = 5, size_check: bool = True, 
         crawl=crawl,
         picks=picks,
         cards=lambda ids: load_cards_by_ids(conn, ids),
+        page_texts=lambda ids: page_texts(conn, ids),
+        query=lambda profile, needs: shortlist(conn, profile, needs, llm, (), screened).ranked,
+        read_images=image_reader(llm),
         **rest,
     )
 

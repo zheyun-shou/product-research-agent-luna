@@ -193,3 +193,10 @@ def format_picks(picks: list[Card], texts: PicksText | None, notes: list[str],
         lines += [f"check failed: {e}" for e in check_errors]
     lines += notes
     return "\n".join(lines)
+
+
+def card_text(n: int, card: Card) -> str:
+    attrs = ", ".join(f"{k}={attribute_text(v)}" for k, v in card.attributes.items())
+    stock = {True: "yes", False: "no", None: "not known"}[card.in_stock]
+    return (f"Pick {n}: {card.title} | price={card.price} {card.currency or ''} | in_stock={stock} | "
+            f"rating={card.rating} | review_count={card.review_count} | {attrs or 'no attributes on the card'}")

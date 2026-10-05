@@ -7,6 +7,7 @@ from langgraph.graph import END, START, StateGraph
 from scout.agent.clarify import clarify, pick_category
 from scout.agent.followup import act
 from scout.agent.history import assistant, compact, history_text, last_user_text, user_numbers
+from scout.agent.lookup import ImageAnswer, Lookup
 from scout.agent.state import ChatState
 from scout.crawl import CrawlReport
 from scout.llm.client import LLMOutputError, LLMUnavailable
@@ -38,6 +39,10 @@ class Deps:
     restore: Callable[[str, list[int]], None]
     say: Callable[[str], None] = print
     tracer: Any = field(default_factory=NoTracer)
+    # The lookup tools. Without page_texts the model has only the cards.
+    page_texts: Callable[[list[int]], dict] | None = None
+    query: Callable[[CategoryProfile, Needs], list[Card]] | None = None
+    read_images: Callable[[list[str], str], Any] | None = None
 
 
 def crawl_text(report: CrawlReport, terms: str, page: int) -> str:
@@ -181,13 +186,22 @@ def build_graph(deps: Deps, checkpointer=None):
 
     def act_node(state, config):
         picks, removed = state.get("picks", []), list(state.get("removed", []))
-        allowed = user_numbers(state) | numbers_in(needs_of(state).text())
-        result = act(llm, picks, marked_cards(picks), removed, history_text(state), allowed, last_user_text(state))
+        needs = needs_of(state)
+        allowed = user_numbers(state) | numbers_in(needs.text())
+        cards = marked_cards(picks)
+        lookup = None
+        if deps.page_texts and needs.category:
+            lookup = Lookup(deps.load_profile(needs.category), needs, cards, deps.page_texts,
+                            deps.query or (lambda profile, n: []),
+                            deps.read_images or (lambda urls, q: ImageAnswer(found=False)))
+        result = act(llm, picks, cards, removed, history_text(state), allowed, last_user_text(state),
+                     lookup=lookup)
         if result is None:
             return {"route": {"action": "stop"}, "messages": [assistant(
                 "I could not write a reply whose numbers and actions agree with the records, so I changed nothing. "
                 "You can say it in other words.")]}
-        route = {"action": result.action, "tools": result.tools, "pick_numbers": [], "restored": []}
+        route = {"action": result.action, "tools": result.tools, "lookups": result.lookups, "pick_numbers": [],
+                 "restored": []}
         if result.question:
             return {"route": route, "messages": [assistant(result.question)]}
         thread, messages = thread_of(config), []
