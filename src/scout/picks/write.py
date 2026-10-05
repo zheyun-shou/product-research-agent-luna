@@ -2,9 +2,11 @@
 import json
 import re
 from decimal import Decimal
+from typing import Sequence
 
 from pydantic import BaseModel
 
+from scout.llm.feedback import retry_prompt
 from scout.picks.rank import PRIOR_WEIGHT, Card
 from scout.sources.amazon_se.numbers import to_decimal
 
@@ -80,9 +82,51 @@ def _card_json(card: Card) -> str:
     }, ensure_ascii=False)
 
 
+def numbers_in(text: str) -> set[Decimal]:
+    return {n for raw in SUMMARY_NUMBER.findall(text) if (n := to_decimal(raw)) is not None}
+
+
+def check_claim(facts: dict[str, Decimal | str], field: str, value: str) -> tuple[str | None, Decimal | None]:
+    """Return (error, number). The number is set when a numeric claim agrees with the card."""
+    if field not in facts:
+        return f"no field '{field}' on the card", None
+    fact = facts[field]
+    if isinstance(fact, str):
+        return (None, None) if _as_text(value) == _as_text(fact) else (f"{field} is {fact}, not {value}", None)
+    number = to_decimal(value)
+    if number is None or number != fact:
+        return f"{field} is {fact}, not {value}", None
+    return None, number
+
+
+def unchecked_numbers(text: str, allowed: set[Decimal], models: Sequence[str | None] = ()) -> list[str]:
+    """Numbers in the text that are not allowed. Model numbers and the "/5" of a rating do not count."""
+    text = RATING_SCALE.sub("", text)
+    for model in models:
+        if model:
+            text = re.sub(re.escape(model), "", text, flags=re.IGNORECASE)
+    return [raw for raw in SUMMARY_NUMBER.findall(text) if (n := to_decimal(raw)) is not None and n not in allowed]
+
+
+def attribute_text(entry: dict) -> str:
+    text = f"{entry.get('value')} {entry.get('unit') or ''}".strip()
+    return f"{text} (doubtful)" if entry.get("doubtful") else text
+
+
+def number_facts(facts: dict[str, Decimal | str]) -> str:
+    return ", ".join(f"{k}={v.normalize():f}" for k, v in facts.items() if isinstance(v, Decimal)) or "none"
+
+
+def passed_picks(text: PicksText, errors: list[str]) -> PicksText | None:
+    """Keep the picks with no problem. Each problem of one pick starts with "<listing_id>:"."""
+    failed = {int(head) for e in errors if (head := e.split(":", 1)[0]).isdigit()}
+    kept = [p for p in text.picks if p.listing_id not in failed]
+    return PicksText(picks=kept) if kept else None
+
+
 def check_picks(text: PicksText, cards: dict[int, Card], conditions_text: str = "") -> list[str]:
     errors = []
-    given = {n for raw in SUMMARY_NUMBER.findall(conditions_text) if (n := to_decimal(raw)) is not None}
+    given = numbers_in(conditions_text)
     for pick in text.picks:
         card = cards.get(pick.listing_id)
         if card is None:
@@ -91,26 +135,14 @@ def check_picks(text: PicksText, cards: dict[int, Card], conditions_text: str = 
         facts = card_facts(card)
         claimed: set[Decimal] = set()
         for claim in pick.claims:
-            if claim.field not in facts:
-                errors.append(f"{pick.listing_id}: no field '{claim.field}' on the card")
-                continue
-            fact = facts[claim.field]
-            if isinstance(fact, str):
-                if _as_text(claim.value) != _as_text(fact):
-                    errors.append(f"{pick.listing_id}: {claim.field} is {fact}, not {claim.value}")
-                continue
-            value = to_decimal(claim.value)
-            if value is None or value != fact:
-                errors.append(f"{pick.listing_id}: {claim.field} is {fact}, not {claim.value}")
-                continue
-            claimed.add(value)
-        summary = RATING_SCALE.sub("", pick.summary)
-        if card.model:
-            summary = re.sub(re.escape(card.model), "", summary, flags=re.IGNORECASE)
-        for raw in SUMMARY_NUMBER.findall(summary):
-            number = to_decimal(raw)
-            if number is not None and number not in claimed and number not in given:
-                errors.append(f"{pick.listing_id}: the number {raw} in the summary is not in the claims")
+            error, number = check_claim(facts, claim.field, claim.value)
+            if error:
+                errors.append(f"{pick.listing_id}: {error}")
+            elif number is not None:
+                claimed.add(number)
+        for raw in unchecked_numbers(pick.summary, claimed | given, [card.model]):
+            errors.append(f"{pick.listing_id}: the number {raw} in the summary is not in the claims. Add a claim "
+                          f"with the card field that has it, or remove it. Numbers on this card: {number_facts(facts)}")
     missing_ids = sorted(set(cards) - {p.listing_id for p in text.picks})
     if missing_ids:
         errors.append(f"no pick written for ids {missing_ids}")
@@ -119,17 +151,16 @@ def check_picks(text: PicksText, cards: dict[int, Card], conditions_text: str = 
 
 def write_picks(llm, cards: list[Card], conditions_text: str, language: str = "English",
                 max_rounds: int = 3) -> tuple[PicksText | None, list[str]]:
+    """Return the checked texts and the problems that are left. A pick with a problem has no text."""
     by_id = {card.listing_id: card for card in cards}
     base = f"Conditions: {conditions_text or 'none'}\n\nCards:\n" + "\n".join(_card_json(c) for c in cards)
-    errors: list[str] = []
+    text, errors = None, []
     for _ in range(max_rounds):
-        prompt = base if not errors else base + "\n\nYour last answer had these problems. Fix them:\n" + \
-            "\n".join(f"- {e}" for e in errors)
-        text = llm.structured("chat", SYSTEM.format(language=language), prompt, PicksText)
+        text = llm.structured("chat", SYSTEM.format(language=language), retry_prompt(base, text, errors), PicksText)
         errors = check_picks(text, by_id, conditions_text)
         if not errors:
             return text, []
-    return None, errors
+    return passed_picks(text, errors), errors
 
 
 def format_picks(picks: list[Card], texts: PicksText | None, notes: list[str],
@@ -156,7 +187,8 @@ def format_picks(picks: list[Card], texts: PicksText | None, notes: list[str],
     if dropped:
         lines.append(f"{dropped} products failed your conditions and are not shown.")
     if check_errors:
-        lines.append("The written summaries did not pass the checks, so only the facts are shown.")
+        lines.append("The written summaries did not pass the checks, so only the facts are shown." if texts is None
+                     else "Some summaries did not pass the checks. Those picks show only the facts.")
         lines += [f"check failed: {e}" for e in check_errors]
     lines += notes
     return "\n".join(lines)

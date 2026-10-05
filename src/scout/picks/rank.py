@@ -122,3 +122,20 @@ def drop_implausible_sizes(cards: list[Card]) -> dict[int, str]:
             notes[card.listing_id] = (f"{card.title}: the sizes on the page cannot hold "
                                       f"{values['total_volume']} l, so they were ignored.")
     return notes
+
+
+CARDS_BY_ID_SQL = """
+SELECT DISTINCT ON (l.id) l.id AS listing_id, p.id AS product_id, COALESCE(l.title, p.name) AS title, p.brand,
+       p.model, l.url, v.price, v.currency, v.in_stock, l.rating, l.review_count, p.attributes, l.fetched_at
+FROM listings l
+JOIN products p ON p.id = l.product_id
+JOIN variants v ON v.listing_id = l.id
+WHERE l.id = ANY(%(ids)s)
+ORDER BY l.id, v.updated_at DESC
+"""
+
+
+def load_cards_by_ids(conn: psycopg.Connection, listing_ids: list[int]) -> list[Card]:
+    rows = conn.execute(CARDS_BY_ID_SQL, {"ids": list(listing_ids)}).fetchall()
+    by_id = {row["listing_id"]: Card(**row) for row in rows}
+    return [by_id[i] for i in listing_ids if i in by_id]

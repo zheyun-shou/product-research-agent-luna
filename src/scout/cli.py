@@ -19,9 +19,9 @@ from scout.extract.screen import screen_titles
 from scout.eval.prices import evaluate_prices, extract_from_snapshot, read_labels, write_template
 from scout.llm.client import LLM, LLMOutputError, LLMUnavailable
 from scout.llm.config import load_llm_config
-from scout.picks.rank import apply_conditions, drop_implausible_sizes, load_cards, parse_condition, rank
-from scout.picks.recheck import recheck_picks
-from scout.picks.write import format_picks, write_picks
+from scout.needs import ConditionSpec, Needs, check_needs
+from scout.picks.pipeline import make_picks, refetcher, shortlist
+from scout.picks.rank import parse_condition
 from scout.profiles import load_profile
 from scout.sources.amazon_se.adapter import AmazonSeAdapter
 from scout.sources.amazon_se.check import check_page
@@ -169,52 +169,20 @@ def picks(
     settings = load_settings()
     profile = load_profile(category)
     conditions = [parse_condition(w) for w in where or []]
-    for cond in conditions:
-        if profile.attribute(cond.attribute) is None:
-            raise typer.BadParameter(f"'{cond.attribute}' is not in the {category} profile")
-    budget_sek = Decimal(str(budget)) if budget is not None else None
-    conditions_text = ", ".join([*(where or []), *([f"budget {budget:g} SEK"] if budget_sek else [])])
+    needs = Needs(category=category, budget=budget,
+                  conditions=[ConditionSpec(attribute=c.attribute, op=c.op, value=c.value) for c in conditions])
+    for error in check_needs(needs, profile):
+        raise typer.BadParameter(error)
     llm = None if no_llm else LLM(load_llm_config())
-    notes: list[str] = []
     with connect(settings.database_url) as conn:
-        cards = load_cards(conn, category, budget_sek)
-        size_notes = drop_implausible_sizes(cards)
-        cards, dropped = apply_conditions(cards, conditions)
-        ranked = rank(cards)
-        if llm is None:
-            notes.append("Titles were not screened, so items outside the category can appear.")
-        elif ranked:
-            try:
-                on_topic = screen_titles(ranked, profile, llm)
-                if len(on_topic) < len(ranked):
-                    notes.append(f"{len(ranked) - len(on_topic)} stored items are not a {profile.display_name.lower()} "
-                                 "by their titles and were left out.")
-                ranked = on_topic
-            except (LLMUnavailable, LLMOutputError) as exc:
-                notes.append(f"Title screening skipped: {exc}")
-        if not ranked:
+        short = shortlist(conn, profile, needs, llm)
+        if not short.ranked:
             typer.echo("No stored product meets these conditions. Run scout crawl first, or loosen them.")
             raise typer.Exit(1)
         with BrowserSession(settings.browser_profile_dir) as session:
             adapter = AmazonSeAdapter(session, settings.snapshot_dir)
-
-            def refetch(card):
-                page = fetch_checked(adapter, conn, card.url, ask_user)
-                if page is None:
-                    return None
-                rec = adapter.parse(page)
-                save_record(conn, rec, category)
-                return rec
-
-            chosen, recheck_notes = recheck_picks(ranked, k, refetch, budget_sek, conditions)
-    notes += recheck_notes + [size_notes[c.listing_id] for c in chosen if c.listing_id in size_notes]
-    texts, errors = None, []
-    if chosen and llm is not None:
-        try:
-            texts, errors = write_picks(llm, chosen, conditions_text, lang)
-        except LLMUnavailable as exc:
-            notes.append(f"No summaries: {exc}")
-    typer.echo(format_picks(chosen, texts, notes, conditions_text, dropped, errors))
+            result = make_picks(short, needs, k, refetcher(adapter, conn, category, ask_user), llm, lang)
+    typer.echo(result.render())
     if llm is not None:
         report_llm_use(llm)
 

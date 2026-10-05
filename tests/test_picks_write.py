@@ -88,3 +88,26 @@ def test_numbers_from_the_shoppers_conditions_may_be_repeated():
     text = picks("Under your 9 000 SEK budget and 180 cm limit.", [])
     assert check_picks(text, cards(), "height<=180, budget 9000 SEK") == []
     assert check_picks(text, cards()) != []
+
+
+def test_the_next_round_gets_the_last_answer_and_the_numbers_on_the_card():
+    bad = picks("Only 30 dB, rated 4.9.", [("rating", "4.9")])
+    good = picks("Rated 4.5.", [("rating", "4.5")])
+    llm = FakeLLM([bad, good])
+    write_picks(llm, list(cards().values()), "")
+    retry = llm.requests[1][1]
+    assert '"summary":"Only 30 dB, rated 4.9."' in retry
+    assert "rating is 4.5, not 4.9" in retry
+    assert "the number 30 in the summary is not in the claims" in retry
+    assert "Numbers on this card: price=5000, rating=4.5, review_count=1234, height=178" in retry
+
+
+def test_after_the_last_round_only_failed_picks_lose_their_summary():
+    two = {**cards(), 2: card(2, 4.0, 50)}
+    text = PicksText(picks=[PickText(listing_id=1, summary="Rated 4.9.", claims=[Claim(field="rating", value="4.9")]),
+                            PickText(listing_id=2, summary="Rated 4.0.", claims=[Claim(field="rating", value="4.0")])])
+    kept, errors = write_picks(FakeLLM([text, text, text]), list(two.values()), "")
+    assert [p.listing_id for p in kept.picks] == [2] and errors[0] == "1: rating is 4.5, not 4.9"
+    assert all(e.startswith("1:") for e in errors)
+    out = format_picks(list(two.values()), kept, [], "", 0, errors)
+    assert "Rated 4.0." in out and "Rated 4.9." not in out and "Some summaries did not pass" in out
