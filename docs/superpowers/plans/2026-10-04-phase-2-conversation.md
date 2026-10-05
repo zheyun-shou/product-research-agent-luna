@@ -12,7 +12,7 @@
 
 **Video:** a walkthrough of this plan, with captions and voice, is at https://claude.ai/artifact/BRmWUvhE8E82DBwQQYeLNx. Fig. 4 of the diagram (https://claude.ai/artifact/4jJqCkVudUFU24kTyXsiqZ) shows one turn of the conversation.
 
-**Dry run.** On 2026-10-04 Claude applied all code of this plan in a temporary Git worktree, on commit f676761. 204 tests passed: the 163 tests of phase 1 and 41 new ones. Then Claude ran one real clarify turn of `scout chat` in Chinese ("a fridge, 60 cm wide, 186 cm high, budget 9000 kronor"). The agent stored width<=60, height<=186 and budget 9000. It asked about the kind (with or without a freezer part), the depth and the noise. No browser opened. The chat role used 2 calls on Groq, because the Gemini chat quota was used up. Claude then deleted that thread and the worktree. Later on 2026-10-04, Zheyun added decisions 7 and 8. Claude applied the changed plan again in a new worktree: 207 tests passed (163 and 44 new). Task 12 was not part of either run. The tasks below are still not done in the repository.
+**Dry run.** On 2026-10-04 Claude applied all code of this plan in a temporary Git worktree, on commit f676761. 204 tests passed: the 163 tests of phase 1 and 41 new ones. Then Claude ran one real clarify turn of `scout chat` in Chinese ("a fridge, 60 cm wide, 186 cm high, budget 9000 kronor"). The agent stored width<=60, height<=186 and budget 9000. It asked about the kind (with or without a freezer part), the depth and the noise. No browser opened. The chat role used 2 calls on Groq, because the Gemini chat quota was used up. Claude then deleted that thread and the worktree. Later on 2026-10-04, Zheyun added decisions 7 and 8. Claude applied the changed plan again in a new worktree: 207 tests passed (163 and 44 new). On 2026-10-05 Zheyun reviewed the plan. Decisions 9 to 13 and Task 12 come from that review. Claude applied the plan a third time: 220 tests passed (163 and 57 new), and Task 12 ran the 12 scripted conversations with Nemotron 3 Ultra. The Gemini chat quota ran out after the first script. The results are under Task 12. Task 13 was not part of any run. The tasks below are still not done in the repository.
 
 ## Global Constraints
 
@@ -22,21 +22,27 @@
   - Use only free tiers. Never enable billing on Gemini, Groq or Langfuse.
 - The conversation state keeps product IDs, the needs and the messages. Tools get the product data from Postgres when a step needs it.
 - A conversation that only clarifies the needs must not open the browser.
+- The agent writes all its messages in English. The shopper can write in any language.
 - Langfuse is optional. Without `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY`, all tracing calls do nothing, and the program prints no warning.
 - The tests never call a real LLM, a real browser or Langfuse. They use `FakeLLM`, fake dependencies and `InMemorySaver`. Only tests with the mark `db` use the Postgres container.
 
 ## Decisions for this phase
 
-These points differ from the spec or make it more exact. Task 14 writes them into the spec.
+These points differ from the spec or make it more exact. Task 15 writes them into the spec.
 
 1. **Tool selection is structured output, not native tool calls.** Each follow-up turn makes one `Route` object with one action. This uses the same JSON path for Gemini and Groq, and Python validates each choice before a tool runs. The spec tools map to actions as follows. `query_products`: `change_needs`, then the SQL and Python filters. `exclude_and_rerank`: `exclude`. `fetch_more`: `more`. `calculate`: `calculate`. `recheck_availability`: `recheck`. `search_text` and `extract_attribute` need chunks and come in phase 3. `update_profile` comes in phase 4, with profile generation.
 2. **Login and captcha pauses stay a prompt in the terminal.** The graph runs in the same process as the terminal, so the crawl can wait for the user, as in phase 1. The LangGraph interrupt comes in phase 7, when a web page replaces the terminal.
 3. **Profiles get kinds.** The 5 l cosmetics cooler ranked second in the phase 1 runs, because "fridge" was too wide. A profile now lists kinds (for the fridge: with a freezer part, without one, mini fridge, wine cooler, cool box), each with Swedish search terms. The clarify step must know the kind before it searches. The title screening keeps only items of that kind.
 4. **The clarify step must not invent numbers.** Each condition and the budget must agree with a number that the user wrote, with a unit change of a power of ten at most (1,8 m is 180 cm). Otherwise the model must ask.
 5. **Size doubts are marked, never changed.** The worker compares the sizes on each pick with the title, the bullet points and the specifications. A doubtful size gets "(doubtful)" and a note. A quote in the note must be on the page.
-6. **A hidden price comes from one click on the page.** Zheyun found two cases in her label review on 2026-10-04 (5 of 38 labelled pages). On 4 pages, amazon.se shows no buy box, only "Priset är högre än vanligt" and the button "Visa alla köpalternativ". The program opens the offer panel and reads the lowest new offer that can go in the cart. On 1 page, the price shows only after a size is selected. The program clicks each size and stores each one as a variant. Each price keeps its source (`all_offers` or `size_choice`), and the picks show it.
-7. **Each thread searches one time before it uses the stored products.** Zheyun asked on 2026-10-04: stored data gets old. So the first search for a set of search terms in a thread always reads result page 1 on amazon.se. Products that are already stored get the rating and the review count of the result card, and the browser does not open them. Only new products get a product page. When all results are already stored, the search costs one page load. After that, the thread uses the stored products while 10 or more meet the needs.
-8. **A failed check tells the model what is wrong and what is right.** Zheyun asked for this on 2026-10-04. The next round gets the last answer of the model and each problem with the value from the record, for example "height is 185, not 186", or the numbers on the card for a number that has no claim. After the last round, only the picks that still fail lose their summary.
+6. **A hidden price comes from one click on the page.** Zheyun found two cases in her label review on 2026-10-04 (5 of 38 labelled pages). On 4 pages, amazon.se shows no buy box, only "Priset är högre än vanligt" and the button "Visa alla köpalternativ". The program opens the offer panel and reads the lowest new offer that can go in the cart. On 1 page, the price shows only after a size is selected. The program opens each size by its own ASIN and stores it as its own listing, because each size has its own measurements and price. Each price keeps its source (`all_offers` or `size_choice`), and the picks show it.
+7. **Each thread searches one time before it uses the stored products.** Zheyun asked on 2026-10-04: stored data gets old. So the first search for a set of search terms in a thread always reads result page 1 on amazon.se. Products that are already stored get the rating and the review count of the result card, and the browser does not open them. Only new products get a product page. When all results are already stored, the search costs one page load. After that, the thread uses the stored products while 10 or more meet the needs. The thread also reads page 1 again when the budget is higher than in the earlier search for these words, because the crawl does not store results over the budget.
+8. **A failed check tells the model what is wrong and what is right.** Zheyun asked for this on 2026-10-04. The next round gets the last answer of the model and each problem with the value from the record, for example "height is 185, not 186", or the numbers on the card for a number that has no claim. After the last round, only the picks that still fail lose their summary. The calculation tool gets the same feedback.
+9. **The agent writes English.** Zheyun decided this on 2026-10-05. The shopper can write in Chinese, Swedish or English. The questions, the answers and the fixed texts are in English. The state has no language field.
+10. **A follow-up changes only what it must.** "More" leaves out the products that the thread showed since the needs last changed. "Exclude" keeps the other picks without a new page load and adds new ones. "Recheck" checks the shown picks first and replaces the ones that fail. A kept pick keeps its size doubt and its note.
+11. **Only lengths and weights can change unit.** 1,8 m is 180 cm, and 600 mm is 60 cm. The budget and the other attributes must use a number that the shopper wrote: "2 people" is not 200 l, and "60 cm" is not a budget of 6000. "9k", "9 tusen", "9千" and "1万" count as written numbers.
+12. **A problem in one step ends the turn, not the conversation.** Each node catches all errors and gives a short message. The chat loop catches the rest, closes the database transaction and waits for the next message.
+13. **Scripted conversations measure the agent.** `scout eval-chat` runs 12 scripts with the real chat model over the stored products, without the browser. Python compares the needs, the route and other values with the values that the script expects, and it counts the check rounds of each step. A new chat model must pass this run before it goes into `config/models.yaml`.
 
 ## Review Focus
 
@@ -46,9 +52,15 @@ These points differ from the spec or make it more exact. Task 14 writes them int
 4. The calculation tool gets an exchange rate that the user did not give. It must ask for the rate and calculate nothing. Test in Task 8.
 5. A conversation that only clarifies never calls the crawl and never opens the browser. Test in Task 9.
 6. The size check returns a quote that is not on the page. The size must stay as it is, with no note. Test in Task 11.
-7. A product page has no buy box and the offer panel has only used offers. The price must stay empty. A used offer must never become the price. Test in Task 12.
+7. A product page has no buy box and the offer panel has only used offers. The price must stay empty. A used offer must never become the price. Test in Task 13.
 8. A new thread starts with 20 stored products that meet the needs. The agent must still read result page 1 one time, and it must not open the product pages of stored products. Tests in Tasks 4 and 9.
 9. A summary has a number that is not in its claims. The retry prompt must contain the last answer and the numbers on that card. After three failed rounds, the other picks keep their summaries. Test in Task 3.
+10. The shopper raises the budget from 9000 to 12000 with the same search words. The agent must read result page 1 again. A lower budget must not start a search. Test in Task 9.
+11. The shopper asks for more. The new picks must not repeat the products that the thread showed. Test in Task 9.
+12. The shopper rejects pick 1. Pick 2 stays without a new page load, and it keeps its "(doubtful)" mark and its note. Tests in Tasks 3 and 9.
+13. The browser fails during a search. The turn ends with a message, the picks step does not run, and the needs stay. A failed SQL statement does not block the next turn. Tests in Tasks 9 and 10.
+14. The shopper writes "a family of 4". A condition of 400 l or a budget of 4000 must go back to the model. Tests in Tasks 2 and 5.
+15. The shopper writes "Remove that one" with no number. No reply may say that a pick was removed. The script `en-unclear-exclude` of Task 12 checks this with a real model.
 
 ---
 
@@ -56,6 +68,8 @@ These points differ from the spec or make it more exact. Task 14 writes them int
 
 ```
 pyproject.toml                       add langgraph, langgraph-checkpoint-postgres, langfuse
+config/models.yaml                   add the nvidia provider
+eval/chat/conversations.yaml         12 scripted conversations with the expected values
 profiles/fridge.yaml                 add search_terms_sv and kinds
 src/scout/
   trace.py                           NoTracer, LangfuseTracer, tracer_from_env
@@ -63,16 +77,17 @@ src/scout/
   needs.py                           Needs, ConditionSpec, check_needs, was_said
   profiles.py                        add ProductKind, CategoryProfile.kinds and .kind()
   crawl.py                           add first_page, skip_known, CrawlReport.known
-  cli.py                             picks uses the pipeline; add chat, threads, trace-ping
-  llm/client.py                      a tracer records each attempt as a generation
+  cli.py                             picks uses the pipeline; add chat, threads, trace-ping, eval-chat
+  llm/client.py                      a tracer records each attempt; each call records its schema
+  eval/chat.py                       run and score the scripted conversations
   extract/screen.py                  screen_titles takes the wanted kind
   extract/doubt.py                   worker size check with checked quotes
   sources/amazon_se/offers.py        parse the offer panel (Visa alla köpalternativ)
   sources/amazon_se/product.py       detect a hidden price: offer panel or size choice
   db/schema.sql                      add eliminations
-  db/conn.py                         add connect_checkpoints
+  db/conn.py                         add end_transaction, connect_checkpoints
   db/store.py                        add known_source_ids, refresh_listings, add_eliminations, eliminated_products
-  picks/pipeline.py                  shortlist, make_picks, refetcher, PicksResult
+  picks/pipeline.py                  shortlist (screens a title one time), make_picks (kept and first cards)
   picks/rank.py                      add load_cards_by_ids
   picks/write.py                     shared claim checks; "(doubtful)" in the output
   agent/
@@ -87,7 +102,7 @@ src/scout/
 tests/
   fakes.py                           add FakeTracer
   test_trace.py, test_needs.py, test_picks_pipeline.py, test_history.py, test_clarify.py,
-  test_followup.py, test_calc.py, test_graph.py, test_chat_db.py, test_doubt.py
+  test_followup.py, test_calc.py, test_graph.py, test_chat_db.py, test_doubt.py, test_eval_chat.py
 ```
 
 ---
@@ -161,6 +176,29 @@ class FakeTracer:
         self.events.append(("flush",))
 ```
 
+In `tests/fakes.py`, import `CallRecord` from `scout.llm.client`. Then replace the class `FakeLLM`, so that it records each call as the real client does:
+
+```python
+class FakeLLM:
+    """Returns queued replies (or raises queued exceptions) and records the prompts."""
+
+    def __init__(self, replies):
+        self.replies = list(replies)
+        self.requests = []
+        self.calls = []
+
+    def structured(self, role, system, user, schema):
+        self.requests.append((role, user))
+        self.calls.append(CallRecord(role, f"fake-{role}", 0, 0, 0.0, schema.__name__))
+        reply = self.replies.pop(0)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
+
+    def model_for(self, role):
+        return f"fake-{role}"
+```
+
 Create `tests/test_trace.py`:
 
 ```python
@@ -199,6 +237,18 @@ def test_a_failed_attempt_is_recorded_as_an_error():
     tracer = FakeTracer()
     make([server_busy(), '{"answer": "ok"}'], tracer).structured("chat", "sys", "user", Answer)
     assert ("error", "generation") in tracer.events
+
+
+def test_each_call_records_its_schema_and_whether_the_reply_matched():
+    llm = make(['{"wrong": 1}', '{"answer": "pong"}'], FakeTracer())
+    llm.structured("chat", "sys", "user", Answer)
+    assert [(c.schema, c.valid) for c in llm.calls] == [("Answer", False), ("Answer", True)]
+
+
+def test_a_hung_request_stops_after_the_timeout(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    client = LLM(CONFIG).client("gemini")
+    assert (client.timeout, client.max_retries) == (LLM.TIMEOUT, 0)
 ```
 
 - [ ] **Step 3: Run the tests to see them fail**
@@ -286,7 +336,14 @@ def tracer_from_env():
 
 - [ ] **Step 5: Record each LLM attempt**
 
-In `src/scout/llm/client.py`, import the tracer:
+In `src/scout/llm/client.py`, add two fields at the end of `CallRecord`. The scripted conversations of Task 12 count the check rounds of each step with them.
+
+```python
+    schema: str = ""
+    valid: bool = True  # False when the reply did not match the schema
+```
+
+Import the tracer:
 
 ```python
 from scout.trace import NoTracer
@@ -319,8 +376,24 @@ In `_structured`, replace the `try` block that calls `client.chat.completions.cr
                     gen.update(output=text, usage_details={"input": tokens_in, "output": tokens_out})
             except RateLimitError as exc:
                 ...  # unchanged
-            self.calls.append(CallRecord(role, role_cfg.model, tokens_in, tokens_out, self._clock() - started))
+            record = CallRecord(role, role_cfg.model, tokens_in, tokens_out, self._clock() - started, schema.__name__)
+            self.calls.append(record)
+            try:
+                return schema.model_validate_json(strip_fences(text))
+            except ValidationError as exc:
+                record.valid = False
+                ...  # unchanged
 ```
+
+In `LLM`, add `TIMEOUT = 120  # seconds for one request` after `MAX_ATTEMPTS`, and create each client with a timeout and without the retries of the OpenAI library:
+
+```python
+            # A hung request counts as unavailable after TIMEOUT seconds. _structured does its own retries.
+            self._clients[provider] = OpenAI(base_url=settings.base_url, api_key=key, timeout=self.TIMEOUT,
+                                             max_retries=0)
+```
+
+The library waits 600 seconds and tries 2 more times by default, so one hung request could stop a chat turn for 30 minutes. This happened in a scripted run on 2026-10-05. A timeout is an `APIConnectionError`, so `_structured` already treats it as "unavailable".
 
 - [ ] **Step 6: Add `scout trace-ping`**
 
@@ -348,7 +421,7 @@ def trace_ping() -> None:
 - [ ] **Step 7: Run all tests**
 
 Run: `python -m pytest -q`
-Expected: all tests pass, including the 3 new ones.
+Expected: all tests pass, including the 5 new ones.
 
 - [ ] **Step 8: Commit**
 
@@ -394,7 +467,7 @@ Create `tests/test_needs.py`:
 ```python
 from decimal import Decimal
 
-from scout.needs import ConditionSpec, Needs, check_needs, was_said
+from scout.needs import UNIT_FACTORS, ConditionSpec, Needs, check_needs, was_said
 from scout.profiles import load_profile
 
 FRIDGE = load_profile("fridge")
@@ -419,12 +492,13 @@ def test_wanted_and_search_terms_follow_the_kind():
     assert needs(kind="mini_fridge", search_terms_sv="liten kyl").search_terms(FRIDGE) == "liten kyl"
 
 
-def test_unit_changes_count_as_said():
-    said = {Decimal("1.8"), Decimal("9"), Decimal("600")}
-    assert was_said(180, said)      # 1,8 m
-    assert was_said(9000, said)     # 9k
-    assert was_said(60, said)       # 600 mm
-    assert not was_said(185, said)
+def test_only_lengths_and_weights_allow_a_unit_change():
+    said = {Decimal("1.8"), Decimal("600"), Decimal("60"), Decimal("2")}
+    assert was_said(180, said, UNIT_FACTORS["cm"])      # 1,8 m
+    assert was_said(60, said, UNIT_FACTORS["cm"])       # 600 mm
+    assert not was_said(185, said, UNIT_FACTORS["cm"])
+    assert not was_said(200, said)                      # "2 people" is not 200 l
+    assert not was_said(6000, said)                     # "60 cm" is not a budget of 6000
 
 
 def test_check_needs_finds_unknown_names_and_invented_numbers():
@@ -439,6 +513,9 @@ def test_check_needs_finds_unknown_names_and_invented_numbers():
     assert any("'energy_class' is not a number" in e for e in errors)
     assert any("budget 5000" in e for e in errors)
     assert not any("height" in e for e in errors)
+    volume = needs(conditions=[ConditionSpec(attribute="total_volume", op=">=", value=200)])
+    assert any("total_volume 200 is not a number the shopper wrote" in e
+               for e in check_needs(volume, FRIDGE, said={Decimal("2")}))
     assert check_needs(n.model_copy(update={"kind": None, "conditions": [], "budget": None}), FRIDGE) == []
 ```
 
@@ -510,8 +587,14 @@ from pydantic import BaseModel, Field
 from scout.picks.rank import Condition
 from scout.profiles import CategoryProfile
 
-# A number counts as said when the shopper wrote it, or wrote it in a unit that differs by a power of ten.
-FACTORS = tuple(Decimal(f) for f in ("1", "10", "100", "1000", "0.1", "0.01", "0.001"))
+# A number counts as said when the shopper wrote it, or wrote it in another unit of the same length or weight.
+# Other units and the budget allow no change: "2 people" is not 200 l, and "60 cm" is not a budget of 6000.
+UNIT_FACTORS = {
+    "cm": (Decimal("1"), Decimal("0.1"), Decimal("100")),    # cm, mm, m
+    "mm": (Decimal("1"), Decimal("10"), Decimal("1000")),    # mm, cm, m
+    "kg": (Decimal("1"), Decimal("0.001")),                  # kg, g
+}
+SAME = (Decimal("1"),)
 
 
 class ConditionSpec(BaseModel):
@@ -551,9 +634,9 @@ class Needs(BaseModel):
             or profile.search_terms_sv or profile.category
 
 
-def was_said(value: float, said: set[Decimal]) -> bool:
+def was_said(value: float, said: set[Decimal], factors: tuple[Decimal, ...] = SAME) -> bool:
     target = Decimal(str(value))
-    return any(number * factor == target for number in said for factor in FACTORS)
+    return any(number * factor == target for number in said for factor in factors)
 
 
 def _said_text(said: set[Decimal]) -> str:
@@ -571,7 +654,7 @@ def check_needs(needs: Needs, profile: CategoryProfile, said: set[Decimal] | Non
             errors.append(f"'{cond.attribute}' is not an attribute in the profile")
         elif attr.type != "number":
             errors.append(f"'{cond.attribute}' is not a number attribute, so it cannot have a condition")
-        elif said is not None and not was_said(cond.value, said):
+        elif said is not None and not was_said(cond.value, said, UNIT_FACTORS.get(attr.unit or "", SAME)):
             errors.append(f"{cond.attribute} {cond.value:g} is not a number the shopper wrote "
                           f"({_said_text(said)}). Use one of them, or ask.")
     if needs.budget is not None:
@@ -703,6 +786,35 @@ def test_cards_by_ids_keep_the_given_order(db):
     ids = [c.listing_id for c in shortlist(db, FRIDGE, Needs(category="fridge"), None).ranked]
     assert [c.listing_id for c in load_cards_by_ids(db, ids[::-1])] == ids[::-1]
     assert load_cards_by_ids(db, [999]) == []
+
+
+def test_a_title_is_screened_one_time(db):
+    stock(db)
+    screened = {}
+    llm = FakeLLM([Keep(keep=[0, 1])])
+    needs = Needs(category="fridge", kind="fridge_freezer")
+    first = shortlist(db, FRIDGE, needs, llm, screened=screened)
+    again = shortlist(db, FRIDGE, needs, llm, screened=screened)
+    assert len(llm.requests) == 1 and [c.listing_id for c in again.ranked] == [c.listing_id for c in first.ranked]
+
+
+def test_kept_cards_need_no_new_check_and_first_cards_are_checked_first(db):
+    stock(db)
+    needs = Needs(category="fridge")
+    short = shortlist(db, FRIDGE, needs, None)
+    top, second = short.ranked
+    checked = []
+
+    def counting(card):
+        checked.append(card.listing_id)
+        return refetch(card)
+
+    kept = make_picks(short, needs, 2, counting, None, kept=[top])
+    assert [c.listing_id for c in kept.chosen] == [top.listing_id, second.listing_id]
+    assert checked == [second.listing_id]
+    checked.clear()
+    make_picks(short, needs, 2, counting, None, first=[second])
+    assert checked == [second.listing_id, top.listing_id]
 ```
 
 - [ ] **Step 2: Run the tests to see them fail**
@@ -739,9 +851,14 @@ def unchecked_numbers(text: str, allowed: set[Decimal], models: Sequence[str | N
         if model:
             text = re.sub(re.escape(model), "", text, flags=re.IGNORECASE)
     return [raw for raw in SUMMARY_NUMBER.findall(text) if (n := to_decimal(raw)) is not None and n not in allowed]
+
+
+def attribute_text(entry: dict) -> str:
+    text = f"{entry.get('value')} {entry.get('unit') or ''}".strip()
+    return f"{text} (doubtful)" if entry.get("doubtful") else text
 ```
 
-Add `from typing import Sequence` to the imports. Then replace `check_picks` with:
+`attribute_text` shows a size that the worker doubts (Task 11). The answers of Task 7 use it too. Add `from typing import Sequence` to the imports. Then replace `check_picks` with:
 
 ```python
 def check_picks(text: PicksText, cards: dict[int, Card], conditions_text: str = "") -> list[str]:
@@ -856,7 +973,7 @@ Create `src/scout/picks/pipeline.py`:
 ```python
 """The picks steps, shared by `scout picks` and the chat agent."""
 from dataclasses import dataclass, field
-from typing import Callable, Collection
+from typing import Callable, Collection, Sequence
 
 import psycopg
 
@@ -890,14 +1007,18 @@ class PicksResult:
     notes: list[str]
     dropped: int
     conditions_text: str
+    card_notes: dict[int, str] = field(default_factory=dict)  # listing_id -> the size notes of that pick
 
     def render(self) -> str:
         return format_picks(self.chosen, self.texts, self.notes, self.conditions_text, self.dropped, self.errors)
 
 
 def shortlist(conn: psycopg.Connection, profile: CategoryProfile, needs: Needs, llm,
-              excluded: Collection[int] = ()) -> Shortlist:
-    """SQL filter, implausible sizes, the user's conditions, the rank, and the title screening."""
+              excluded: Collection[int] = (), screened: dict[tuple[str, int], bool] | None = None) -> Shortlist:
+    """SQL filter, implausible sizes, the user's conditions, the rank, and the title screening.
+
+    `screened` keeps the screening results (wanted kind, listing_id) -> keep, so a title is screened one time.
+    """
     cards = [c for c in load_cards(conn, profile.category, needs.budget_sek()) if c.product_id not in excluded]
     size_notes = drop_implausible_sizes(cards)
     cards, dropped = apply_conditions(cards, needs.rank_conditions())
@@ -907,8 +1028,13 @@ def shortlist(conn: psycopg.Connection, profile: CategoryProfile, needs: Needs, 
         notes.append("Titles were not screened, so items outside the category can appear.")
     elif ranked:
         wanted = needs.wanted(profile)
+        screened = {} if screened is None else screened
+        todo = [c for c in ranked if (wanted, c.listing_id) not in screened]
         try:
-            on_topic = screen_titles(ranked, profile, llm, wanted)
+            if todo:
+                kept = {c.listing_id for c in screen_titles(todo, profile, llm, wanted)}
+                screened.update({(wanted, c.listing_id): c.listing_id in kept for c in todo})
+            on_topic = [c for c in ranked if screened[(wanted, c.listing_id)]]
             if len(on_topic) < len(ranked):
                 notes.append(f"{len(ranked) - len(on_topic)} stored items are not a "
                              f"'{wanted}' by their titles and were left out.")
@@ -918,19 +1044,26 @@ def shortlist(conn: psycopg.Connection, profile: CategoryProfile, needs: Needs, 
     return Shortlist(ranked, dropped, notes, size_notes)
 
 
-def make_picks(short: Shortlist, needs: Needs, k: int, refetch: Refetch, llm,
-               language: str = "English") -> PicksResult:
-    """Recheck the top cards on the live pages, then write summaries with checked numbers."""
-    chosen, recheck_notes = recheck_picks(short.ranked, k, refetch, needs.budget_sek(), needs.rank_conditions())
-    notes = short.notes + recheck_notes + [short.size_notes[c.listing_id] for c in chosen
-                                           if c.listing_id in short.size_notes]
+def make_picks(short: Shortlist, needs: Needs, k: int, refetch: Refetch, llm, language: str = "English",
+               kept: Sequence[Card] = (), first: Sequence[Card] = ()) -> PicksResult:
+    """Recheck the top cards on the live pages, then write summaries with checked numbers.
+
+    `kept` cards stay picks without a new check. `first` cards are checked before the shortlist.
+    """
+    taken = {c.product_id for c in [*kept, *first]}
+    ranked = [*first, *(c for c in short.ranked if c.product_id not in taken)]
+    new, recheck_notes = recheck_picks(ranked, k - len(kept), refetch, needs.budget_sek(), needs.rank_conditions())
+    chosen = [*kept, *new]
+    card_notes = {c.listing_id: short.size_notes[c.listing_id] for c in chosen if c.listing_id in short.size_notes}
+    notes = short.notes + recheck_notes
     texts, errors = None, []
     if chosen and llm is not None:
         try:
             texts, errors = write_picks(llm, chosen, needs.text(), language)
         except LLMUnavailable as exc:
             notes.append(f"No summaries: {exc}")
-    return PicksResult(chosen, texts, errors, notes, short.dropped, needs.text())
+    notes += [card_notes[c.listing_id] for c in chosen if c.listing_id in card_notes]
+    return PicksResult(chosen, texts, errors, notes, short.dropped, needs.text(), card_notes)
 
 
 def refetcher(adapter, conn: psycopg.Connection, category: str, on_problem: OnProblem) -> Refetch:
@@ -1177,6 +1310,9 @@ def test_user_numbers_and_last_user_text():
     state = {"messages": [user("bredd 60, höjd 1,8 m"), assistant("Budget 9000?"), user("9 000 kr")]}
     assert user_numbers(state) == {Decimal("60"), Decimal("1.8"), Decimal("9000")}
     assert last_user_text(state) == "9 000 kr"
+    multiplied = {"messages": [user("budget 9k, or 1万, max 12 tusen; 5 kg, 60 kr")]}
+    assert {Decimal("9000"), Decimal("10000"), Decimal("12000")} <= user_numbers(multiplied)
+    assert Decimal("5000") not in user_numbers(multiplied) and Decimal("60000") not in user_numbers(multiplied)
 
 
 def test_compact_waits_until_the_history_is_long():
@@ -1204,11 +1340,13 @@ Create `src/scout/agent/history.py`:
 
 ```python
 """What the chat model sees of the conversation: a summary of the old turns and the recent messages."""
+import re
 from decimal import Decimal
 
 from pydantic import BaseModel
 
 from scout.picks.write import numbers_in
+from scout.sources.amazon_se.numbers import to_decimal
 
 KEEP = 12            # messages that stay in full after a summary
 COMPACT_AFTER = 20   # messages after the last summary that start a new summary
@@ -1244,12 +1382,25 @@ def last_user_text(state: dict) -> str:
     return next((m["content"] for m in reversed(state.get("messages", [])) if m["role"] == "user"), "")
 
 
+# "9k", "9 tusen", "9千" and "1万" are written numbers too.
+MULTIPLIED = re.compile(r"(\d+(?:[.,]\d+)?)\s*(k(?![a-zA-Z])|K(?![a-zA-Z])|tusen|thousand|千|万)")
+MULTIPLIERS = {"k": 1000, "K": 1000, "tusen": 1000, "thousand": 1000, "千": 1000, "万": 10000}
+
+
+def written_numbers(text: str) -> set[Decimal]:
+    numbers = numbers_in(text)
+    for raw, word in MULTIPLIED.findall(text):
+        if (number := to_decimal(raw)) is not None:
+            numbers.add(number * MULTIPLIERS[word])
+    return numbers
+
+
 def user_numbers(state: dict) -> set[Decimal]:
     """All numbers that the shopper wrote in this thread. Checks of later steps allow them."""
     numbers: set[Decimal] = set()
     for message in state.get("messages", []):
         if message["role"] == "user":
-            numbers |= numbers_in(message["content"])
+            numbers |= written_numbers(message["content"])
     return numbers
 
 
@@ -1303,7 +1454,7 @@ FRIDGE = load_profile("fridge")
 
 def reply(ready, question="", kind=None, conditions=(), budget=None):
     return ClarifyReply(needs=Needs(kind=kind, conditions=list(conditions), budget=budget), ready=ready,
-                        question=question, language="Chinese")
+                        question=question)
 
 
 def test_a_question_comes_back_while_the_kind_is_open():
@@ -1355,18 +1506,19 @@ from scout.profiles import CategoryProfile
 SYSTEM = """You help a shopper say what they want, before a search on amazon.se.
 You get the category profile, the needs so far and the conversation. Return the updated needs.
 Rules:
-- Use only what the shopper said. Never guess a size, a budget or a kind.
-- kind is the name of one kind in the profile, or null.
+- Use only what the shopper said. Never guess a size or a budget.
+- kind is the name of one kind in the profile, or null. Choose a kind when the words of the shopper describe it,
+  also without its name: "a fridge for my wine bottles" is a wine cooler. When two kinds fit, ask.
 - conditions use only number attributes of the profile, in the unit of the profile.
   Change units when necessary, for example 1,8 m is 180 cm. "At most" is <=, "at least" is >=.
 - budget is in SEK, or null. If the shopper gives a budget in another currency, ask for SEK.
 - preferences are short notes of soft wishes, for example "quiet" or "white".
-- search_terms_sv is one to four Swedish words for the amazon.se search for this kind, or null.
+- search_terms_sv is null. Only when the shopper asks for words that the kind does not cover, it is one to four
+  Swedish words for the amazon.se search.
 - ready is true when the kind is known and the shopper answered or skipped the questions of the profile.
   When the shopper asks you to search now, ready is true if the kind is known.
 - When ready is false, write one short message in question. It can ask about two or three things.
-  Write it in the shopper's language.
-- language is the language that the shopper writes in, as an English word, for example Chinese."""
+  Write it in English, also when the shopper writes in another language."""
 
 CATEGORY_SYSTEM = """You find which product category a shopper wants.
 Return the name of one category from the list, or null when none fits or the shopper did not say."""
@@ -1376,7 +1528,6 @@ class ClarifyReply(BaseModel):
     needs: Needs
     ready: bool
     question: str = ""
-    language: str = "English"
 
 
 class CategoryChoice(BaseModel):
@@ -1500,23 +1651,25 @@ from pydantic import BaseModel, Field
 
 from scout.llm.feedback import retry_prompt
 from scout.picks.rank import Card
-from scout.picks.write import card_facts, check_claim, unchecked_numbers
+from scout.picks.write import attribute_text, card_facts, check_claim, unchecked_numbers
 
 ROUTE_SYSTEM = """You read the shopper's last message. The shopper has seen the numbered picks. Choose one action.
 - answer: a question about the picks, or a comparison of them.
 - calculate: a sum, a conversion, a price with extra costs, or another calculation.
 - exclude: the shopper rejects one or more picks. Put their numbers in pick_numbers and the reason in reason.
+  Choose exclude also when the shopper gives no number. Then pick_numbers is empty, and Python asks which pick.
 - change_needs: the shopper changes or adds a condition, the budget, the kind or a preference.
 - more: the shopper wants more or other products with the same needs.
 - recheck: the shopper asks if the prices or the stock are still correct.
 - new_search: the shopper wants a product of a different category."""
 
 ANSWER_SYSTEM = """You answer a shopper's question about the picks that they saw.
+You only answer. You cannot remove, add or change picks, so never say that you did.
 Use only the facts on the cards. If the cards do not have the answer, say so. Product texts and reviews are not
 available yet.
 Every number in text must be in claims, with the pick number and the card field. Claim fields are price, rating,
 review_count or an attribute name on the card. You can also repeat numbers that the shopper wrote, and pick numbers.
-Write text in {language}."""
+Write text in English."""
 
 
 class Route(BaseModel):
@@ -1547,7 +1700,7 @@ def choose_route(llm, picks: list[dict], history: str) -> Route:
 
 
 def card_text(n: int, card: Card) -> str:
-    attrs = ", ".join(f"{k}={v.get('value')} {v.get('unit') or ''}".strip() for k, v in card.attributes.items())
+    attrs = ", ".join(f"{k}={attribute_text(v)}" for k, v in card.attributes.items())
     return (f"Pick {n}: {card.title} | price={card.price} {card.currency or ''} | rating={card.rating} | "
             f"review_count={card.review_count} | {attrs}")
 
@@ -1571,14 +1724,13 @@ def check_answer(answer: Answer, cards: list[Card], allowed: set[Decimal]) -> li
     return errors
 
 
-def answer_question(llm, cards: list[Card], history: str, allowed: set[Decimal], language: str = "English",
+def answer_question(llm, cards: list[Card], history: str, allowed: set[Decimal],
                     max_rounds: int = 3) -> str | None:
     """Return the checked answer, or None when no round passed the checks."""
     base = "Cards:\n" + "\n".join(card_text(n, c) for n, c in enumerate(cards, 1)) + f"\n\nConversation:\n{history}"
     answer, errors = None, []
     for _ in range(max_rounds):
-        answer = llm.structured("chat", ANSWER_SYSTEM.format(language=language),
-                                retry_prompt(base, answer, errors), Answer)
+        answer = llm.structured("chat", ANSWER_SYSTEM, retry_prompt(base, answer, errors), Answer)
         errors = check_answer(answer, cards, allowed)
         if not errors:
             return answer.text
@@ -1601,7 +1753,7 @@ git commit -m "Follow-up routing as structured output; answers from the cards wi
 
 ### Task 8: The calculation tool
 
-The chat model writes the steps. Python does the arithmetic and shows the formula. Each number in a step must be a fact on a pick, a number that the user wrote, an earlier step, or the constant 100 for percentages.
+The chat model writes the steps. Python does the arithmetic and shows the formula. Each number in a step must be a fact on a pick, a number that the user wrote, an earlier step, or the constant 100 for percentages. A plan that fails a check goes back to the model with the problem (decision 8). In a real run on 2026-10-05, the model put a whole formula into one number field, so the check needs this.
 
 **Files:**
 - Create: `src/scout/agent/calc.py`
@@ -1644,7 +1796,7 @@ def test_a_percentage_uses_earlier_steps():
 
 
 def test_a_number_the_shopper_did_not_write_is_refused():
-    with pytest.raises(CalcError, match="11.5 is not a number that you wrote"):
+    with pytest.raises(CalcError, match="11.5 is not a number that the shopper wrote"):
         run_plan(plan(("total", "multiply", PRICE, Operand(number="11.5"))), CARDS, set())
 
 
@@ -1661,6 +1813,17 @@ def test_calculate_asks_for_a_missing_rate_and_shows_the_python_result():
     text = calculate(FakeLLM([plan(("total", "add", PRICE, Operand(number="499")))]), CARDS,
                      "Shopper: plus 499 for shipping", {Decimal("499")})
     assert text.splitlines()[:2] == ["Price with shipping.", "total = 5000 (pick 1 price) + 499 = 5499"]
+
+
+def test_a_formula_in_number_goes_back_to_the_model():
+    formula = plan(("total", "add", Operand(number="(pick 1 price) + 499 = 5499"), Operand(number="499")))
+    good = plan(("total", "add", PRICE, Operand(number="499")))
+    llm = FakeLLM([formula, good])
+    text = calculate(llm, CARDS, "Shopper: plus 499 for shipping", {Decimal("499")})
+    assert "total = 5000 (pick 1 price) + 499 = 5499" in text
+    assert "is not one plain number" in llm.requests[1][1] and "Your last answer" in llm.requests[1][1]
+    assert "could not turn this request" in calculate(FakeLLM([formula] * 3), CARDS, "Shopper: plus 499",
+                                                      {Decimal("499")})
 ```
 
 - [ ] **Step 2: Run the tests to see them fail**
@@ -1674,12 +1837,14 @@ Create `src/scout/agent/calc.py`:
 
 ```python
 """The calculation tool. The chat model writes the steps. Python does the arithmetic and shows the formula."""
+import re
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
 from scout.agent.followup import card_text
+from scout.llm.feedback import retry_prompt
 from scout.picks.rank import Card
 from scout.picks.write import card_facts, unchecked_numbers
 from scout.sources.amazon_se.numbers import to_decimal
@@ -1687,15 +1852,16 @@ from scout.sources.amazon_se.numbers import to_decimal
 SYSTEM = """You change a shopper's calculation request into steps. You never calculate yourself.
 Each step has a name, an operation (add, subtract, multiply or divide) and two operands, a and b.
 An operand is one of these:
-- a number that the shopper wrote, copied into number
+- one number that the shopper wrote, copied into number, for example "499". Never a formula or a unit.
 - a fact of a pick, written into ref as "pick N field", for example "pick 1 price"
 - the name of an earlier step, written into ref
 For a percentage, divide by 100 in a step. result is the name of the step with the answer.
-explanation is one short sentence in {language} that says what the result is. It has no numbers.
+explanation is one short sentence in English that says what the result is. It has no numbers.
 If the request needs a number that the shopper did not give, such as an exchange rate,
 return no steps and ask for that number in explanation."""
 
 CONSTANTS = {Decimal("100")}  # for percentages
+PLAIN_NUMBER = re.compile(r"-?\d[\d\u00a0\u202f ]*(?:[.,]\d+)?")
 SIGNS = {"add": "+", "subtract": "-", "multiply": "*", "divide": "/"}
 
 
@@ -1731,9 +1897,12 @@ def run_plan(plan: CalcPlan, cards: list[Card], said: set[Decimal]) -> tuple[Dec
 
     def operand(op: Operand) -> tuple[Decimal, str]:
         if op.number is not None:
-            number = to_decimal(op.number)
-            if number is None or number not in said:
-                raise CalcError(f"{op.number} is not a number that you wrote")
+            number = to_decimal(op.number) if PLAIN_NUMBER.fullmatch(op.number.strip()) else None
+            if number is None:
+                raise CalcError(f"number '{op.number}' is not one plain number. Put a fact of a pick into ref, "
+                                "and a number of the shopper into number")
+            if number not in said:
+                raise CalcError(f"{op.number} is not a number that the shopper wrote")
             return number, fmt(number)
         ref = (op.ref or "").strip()
         if ref in values:
@@ -1764,24 +1933,29 @@ def run_plan(plan: CalcPlan, cards: list[Card], said: set[Decimal]) -> tuple[Dec
     return values[plan.result], lines
 
 
-def calculate(llm, cards: list[Card], history: str, said: set[Decimal], language: str = "English") -> str:
-    prompt = "Cards:\n" + "\n".join(card_text(n, c) for n, c in enumerate(cards, 1)) + f"\n\nConversation:\n{history}"
-    plan = llm.structured("chat", SYSTEM.format(language=language), prompt, CalcPlan)
-    if not plan.steps:
-        return plan.explanation
-    try:
-        _, lines = run_plan(plan, cards, said | CONSTANTS)
-    except CalcError as exc:
-        return f"I could not calculate this: {exc}."
-    allowed = said | {Decimal(n) for n in range(1, len(cards) + 1)}
-    explanation = plan.explanation if not unchecked_numbers(plan.explanation, allowed) else "Result:"
-    return "\n".join([explanation, *lines, "Python did the arithmetic. Results are rounded to 2 decimals."])
+def calculate(llm, cards: list[Card], history: str, said: set[Decimal], max_rounds: int = 3) -> str:
+    base = "Cards:\n" + "\n".join(card_text(n, c) for n, c in enumerate(cards, 1)) + f"\n\nConversation:\n{history}"
+    plan, errors = None, []
+    for _ in range(max_rounds):
+        plan = llm.structured("chat", SYSTEM, retry_prompt(base, plan, errors), CalcPlan)
+        if not plan.steps:
+            return plan.explanation
+        try:
+            _, lines = run_plan(plan, cards, said | CONSTANTS)
+        except CalcError as exc:
+            errors = [str(exc)]
+            continue
+        allowed = said | {Decimal(n) for n in range(1, len(cards) + 1)}
+        explanation = plan.explanation if not unchecked_numbers(plan.explanation, allowed) else "Result:"
+        return "\n".join([explanation, *lines, "Python did the arithmetic. Results are rounded to 2 decimals."])
+    return (f"I could not turn this request into steps that Python can check ({errors[0]}). "
+            "You can write the calculation in other words.")
 ```
 
 - [ ] **Step 4: Run the tests**
 
 Run: `python -m pytest tests/test_calc.py -v`
-Expected: 5 passed.
+Expected: 6 passed.
 
 - [ ] **Step 5: Commit**
 
@@ -1805,20 +1979,24 @@ START → compact → phase is picks? ── no ──→ clarify ── ready �
                         │                     └─ not ready: question → END
                         └── yes ──→ route ─┬─ answer ──────────→ END
                                            ├─ calculate ───────→ END
-                                           ├─ exclude ─────────→ recommend → END
+                                           ├─ exclude ─────────→ recommend (keeps the other picks) → END
                                            ├─ change_needs ────→ clarify
-                                           ├─ more ────────────→ search (always crawls)
-                                           ├─ recheck ─────────→ recommend
+                                           ├─ more ────────────→ search (always crawls) → recommend (new products only)
+                                           ├─ recheck ─────────→ recommend (the shown picks first)
                                            └─ new_search ──────→ reset → clarify
 ```
 
-Each node except `compact` catches `LLMUnavailable` and `LLMOutputError`. The node then gives a short message and the turn ends. The state stays as it was, so the user can try again.
+Each node except `compact` catches all errors. The node then gives a short message and the turn ends: a failed search or exclude does not go on to `recommend`. The state stays as it was, so the user can try again.
+
+The search reads result page 1 again when the budget is higher than the lowest budget of the earlier reads of these words. `searches` keeps the last page and that budget for each set of search words. `seen` keeps the products that the thread showed since the needs last changed. Each pick in the state keeps its doubtful sizes and its note, so a kept pick and an answer show them without a new page load.
 
 - [ ] **Step 1: Write the failing tests**
 
 Create `tests/test_graph.py`:
 
 ```python
+import copy
+
 from langgraph.checkpoint.memory import InMemorySaver
 
 from scout.agent.clarify import CategoryChoice, ClarifyReply
@@ -1833,14 +2011,17 @@ from tests.fakes import FakeLLM
 from tests.test_picks_rank import card
 
 FRIDGE = load_profile("fridge")
+TERMS = "kyl och frys"
 
 
 class World:
-    """A fake shop and database behind the graph."""
+    """A fake shop and database behind the graph. It shows k picks out of the stored cards."""
 
-    def __init__(self, stored=20):
-        self.stored, self.crawls, self.removed, self.said = stored, [], {}, []
-        self.cards = {1: card(1, 4.5, 100, height=143.0), 2: card(2, 4.0, 50, height=170.0)}
+    def __init__(self, stored=20, n=4, k=2, doubts=None):
+        self.stored, self.k, self.doubts = stored, k, doubts or {}
+        self.crawls, self.removed, self.said, self.picked = [], {}, [], []
+        heights = [143.0, 170.0, 150.0, 160.0]
+        self.cards = {i: card(i, 4.5, 100, height=heights[i - 1]) for i in range(1, n + 1)}
 
     def deps(self, llm):
         return Deps(
@@ -1850,7 +2031,7 @@ class World:
             count=lambda profile, needs, excluded: self.stored,
             crawl=self.crawl,
             picks=self.picks,
-            cards=lambda ids: [self.cards[i] for i in ids],
+            cards=lambda ids: [copy.deepcopy(self.cards[i]) for i in ids],  # fresh from the database
             eliminate=lambda thread, ids, reason: self.removed.setdefault(thread, set()).update(ids),
             eliminated=lambda thread: self.removed.get(thread, set()),
             say=self.said.append,
@@ -1860,9 +2041,16 @@ class World:
         self.crawls.append((needs.search_terms(profile), page))
         return CrawlReport(candidates=48, saved=20)
 
-    def picks(self, profile, needs, excluded, language):
-        chosen = [c for c in self.cards.values() if c.product_id not in excluded]
-        return PicksResult(chosen, None, [], [], 0, needs.text())
+    def picks(self, profile, needs, excluded, keep, recheck):
+        self.picked.append((set(excluded), [c.listing_id for c in keep], recheck))
+        taken = set(excluded) | {c.product_id for c in keep}
+        new = [copy.deepcopy(c) for c in self.cards.values() if c.product_id not in taken][:self.k - len(keep)]
+        notes = {}
+        for c in new:
+            if c.listing_id in self.doubts:
+                c.attributes["height"] = {**c.attributes["height"], "doubtful": True}
+                notes[c.listing_id] = self.doubts[c.listing_id]
+        return PicksResult([*keep, *new], None, [], list(notes.values()), 0, needs.text(), notes)
 
 
 def run(graph, thread, text):
@@ -1870,7 +2058,11 @@ def run(graph, thread, text):
 
 
 def ready(**fields):
-    return ClarifyReply(needs=Needs(kind="fridge_freezer", **fields), ready=True, language="English")
+    return ClarifyReply(needs=Needs(kind="fridge_freezer", **fields), ready=True)
+
+
+def shown(state):
+    return [p["listing_id"] for p in state["picks"]]
 
 
 def test_clarify_asks_first_and_does_not_search():
@@ -1887,21 +2079,34 @@ def test_a_new_thread_reads_page_1_once_then_uses_the_stored_products():
                    ready(budget=8000)])
     graph = build_graph(world.deps(llm), InMemorySaver())
     state = run(graph, "t1", "A fridge with a freezer, budget 9000")
-    assert world.crawls == [("kyl och frys", 1)] and state["pages"] == {"kyl och frys": 1}
-    assert state["phase"] == "picks" and [p["listing_id"] for p in state["picks"]] == [1, 2]
+    assert world.crawls == [(TERMS, 1)] and state["searches"] == {TERMS: {"page": 1, "budget": 9000}}
+    assert state["phase"] == "picks" and shown(state) == [1, 2]
     assert state["messages"][-1]["content"].startswith("Conditions: budget 9000 SEK")
     state = run(graph, "t1", "Make the budget 8000")
-    assert world.crawls == [("kyl och frys", 1)]
+    assert world.crawls == [(TERMS, 1)]
     assert "enough stored products match" in state["messages"][-2]["content"]
+
+
+def test_a_higher_budget_reads_page_1_again():
+    world = World(stored=20)
+    llm = FakeLLM([CategoryChoice(category="fridge"), ready(budget=9000), Route(action="change_needs"),
+                   ready(budget=12000), Route(action="change_needs"), ready(budget=10000)])
+    graph = build_graph(world.deps(llm), InMemorySaver())
+    run(graph, "t1", "A fridge with a freezer, budget 9000")
+    state = run(graph, "t1", "Make the budget 12000")
+    assert world.crawls == [(TERMS, 1), (TERMS, 1)] and state["searches"][TERMS] == {"page": 1, "budget": 12000}
+    assert "the budget is higher than in the earlier search" in world.said[-1]
+    run(graph, "t1", "Make the budget 10000")
+    assert len(world.crawls) == 2
 
 
 def test_few_stored_products_start_a_search_with_the_kind_terms():
     world = World(stored=3)
     llm = FakeLLM([CategoryChoice(category="fridge"), ready()])
     state = run(build_graph(world.deps(llm), InMemorySaver()), "t1", "A fridge with a freezer")
-    assert world.crawls == [("kyl och frys", 1)] and state["pages"] == {"kyl och frys": 1}
-    assert "Searched amazon.se for 'kyl och frys'" in state["messages"][-2]["content"]
-    assert world.said and "kyl och frys" in world.said[0]
+    assert world.crawls == [(TERMS, 1)] and state["searches"] == {TERMS: {"page": 1, "budget": None}}
+    assert f"Searched amazon.se for '{TERMS}'" in state["messages"][-2]["content"]
+    assert world.said and TERMS in world.said[0]
 
 
 def test_follow_ups_in_one_thread():
@@ -1914,11 +2119,44 @@ def test_follow_ups_in_one_thread():
     graph = build_graph(world.deps(llm), InMemorySaver())
     run(graph, "t1", "A fridge with a freezer")
     state = run(graph, "t1", "Remove the first one, it is too small")
-    assert world.removed["t1"] == {1} and [p["listing_id"] for p in state["picks"]] == [2]
+    assert world.removed["t1"] == {1} and shown(state) == [2, 3]
+    assert world.picked[-1] == ({1}, [2], False)  # pick 2 stays without a new check
     state = run(graph, "t1", "How tall is it?")
     assert state["messages"][-1]["content"] == "Pick 1 is 170 cm high."
     state = run(graph, "t1", "Show me more")
-    assert world.crawls == [("kyl och frys", 1), ("kyl och frys", 2)] and state["phase"] == "picks"
+    assert world.crawls == [(TERMS, 1), (TERMS, 2)] and state["phase"] == "picks"
+    assert world.picked[-1] == ({1, 2, 3}, [], False) and shown(state) == [4]
+
+
+def test_more_keeps_the_picks_when_no_other_product_matches():
+    world = World(n=2)
+    llm = FakeLLM([CategoryChoice(category="fridge"), ready(), Route(action="more")])
+    graph = build_graph(world.deps(llm), InMemorySaver())
+    run(graph, "t1", "A fridge with a freezer")
+    state = run(graph, "t1", "Show me others")
+    assert "No other stored product" in state["messages"][-1]["content"] and shown(state) == [1, 2]
+
+
+def test_recheck_checks_the_shown_picks_first():
+    world = World()
+    llm = FakeLLM([CategoryChoice(category="fridge"), ready(), Route(action="recheck")])
+    graph = build_graph(world.deps(llm), InMemorySaver())
+    run(graph, "t1", "A fridge with a freezer")
+    run(graph, "t1", "Are the prices still right?")
+    assert world.picked[-1] == (set(), [1, 2], True)
+
+
+def test_a_kept_pick_keeps_its_size_doubt():
+    world = World(doubts={2: "Fridge 2: height may be wrong."})
+    llm = FakeLLM([CategoryChoice(category="fridge"), ready(),
+                   Route(action="exclude", pick_numbers=[1]), Route(action="answer"), Answer(text="See the picks.")])
+    graph = build_graph(world.deps(llm), InMemorySaver())
+    run(graph, "t1", "A fridge with a freezer")
+    state = run(graph, "t1", "Remove 1")
+    assert state["picks"][0]["doubtful"] == ["height"] and state["picks"][0]["note"] == "Fridge 2: height may be wrong."
+    assert "Fridge 2: height may be wrong." in state["messages"][-1]["content"]
+    run(graph, "t1", "How tall is pick 1?")
+    assert "height=170.0 (doubtful)" in llm.requests[-1][1]
 
 
 def test_exclude_without_a_valid_number_asks_which_pick():
@@ -1936,6 +2174,19 @@ def test_an_unavailable_model_gives_a_message_and_the_turn_ends():
     state = run(build_graph(world.deps(llm), InMemorySaver()), "t1", "I want a fridge")
     assert "quota is used up" in state["messages"][-1]["content"]
     assert state.get("phase") is None and world.crawls == []
+
+
+def test_a_browser_problem_ends_the_turn_with_a_message():
+    world = World(stored=3)
+
+    def broken(profile, needs, page):
+        raise RuntimeError("Target page, context or browser has been closed")
+
+    world.crawl = broken
+    llm = FakeLLM([CategoryChoice(category="fridge"), ready()])
+    state = run(build_graph(world.deps(llm), InMemorySaver()), "t1", "A fridge with a freezer")
+    assert "Something went wrong in the step 'search' (RuntimeError" in state["messages"][-1]["content"]
+    assert world.picked == [] and state["needs"]["kind"] == "fridge_freezer"
 ```
 
 - [ ] **Step 2: Run the tests to see them fail**
@@ -1959,10 +2210,10 @@ class ChatState(TypedDict, total=False):
     summarized: int    # messages before this index are in the summary
     phase: str         # clarify, search, recommend or picks
     needs: dict        # Needs as JSON
-    language: str
-    picks: list[dict]  # listing_id, product_id and title, in the order shown
-    pages: dict        # search terms -> the last amazon.se result page read in this thread
-    route: dict        # the last follow-up decision
+    picks: list[dict]  # listing_id, product_id, title, doubtful sizes and the note of each pick, in the order shown
+    seen: list[int]    # product IDs shown since the needs last changed; "more" leaves them out
+    searches: dict     # search terms -> {"page": the last result page read, "budget": the lowest budget of those reads}
+    route: dict        # the follow-up decision of this turn
 ```
 
 - [ ] **Step 4: Write the graph**
@@ -2003,7 +2254,8 @@ class Deps:
     load_profile: Callable[[str], CategoryProfile]
     count: Callable[[CategoryProfile, Needs, set[int]], int]
     crawl: Callable[[CategoryProfile, Needs, int], CrawlReport]
-    picks: Callable[[CategoryProfile, Needs, set[int], str], PicksResult]
+    # profile, needs, excluded product IDs, the cards to keep, and True when the kept cards need a new check
+    picks: Callable[[CategoryProfile, Needs, set[int], list[Card], bool], PicksResult]
     cards: Callable[[list[int]], list[Card]]
     eliminate: Callable[[str, list[int], str], None]
     eliminated: Callable[[str], set[int]]
@@ -2018,8 +2270,25 @@ def crawl_text(report: CrawlReport, terms: str, page: int) -> str:
     return "\n".join([line, *report.notes])
 
 
+def higher_budget(new: float | None, old: float | None) -> bool:
+    """True when the new budget lets in products that the old search left out. None means no budget."""
+    if old is None:
+        return False
+    return new is None or new > old
+
+
+def lower_budget(new: float | None, old: float | None) -> float | None:
+    if new is None or old is None:
+        return old if new is None else new
+    return min(new, old)
+
+
 def thread_of(config) -> str:
     return config["configurable"]["thread_id"]
+
+
+def action_of(state) -> str | None:
+    return (state.get("route") or {}).get("action")
 
 
 def build_graph(deps: Deps, checkpointer=None):
@@ -2027,12 +2296,16 @@ def build_graph(deps: Deps, checkpointer=None):
 
     def guarded(name, fn):
         def node(state, config):
-            with deps.tracer.span(name):
+            with deps.tracer.span(name) as span:
                 try:
                     return fn(state, config)
                 except (LLMUnavailable, LLMOutputError) as exc:
-                    return {"messages": [assistant(f"I cannot finish this step now. {exc}")],
-                            "route": {"action": "stop"}}
+                    text = f"I cannot finish this step now. {exc}"
+                except Exception as exc:  # a browser or database problem must not end the conversation
+                    span.update(level="ERROR", status_message=repr(exc))
+                    text = (f"Something went wrong in the step '{name}' ({type(exc).__name__}: {exc}). "
+                            "Your needs are kept. You can try again.")
+                return {"messages": [assistant(text)], "route": {"action": "stop"}}
         return node
 
     def compact_node(state, config):
@@ -2051,11 +2324,11 @@ def build_graph(deps: Deps, checkpointer=None):
             names = deps.profile_names()
             category = pick_category(llm, history, names)
             if category is None:
-                return {"phase": "clarify", "messages": [assistant(
+                return {"phase": "clarify", "route": {}, "messages": [assistant(
                     f"I can search these categories now: {', '.join(names)}. Which one do you want?")]}
             needs.category = category
         reply = clarify(llm, deps.load_profile(needs.category), needs, history, user_numbers(state))
-        update = {"needs": reply.needs.model_dump(mode="json"), "language": reply.language}
+        update = {"needs": reply.needs.model_dump(mode="json"), "route": {}}
         if reply.ready:
             return {**update, "phase": "search"}
         return {**update, "phase": "clarify", "messages": [assistant(reply.question)]}
@@ -2063,31 +2336,66 @@ def build_graph(deps: Deps, checkpointer=None):
     def search_node(state, config):
         needs = needs_of(state)
         profile = deps.load_profile(needs.category)
-        more = (state.get("route") or {}).get("action") == "more"
         terms = needs.search_terms(profile)
-        pages = dict(state.get("pages") or {})
-        page = pages.get(terms, 0)
-        update: dict = {"route": {}, "phase": "recommend"}
+        searches = dict(state.get("searches") or {})
+        last = searches.get(terms)
         conditions = f"Searching with: {needs.text() or 'no conditions'}."
-        if not more and page > 0 and deps.count(profile, needs, deps.eliminated(thread_of(config))) >= MIN_STORED:
-            text = (f"{conditions} I searched amazon.se for '{terms}' earlier in this conversation, and enough "
-                    "stored products match, so I use them and check each pick again on amazon.se.")
+        if last is None:
+            page, why = 1, "the first search for these words in this conversation"
+        elif higher_budget(needs.budget, last["budget"]):
+            page, why = 1, "the budget is higher than in the earlier search"
+        elif action_of(state) == "more":
+            page, why = last["page"] + 1, "you asked for more"
+        elif deps.count(profile, needs, deps.eliminated(thread_of(config))) < MIN_STORED:
+            page, why = last["page"] + 1, f"fewer than {MIN_STORED} stored products match"
         else:
-            deps.say(f"Searching amazon.se for '{terms}', result page {page + 1}. This can take a few minutes.")
-            report = deps.crawl(profile, needs, page + 1)
-            pages[terms] = page + 1
-            update["pages"] = pages
-            text = f"{conditions}\n{crawl_text(report, terms, page + 1)}"
-        return {**update, "messages": [assistant(text)]}
+            return {"phase": "recommend", "messages": [assistant(
+                f"{conditions} I searched amazon.se for '{terms}' earlier in this conversation, and enough "
+                "stored products match, so I use them and check each pick again on amazon.se.")]}
+        deps.say(f"Searching amazon.se for '{terms}', result page {page} ({why}). This can take a few minutes.")
+        report = deps.crawl(profile, needs, page)
+        budget = needs.budget if page == 1 else lower_budget(needs.budget, last["budget"])
+        searches[terms] = {"page": page, "budget": budget}
+        return {"phase": "recommend", "searches": searches,
+                "messages": [assistant(f"{conditions}\n{crawl_text(report, terms, page)}")]}
+
+    def marked_cards(picks: list[dict]) -> list[Card]:
+        """The cards of the picks from the database, with the size doubts that the picks step found."""
+        doubtful = {p["listing_id"]: set(p.get("doubtful", [])) for p in picks}
+        cards = deps.cards([p["listing_id"] for p in picks])
+        for card in cards:
+            card.attributes = {k: ({**v, "doubtful": True} if k in doubtful[card.listing_id] else v)
+                               for k, v in card.attributes.items()}
+        return cards
 
     def recommend_node(state, config):
-        needs = needs_of(state)
-        result = deps.picks(deps.load_profile(needs.category), needs, deps.eliminated(thread_of(config)),
-                            state.get("language", "English"))
-        picks = [{"listing_id": c.listing_id, "product_id": c.product_id, "title": c.title} for c in result.chosen]
+        needs, action = needs_of(state), action_of(state)
+        excluded = set(deps.eliminated(thread_of(config)))
+        shown = state.get("picks", [])
+        keep: list[dict] = []
+        if action == "more":
+            excluded |= set(state.get("seen", []))
+        elif action == "exclude":
+            keep = [p for p in shown if p["product_id"] not in excluded]
+        elif action == "recheck":
+            keep = shown
+        result = deps.picks(deps.load_profile(needs.category), needs, excluded, marked_cards(keep),
+                            action == "recheck")
+        if action == "exclude":  # the kept picks were not fetched again, so their notes come from the state
+            result.card_notes = {**{p["listing_id"]: p["note"] for p in keep if p.get("note")}, **result.card_notes}
+            result.notes += [p["note"] for p in keep if p.get("note")]
+        picks = [{"listing_id": c.listing_id, "product_id": c.product_id, "title": c.title,
+                  "doubtful": [k for k, v in c.attributes.items() if v.get("doubtful")],
+                  "note": result.card_notes.get(c.listing_id)} for c in result.chosen]
+        if action == "more" and not picks:  # keep the picks that the shopper saw
+            return {"phase": "picks", "route": {}, "messages": [assistant(
+                "No other stored product meets these needs. You can loosen a condition, or ask for more again.")]}
+        ids = [p["product_id"] for p in picks]
+        seen = ids if action not in ("more", "exclude", "recheck") else [*state.get("seen", []), *ids]
         text = result.render() if picks else ("No stored product meets these needs. You can loosen a condition, "
                                               "or ask me to search more.")
-        return {"picks": picks, "phase": "picks", "messages": [assistant(text)]}
+        return {"picks": picks, "seen": sorted(set(seen)), "phase": "picks", "route": {},
+                "messages": [assistant(text)]}
 
     def route_node(state, config):
         route = choose_route(llm, state.get("picks", []), history_text(state))
@@ -2096,19 +2404,14 @@ def build_graph(deps: Deps, checkpointer=None):
                     "messages": [assistant("Which pick do you want to remove? Give its number.")]}
         return {"route": route.model_dump()}
 
-    def current_cards(state) -> list[Card]:
-        return deps.cards([p["listing_id"] for p in state.get("picks", [])])
-
     def answer_node(state, config):
         allowed = user_numbers(state) | numbers_in(needs_of(state).text())
-        text = answer_question(llm, current_cards(state), history_text(state), allowed,
-                               state.get("language", "English"))
+        text = answer_question(llm, marked_cards(state.get("picks", [])), history_text(state), allowed)
         return {"messages": [assistant(text or "I could not write an answer whose numbers agree with the records, "
                                                "so I do not show it. The facts are in the picks above.")]}
 
     def calculate_node(state, config):
-        text = calculate(llm, current_cards(state), history_text(state), user_numbers(state),
-                         state.get("language", "English"))
+        text = calculate(llm, marked_cards(state.get("picks", [])), history_text(state), user_numbers(state))
         return {"messages": [assistant(text)]}
 
     def exclude_node(state, config):
@@ -2119,7 +2422,10 @@ def build_graph(deps: Deps, checkpointer=None):
         return {"messages": [assistant(f"Removed: {names}. They stay out for the rest of this conversation.")]}
 
     def reset_node(state, config):
-        return {"needs": {}, "picks": [], "phase": "clarify"}
+        return {"needs": {}, "picks": [], "seen": [], "phase": "clarify"}
+
+    def unless_stopped(state):
+        return END if action_of(state) == "stop" else "recommend"
 
     graph = StateGraph(ChatState)
     graph.add_node("compact", compact_node)
@@ -2132,12 +2438,12 @@ def build_graph(deps: Deps, checkpointer=None):
                                 ["clarify", "route"])
     graph.add_conditional_edges("clarify", lambda s: "search" if s.get("phase") == "search" else END,
                                 ["search", END])
-    graph.add_edge("search", "recommend")
+    graph.add_conditional_edges("search", unless_stopped, ["recommend", END])
     graph.add_edge("recommend", END)
     graph.add_conditional_edges("route", lambda s: s["route"]["action"], AFTER_ROUTE)
     graph.add_edge("answer", END)
     graph.add_edge("calculate", END)
-    graph.add_edge("exclude", "recommend")
+    graph.add_conditional_edges("exclude", unless_stopped, ["recommend", END])
     graph.add_edge("reset", "clarify")
     return graph.compile(checkpointer=checkpointer)
 ```
@@ -2145,7 +2451,7 @@ def build_graph(deps: Deps, checkpointer=None):
 - [ ] **Step 5: Run the tests**
 
 Run: `python -m pytest tests/test_graph.py -v`
-Expected: 6 passed.
+Expected: 11 passed.
 
 - [ ] **Step 6: Run all tests**
 
@@ -2174,13 +2480,14 @@ git commit -m "Conversation graph: clarify, search when stored data is not enoug
 Create `tests/test_chat_db.py`:
 
 ```python
+import psycopg
 import pytest
 from langgraph.checkpoint.postgres import PostgresSaver
 
 from scout.agent.clarify import CategoryChoice, ClarifyReply
 from scout.agent.graph import build_graph
 from scout.config import load_settings
-from scout.db.conn import connect_checkpoints
+from scout.db.conn import connect, connect_checkpoints, end_transaction
 from scout.needs import Needs
 from tests.fakes import FakeLLM
 from tests.test_graph import World, run
@@ -2206,6 +2513,14 @@ def test_a_thread_continues_after_a_restart():
         assert values["messages"][-1]["content"] == "Which kind?"
         assert values["needs"]["category"] == "fridge"
         saver.delete_thread(THREAD)
+
+
+def test_a_failed_statement_does_not_block_the_next_turn():
+    with connect(load_settings().test_database_url) as conn:
+        with pytest.raises(psycopg.errors.UndefinedTable):
+            conn.execute("SELECT * FROM no_such_table")
+        end_transaction(conn)
+        assert conn.execute("SELECT 1 AS one").fetchone()["one"] == 1
 ```
 
 - [ ] **Step 2: Run the test to see it fail**
@@ -2218,17 +2533,27 @@ Expected: FAIL with `ImportError: cannot import name 'connect_checkpoints'`.
 Add to `src/scout/db/conn.py`:
 
 ```python
+def end_transaction(conn: psycopg.Connection) -> None:
+    """Close the open transaction after a chat turn, so that a failed statement does not block the next turn."""
+    if conn.info.transaction_status == psycopg.pq.TransactionStatus.INERROR:
+        conn.rollback()
+    else:
+        conn.commit()
+
+
 def connect_checkpoints(url: str) -> psycopg.Connection:
     """A connection for the LangGraph checkpointer. It needs autocommit and dict rows."""
     return psycopg.connect(url, autocommit=True, prepare_threshold=0, row_factory=dict_row)
 ```
+
+`end_transaction` runs after each turn. The connection of the agent is not in autocommit mode, so without it a read keeps a transaction open while the user types, and one failed statement blocks all later turns. A failed run leaves its step pending in the checkpoint. `update_state(..., as_node="answer")` adds the message and ends that step, because `answer` leads to END. Claude checked this with `InMemorySaver` on 2026-10-05.
 
 The checkpointer creates its own tables (`checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `checkpoint_migrations`) in the same database. `PostgresSaver.setup()` creates them when they do not exist.
 
 - [ ] **Step 4: Run the test**
 
 Run: `python -m pytest tests/test_chat_db.py -v`
-Expected: 1 passed.
+Expected: 2 passed.
 
 - [ ] **Step 5: Write the live dependencies**
 
@@ -2267,8 +2592,10 @@ class LazyBrowser:
 
 
 def live_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, k: int = 5) -> Deps:
+    screened: dict[tuple[str, int], bool] = {}  # a title is screened one time in a session
+
     def count(profile, needs, excluded):
-        return len(shortlist(conn, profile, needs, llm, excluded).ranked)
+        return len(shortlist(conn, profile, needs, llm, excluded, screened).ranked)
 
     def crawl(profile, needs, page):
         return run_crawl(conn, browser.adapter(), profile.category, needs.search_terms(profile),
@@ -2277,13 +2604,15 @@ def live_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, k: int =
                          enrich=lambda rec: enrich_record(rec, profile, llm),
                          screen=lambda cands: screen_titles(cands, profile, llm, needs.wanted(profile)))
 
-    def picks(profile, needs, excluded, language):
-        short = shortlist(conn, profile, needs, llm, excluded)
+    def picks(profile, needs, excluded, keep, recheck):
+        short = shortlist(conn, profile, needs, llm, set(excluded) | {c.product_id for c in keep}, screened)
 
         def refetch(card):  # the browser opens only when there is a card to check
             return refetcher(browser.adapter(), conn, profile.category, on_problem)(card)
 
-        return make_picks(short, needs, k, refetch, llm, language)
+        if recheck:  # check the shown picks again, and replace the ones that fail
+            return make_picks(short, needs, k, refetch, llm, first=keep)
+        return make_picks(short, needs, k, refetch, llm, kept=keep)
 
     return Deps(
         llm=llm,
@@ -2305,13 +2634,15 @@ def live_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, k: int =
 Add to `src/scout/cli.py`:
 
 ```python
+import contextlib
 import uuid
 
 from langgraph.checkpoint.postgres import PostgresSaver
 
 from scout.agent.graph import build_graph
+from scout.agent.history import assistant
 from scout.agent.live import LazyBrowser, live_deps
-from scout.db.conn import connect_checkpoints
+from scout.db.conn import connect_checkpoints, end_transaction
 
 
 @app.command()
@@ -2340,10 +2671,17 @@ def chat(thread: Optional[str] = typer.Option(None, help="the ID of a conversati
                 if text.lower() in {"q", "quit", "exit"}:
                     break
                 before = len(graph.get_state(config).values.get("messages", []))
-                with tracer.turn(thread_id, text) as span:
-                    state = graph.invoke({"messages": [{"role": "user", "content": text}]}, config)
-                    replies = [m["content"] for m in state["messages"][before + 1:]]
-                    span.update(output="\n\n".join(replies))
+                try:
+                    with tracer.turn(thread_id, text) as span:
+                        state = graph.invoke({"messages": [{"role": "user", "content": text}]}, config)
+                        replies = [m["content"] for m in state["messages"][before + 1:]]
+                        span.update(output="\n\n".join(replies))
+                except Exception as exc:  # the nodes catch most problems; this keeps the conversation open
+                    replies = [f"Something went wrong ({type(exc).__name__}: {exc}). You can try again."]
+                    end_transaction(conn)
+                    with contextlib.suppress(Exception):  # the thread gets the message, and the failed turn ends
+                        graph.update_state(config, {"messages": [assistant(replies[0])]}, as_node="answer")
+                end_transaction(conn)
                 for reply in replies:
                     typer.echo(f"\n{reply}")
         finally:
@@ -2512,15 +2850,7 @@ def check_sizes(items: list[tuple[Card, ProductRecord]], llm) -> dict[int, str]:
 
 - [ ] **Step 4: Show doubtful values**
 
-In `src/scout/picks/write.py`, add:
-
-```python
-def attribute_text(entry: dict) -> str:
-    text = f"{entry.get('value')} {entry.get('unit') or ''}".strip()
-    return f"{text} (doubtful)" if entry.get("doubtful") else text
-```
-
-In `_card_json`, use it for the attributes:
+In `src/scout/picks/write.py`, use `attribute_text` (Task 3) in `_card_json` for the attributes:
 
 ```python
         "attributes": {k: attribute_text(v) for k, v in card.attributes.items()},
@@ -2534,12 +2864,15 @@ In `format_picks`, change the line that builds `attrs`:
 
 - [ ] **Step 5: Check the sizes in the pipeline**
 
-In `src/scout/picks/pipeline.py`, import `check_sizes` from `scout.extract.doubt`. Then change `make_picks`. It keeps the fresh records of the recheck, and it checks the sizes before it writes the summaries.
+In `src/scout/picks/pipeline.py`, import `check_sizes` from `scout.extract.doubt`. Then change `make_picks`. It keeps the fresh records of the recheck, and it checks the sizes before it writes the summaries. A kept card was not fetched again, so it keeps the doubts of the turn that showed it (Task 9).
 
 ```python
-def make_picks(short: Shortlist, needs: Needs, k: int, refetch: Refetch, llm,
-               language: str = "English") -> PicksResult:
-    """Recheck the top cards on the live pages, check their sizes, then write summaries with checked numbers."""
+def make_picks(short: Shortlist, needs: Needs, k: int, refetch: Refetch, llm, language: str = "English",
+               kept: Sequence[Card] = (), first: Sequence[Card] = ()) -> PicksResult:
+    """Recheck the top cards on the live pages, check their sizes, then write summaries with checked numbers.
+
+    `kept` cards stay picks without a new check. `first` cards are checked before the shortlist.
+    """
     fetched: dict[int, ProductRecord] = {}
 
     def refetch_and_keep(card: Card) -> ProductRecord | None:
@@ -2548,22 +2881,27 @@ def make_picks(short: Shortlist, needs: Needs, k: int, refetch: Refetch, llm,
             fetched[card.listing_id] = rec
         return rec
 
-    chosen, recheck_notes = recheck_picks(short.ranked, k, refetch_and_keep, needs.budget_sek(),
-                                          needs.rank_conditions())
-    notes = short.notes + recheck_notes + [short.size_notes[c.listing_id] for c in chosen
-                                           if c.listing_id in short.size_notes]
+    taken = {c.product_id for c in [*kept, *first]}
+    ranked = [*first, *(c for c in short.ranked if c.product_id not in taken)]
+    new, recheck_notes = recheck_picks(ranked, k - len(kept), refetch_and_keep, needs.budget_sek(),
+                                       needs.rank_conditions())
+    chosen = [*kept, *new]
+    card_notes = {c.listing_id: short.size_notes[c.listing_id] for c in chosen if c.listing_id in short.size_notes}
+    notes = short.notes + recheck_notes
     texts, errors = None, []
     if chosen and llm is not None:
         try:
             doubts = check_sizes([(c, fetched[c.listing_id]) for c in chosen if c.listing_id in fetched], llm)
-            notes += [doubts[c.listing_id] for c in chosen if c.listing_id in doubts]
+            for listing_id, doubt in doubts.items():
+                card_notes[listing_id] = f"{card_notes[listing_id]} {doubt}" if listing_id in card_notes else doubt
         except (LLMUnavailable, LLMOutputError) as exc:
             notes.append(f"Size check skipped: {exc}")
         try:
             texts, errors = write_picks(llm, chosen, needs.text(), language)
         except LLMUnavailable as exc:
             notes.append(f"No summaries: {exc}")
-    return PicksResult(chosen, texts, errors, notes, short.dropped, needs.text())
+    notes += [card_notes[c.listing_id] for c in chosen if c.listing_id in card_notes]
+    return PicksResult(chosen, texts, errors, notes, short.dropped, needs.text(), card_notes)
 ```
 
 - [ ] **Step 6: Run all tests**
@@ -2585,7 +2923,479 @@ git commit -m "Worker size check on the picks: doubtful sizes are marked, quotes
 
 ---
 
-### Task 12: Read the price when amazon.se hides it
+### Task 12: Scripted conversations and the numbers
+
+Zheyun asked for this in her review on 2026-10-05: three real conversations (Task 15) give too few numbers for the CV. This task adds 12 scripted conversations. They run the real chat model through the graph over the stored products. No browser opens, and a search only records its words and page. Python compares the values after each turn with the values that the script expects, and it counts the check rounds of each step. The run also tests a new chat model before it goes into `config/models.yaml` (decision 13).
+
+**Files:**
+- Modify: `config/models.yaml` (the `nvidia` provider)
+- Create: `src/scout/eval/chat.py`, `eval/chat/conversations.yaml`, `tests/test_eval_chat.py`
+- Modify: `src/scout/cli.py` (command `eval-chat`)
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `tests/test_eval_chat.py`:
+
+```python
+from scout.agent.clarify import CategoryChoice, ClarifyReply
+from scout.agent.followup import Route
+from scout.config import ROOT
+from scout.eval.chat import Expect, Script, Turn, load_scripts, run_scripts, summarize
+from scout.needs import Needs
+from tests.fakes import FakeLLM
+from tests.test_graph import World, ready
+
+
+def test_a_script_is_scored_turn_by_turn():
+    world = World()
+    llm = FakeLLM([CategoryChoice(category="fridge"), ClarifyReply(needs=Needs(budget=9000), ready=False,
+                                                                   question="Which kind?"),
+                   ready(budget=9000), Route(action="exclude", pick_numbers=[2])])
+    script = Script(id="s", turns=[
+        Turn(say="a fridge, budget 9000", expect=Expect(phase="clarify", budget=9000, searched=False)),
+        Turn(say="with a freezer", expect=Expect(phase="picks", kind="fridge_freezer", conditions=["height<=186"])),
+        Turn(say="remove 2", expect=Expect(route="exclude", pick_numbers=[2], says="Removed")),
+    ])
+    records = run_scripts([script], world.deps(llm), world.crawls, llm)
+    assert [c["ok"] for c in records[0]["checks"]] == [True, True, True]
+    assert [(c["check"], c["ok"]) for c in records[1]["checks"]] == [("phase", True), ("kind", True),
+                                                                      ("conditions", False)]
+    assert all(c["ok"] for c in records[2]["checks"])
+    assert records[0]["steps"] == {"clarify": {"rounds": 1, "passed": True, "first_round": True}}
+    summary = summarize(records)
+    assert summary["checks"]["conditions"] == {"ok": 0, "total": 1} and summary["errors"] == 0
+    assert summary["steps"]["clarify"] == {"ran": 2, "first_round": 2, "passed": 2}
+
+
+def test_the_scripts_load():
+    scripts = load_scripts(ROOT / "eval" / "chat" / "conversations.yaml")
+    assert len(scripts) == 12 and len({s.id for s in scripts}) == 12
+```
+
+- [ ] **Step 2: Run the tests to see them fail**
+
+Run: `python -m pytest tests/test_eval_chat.py -v`
+Expected: FAIL with `ModuleNotFoundError: No module named 'scout.eval.chat'`.
+
+- [ ] **Step 3: Write the evaluation**
+
+Create `src/scout/eval/chat.py`:
+
+```python
+"""Scripted conversations: the real chat model talks with the graph over stored products, and Python scores it."""
+import statistics
+import time
+from collections import Counter
+from pathlib import Path
+
+import yaml
+from langgraph.checkpoint.memory import InMemorySaver
+from pydantic import BaseModel, ConfigDict, Field
+
+from scout.agent.graph import Deps, build_graph
+from scout.crawl import CrawlReport
+from scout.needs import Needs
+from scout.picks.pipeline import make_picks, shortlist
+from scout.picks.rank import Card, load_cards_by_ids
+from scout.profiles import PROFILES_DIR, load_profile
+from scout.sources.base import ProductRecord
+
+# The steps whose output Python checks, by schema name, and the reply text when the last round still failed.
+CHECKED = {"ClarifyReply": ("clarify", "The needs were still not valid"),
+           "PicksText": ("summaries", "did not pass the checks"),
+           "Answer": ("answers", "I could not write an answer"),
+           "CalcPlan": ("calculations", "I could not turn this request")}
+
+
+class Expect(BaseModel):
+    model_config = ConfigDict(extra="forbid")  # a wrong key in the YAML must fail, not pass silently
+
+    phase: str | None = None
+    category: str | None = None             # "none": the agent must not choose a category
+    kind: str | None = None
+    budget: float | None = None
+    no_budget: bool = False
+    conditions: list[str] | None = None     # for example ["height<=186"]; [] means no conditions
+    route: str | None = None
+    pick_numbers: list[int] | None = None
+    searched: bool | None = None
+    says: str | None = None                 # a text in the replies of the turn
+
+
+class Turn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    say: str
+    expect: Expect = Field(default_factory=Expect)
+
+
+class Script(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    note: str = ""
+    turns: list[Turn]
+
+
+def load_scripts(path: Path) -> list[Script]:
+    return [Script.model_validate(s) for s in yaml.safe_load(path.read_text(encoding="utf-8"))]
+
+
+def stored_record(card: Card) -> ProductRecord:
+    """The stored facts of a card. The evaluation never opens amazon.se."""
+    return ProductRecord(source="amazon_se", source_id=card.url.rstrip("/").split("/")[-1], url=card.url,
+                         fetched_at=card.fetched_at, title=card.title, brand=card.brand, model=card.model,
+                         price=card.price, currency=card.currency, in_stock=card.in_stock,
+                         attributes=card.attributes)
+
+
+def offline_deps(conn, llm, k: int = 5) -> tuple[Deps, list]:
+    """Deps over the stored products. A search only records its words and page. Rejections stay in memory."""
+    removed: dict[str, set[int]] = {}
+    screened: dict[tuple[str, int], bool] = {}
+    searches: list[tuple[str, int]] = []
+
+    def crawl(profile, needs, page):
+        searches.append((needs.search_terms(profile), page))
+        return CrawlReport(notes=["Evaluation run: no search on amazon.se, only the stored products."])
+
+    def picks(profile, needs, excluded, keep, recheck):
+        short = shortlist(conn, profile, needs, llm, set(excluded) | {c.product_id for c in keep}, screened)
+        if recheck:
+            return make_picks(short, needs, k, stored_record, llm, first=keep)
+        return make_picks(short, needs, k, stored_record, llm, kept=keep)
+
+    deps = Deps(
+        llm=llm,
+        profile_names=lambda: sorted(p.stem for p in PROFILES_DIR.glob("*.yaml")),
+        load_profile=load_profile,
+        count=lambda profile, needs, excluded: len(shortlist(conn, profile, needs, llm, excluded, screened).ranked),
+        crawl=crawl,
+        picks=picks,
+        cards=lambda ids: load_cards_by_ids(conn, ids),
+        eliminate=lambda thread, ids, reason: removed.setdefault(thread, set()).update(ids),
+        eliminated=lambda thread: set(removed.get(thread, set())),
+        say=lambda text: None,
+    )
+    return deps, searches
+
+
+def compare(expect: Expect, state: dict, route: dict | None, searched: bool, replies: list[str]) -> list[dict]:
+    """One entry for each expected value: its name, the expected and the actual value, and if they agree."""
+    needs = Needs.model_validate(state.get("needs") or {})
+    actual = {
+        "phase": state.get("phase"),
+        "category": needs.category or "none",
+        "kind": needs.kind,
+        "budget": needs.budget,
+        "no_budget": needs.budget is None,
+        "conditions": sorted(f"{c.attribute}{c.op}{c.value:g}" for c in needs.conditions),
+        "route": (route or {}).get("action"),
+        "pick_numbers": (route or {}).get("pick_numbers"),
+        "searched": searched,
+    }
+    checks = []
+    for name, wanted in expect.model_dump(exclude_none=True, exclude_defaults=True).items():
+        if name == "says":
+            got = any(wanted in r for r in replies)
+            checks.append({"check": name, "expected": wanted, "actual": got, "ok": got})
+            continue
+        if name == "conditions":
+            wanted = sorted(wanted)
+        checks.append({"check": name, "expected": wanted, "actual": actual[name], "ok": actual[name] == wanted})
+    return checks
+
+
+def run_scripts(scripts: list[Script], deps: Deps, searches: list, llm, progress=lambda text: None) -> list[dict]:
+    """Run each script in a new thread. Return one record for each turn."""
+    records = []
+    for script in scripts:
+        graph = build_graph(deps, InMemorySaver())
+        config = {"configurable": {"thread_id": f"eval-{script.id}"}}
+        for number, turn in enumerate(script.turns, 1):
+            calls_before, searches_before, started = len(llm.calls), len(searches), time.monotonic()
+            before = len(graph.get_state(config).values.get("messages", []))
+            route, error = None, None
+            try:
+                for update in graph.stream({"messages": [{"role": "user", "content": turn.say}]}, config,
+                                           stream_mode="updates"):
+                    if (update.get("route") or {}).get("route"):
+                        route = update["route"]["route"]
+            except Exception as exc:  # report it, and go on with the next turn
+                error = f"{type(exc).__name__}: {exc}"
+            state = graph.get_state(config).values
+            replies = [m["content"] for m in state.get("messages", [])[before + 1:]]
+            calls = llm.calls[calls_before:]
+            steps = {}
+            for schema, (step, failed_text) in CHECKED.items():
+                rounds = sum(1 for c in calls if c.schema == schema and c.valid)
+                if rounds:
+                    passed = not any(failed_text in r for r in replies)
+                    steps[step] = {"rounds": rounds, "passed": passed, "first_round": passed and rounds == 1}
+            records.append({
+                "script": script.id, "turn": number, "say": turn.say, "replies": replies, "error": error,
+                "checks": compare(turn.expect, state, route, len(searches) > searches_before, replies),
+                "steps": steps, "seconds": round(time.monotonic() - started, 1),
+                "calls": [{"role": c.role, "model": c.model, "schema": c.schema, "valid": c.valid,
+                           "input_tokens": c.input_tokens, "output_tokens": c.output_tokens} for c in calls],
+            })
+            failed = sum(not c["ok"] for c in records[-1]["checks"])
+            progress(f"{script.id} turn {number}: {records[-1]['seconds']} s, {len(calls)} LLM calls, "
+                     f"{failed} values do not agree{', error' if error else ''}")
+    return records
+
+
+def summarize(records: list[dict]) -> dict:
+    checks = Counter()
+    for record in records:
+        for check in record["checks"]:
+            checks[(check["check"], check["ok"])] += 1
+    names = sorted({name for name, _ in checks})
+    steps = {}
+    for record in records:
+        for step, result in record["steps"].items():
+            entry = steps.setdefault(step, {"ran": 0, "first_round": 0, "passed": 0})
+            entry["ran"] += 1
+            entry["first_round"] += result["first_round"]
+            entry["passed"] += result["passed"]
+    models = {}
+    for record in records:
+        for call in record["calls"]:
+            entry = models.setdefault(call["model"], {"calls": 0, "not_valid": 0, "input_tokens": 0, "output_tokens": 0})
+            entry["calls"] += 1
+            entry["not_valid"] += not call["valid"]
+            entry["input_tokens"] += call["input_tokens"]
+            entry["output_tokens"] += call["output_tokens"]
+    seconds = [r["seconds"] for r in records]
+    return {
+        "turns": len(records),
+        "errors": sum(1 for r in records if r["error"]),
+        "checks": {name: {"ok": checks[(name, True)], "total": checks[(name, True)] + checks[(name, False)]}
+                   for name in names},
+        "steps": steps,
+        "models": models,
+        "seconds": {"median": statistics.median(seconds) if seconds else 0, "max": max(seconds, default=0)},
+    }
+
+
+def summary_text(summary: dict) -> str:
+    lines = [f"turns {summary['turns']}, turns with an error {summary['errors']}, "
+             f"seconds per turn: median {summary['seconds']['median']}, max {summary['seconds']['max']}",
+             "Expected values:"]
+    lines += [f"  {name}: {c['ok']} of {c['total']}" for name, c in summary["checks"].items()]
+    lines.append("Checked steps (a round is one reply of the model that matched the schema):")
+    lines += [f"  {step}: ran {s['ran']}, passed in round 1: {s['first_round']}, passed in the end: {s['passed']}"
+              for step, s in summary["steps"].items()]
+    lines.append("LLM calls:")
+    lines += [f"  {model}: {m['calls']} calls ({m['not_valid']} not valid JSON), tokens in {m['input_tokens']}, "
+              f"out {m['output_tokens']}" for model, m in summary["models"].items()]
+    return "\n".join(lines)
+```
+
+A round is one reply of the model that matched the schema. A reply with wrong JSON does not count as a round, but the summary counts it per model.
+
+- [ ] **Step 4: Write the scripts**
+
+Create `eval/chat/conversations.yaml`:
+
+```yaml
+# Scripted conversations for `scout eval-chat`. Each turn has the words of the shopper and the values that
+# Python expects after the turn. Zheyun checks the expected values before the first run.
+# Expect keys: phase, category ("none" = no category), kind, budget, no_budget, conditions, route, pick_numbers,
+# searched (the turn started a search), says (a text in the replies).
+
+- id: zh-fridge-freezer
+  note: The main conversation. The kind is missing in turn 1, so the agent must ask.
+  turns:
+    - say: 我想买个冰箱，放冰箱的地方宽60厘米、高186厘米，预算9000克朗
+      expect: {phase: clarify, searched: false, budget: 9000, conditions: ["width<=60", "height<=186"]}
+    - say: 要带冷冻室的。深度和噪音无所谓，直接搜吧
+      expect: {phase: picks, searched: true, kind: fridge_freezer, budget: 9000,
+               conditions: ["width<=60", "height<=186"]}
+    - say: 第一个有多高？
+      expect: {route: answer}
+    - say: 把第二个去掉，评价太少了
+      expect: {route: exclude, pick_numbers: [2]}
+    - say: 第一个的价格加上499克朗运费是多少？
+      expect: {route: calculate}
+
+- id: en-mini-office
+  turns:
+    - say: I need a small fridge for my office desk. Budget 1500 kr. No other wishes, please search now.
+      expect: {phase: picks, kind: mini_fridge, budget: 1500, conditions: []}
+
+- id: sv-units
+  note: 1,8 m must become 180 cm.
+  turns:
+    - say: Jag vill ha ett kylskåp med frys. Max 1,8 m högt och högst 55 cm brett. Sök direkt, inga andra önskemål.
+      expect: {phase: picks, kind: fridge_freezer, no_budget: true, conditions: ["height<=180", "width<=55"]}
+
+- id: en-family-of-4
+  note: '"8k" is 8000. "4" people must not become a volume.'
+  turns:
+    - say: A fridge with a freezer for a family of 4. Budget 8k. Nothing else matters, search now.
+      expect: {phase: picks, kind: fridge_freezer, budget: 8000, conditions: []}
+
+- id: en-euro-budget
+  note: A budget in euro must not become kronor without a rate.
+  turns:
+    - say: I want a fridge with a freezer, budget 800 euro.
+      expect: {phase: clarify, no_budget: true, searched: false}
+
+- id: zh-change-budget
+  note: A higher budget searches page 1 again. After a lower budget, the agent searches only when fewer than 10 stored
+    products match, and that depends on the database, so turn 3 does not expect a value for searched.
+  turns:
+    - say: 带冷冻室的冰箱，预算5000克朗，别的不限，直接搜
+      expect: {phase: picks, kind: fridge_freezer, budget: 5000, searched: true}
+    - say: 预算提高到7000
+      expect: {route: change_needs, budget: 7000, searched: true}
+    - say: 还是6000吧
+      expect: {route: change_needs, budget: 6000}
+
+- id: en-more
+  turns:
+    - say: A fridge with a freezer, any size, budget 9000. Search now.
+      expect: {phase: picks, kind: fridge_freezer, budget: 9000}
+    - say: Show me other options.
+      expect: {route: more, searched: true}
+
+- id: en-recheck
+  turns:
+    - say: A fridge with a freezer, any size, budget 9000. Search now.
+      expect: {phase: picks}
+    - say: Are these prices still correct?
+      expect: {route: recheck, searched: false}
+
+- id: en-new-category
+  turns:
+    - say: A fridge with a freezer, any size, budget 9000. Search now.
+      expect: {phase: picks}
+    - say: Thanks. Now I need headphones.
+      expect: {route: new_search, category: none, says: I can search these categories now}
+
+- id: sv-sofa
+  turns:
+    - say: Jag letar efter en soffa.
+      expect: {category: none, says: I can search these categories now}
+
+- id: en-unclear-exclude
+  note: No pick number, so the agent must ask which pick. It can ask through the exclude step or the answer step.
+  turns:
+    - say: A fridge with a freezer, any size, budget 9000. Search now.
+      expect: {phase: picks}
+    - say: Remove that one.
+      expect: {says: Which}
+
+- id: zh-wine-cooler
+  note: '"20 bottles" is not an attribute, so there is no condition.'
+  turns:
+    - say: 想要一个酒柜，放20瓶左右，预算5000克朗，别的都不重要，直接搜
+      expect: {phase: picks, kind: wine_cooler, budget: 5000, conditions: []}
+```
+
+Zheyun checks the expected values before the numbers go anywhere. A wrong expected value makes a correct agent look wrong.
+
+- [ ] **Step 5: Add the command and the NVIDIA provider**
+
+In `config/models.yaml`, add under `providers`:
+
+```yaml
+  nvidia:
+    base_url: https://integrate.api.nvidia.com/v1
+    api_key_env: NVIDIA_API_KEY
+```
+
+Zheyun made the free key on build.nvidia.com on 2026-10-05. It is `NVIDIA_API_KEY` in `.env`.
+
+In `src/scout/cli.py`, import `load_scripts`, `offline_deps`, `run_scripts`, `summarize` and `summary_text` from `scout.eval.chat`, and `RoleConfig` from `scout.llm.config`. Then add:
+
+```python
+@app.command("eval-chat")
+def eval_chat(
+    scripts: Path = ROOT / "eval" / "chat" / "conversations.yaml",
+    chat: Optional[str] = typer.Option(None, help="provider:model for the chat role, for example "
+                                                  "nvidia:nvidia/nemotron-3-ultra-550b-a55b"),
+    rpm: int = 10,
+    only: Optional[str] = typer.Option(None, help="run only the script with this id"),
+    k: int = 5,
+) -> None:
+    """Run the scripted conversations over the stored products, and save the numbers. No browser opens."""
+    settings = load_settings()
+    config = load_llm_config()
+    if chat:
+        provider, model = chat.split(":", 1)
+        config.roles["chat"] = RoleConfig(provider=provider, model=model, rpm=rpm)
+    config.roles["chat"].fallback = None  # one chat model for each run, so the numbers belong to it
+    llm = LLM(config)
+    todo = [s for s in load_scripts(scripts) if only in (None, s.id)]
+    with connect(settings.database_url) as conn:
+        deps, searches = offline_deps(conn, llm, k)
+        records = run_scripts(todo, deps, searches, llm, typer.echo)
+    summary = {"chat_model": llm.model_for("chat"), "worker_model": llm.model_for("worker"),
+               "run_at": datetime.now(timezone.utc).isoformat(), **summarize(records)}
+    slug = llm.model_for("chat").replace("/", "_")
+    out = ROOT / "eval" / "results" / f"chat-{slug}-{datetime.now():%Y%m%d-%H%M}.json"
+    out.write_text(json.dumps({"summary": summary, "turns": records}, indent=2, ensure_ascii=False), encoding="utf-8")
+    for record in records:
+        for check in record["checks"]:
+            if not check["ok"]:
+                typer.echo(f"{record['script']} turn {record['turn']}: {check['check']} expected "
+                           f"{check['expected']}, got {check['actual']}")
+        if record["error"]:
+            typer.echo(f"{record['script']} turn {record['turn']}: error {record['error']}")
+    typer.echo(summary_text(summary))
+    typer.echo(f"saved {out}")
+```
+
+- [ ] **Step 6: Run all tests**
+
+Run: `python -m pytest -q`
+Expected: all tests pass.
+
+- [ ] **Step 7: Run the scripts with two chat models**
+
+Run: `scout eval-chat`, then `scout eval-chat --chat nvidia:nvidia/nemotron-3-ultra-550b-a55b --rpm 30`
+Expected: each run prints the values that did not agree, the summary, and the path of the JSON file in `eval/results/`. Write the numbers under this step.
+
+**Dry-run results, 2026-10-05.** Claude ran the scripts on the code that this plan makes, in a temporary worktree, over the 24 stored listings. The worker was `gemini-3.5-flash-lite`.
+
+`nvidia/nemotron-3-ultra-550b-a55b` (NVIDIA free API), all 12 scripts, 22 turns, no turn with an error:
+
+| Measure | Result |
+|---|---|
+| Expected values that agree | 37 of 38 (budget 9/9, conditions 6/6, kind 7/7, phase 12/12, route 8/8, pick numbers 1/1, searched 7/7, category 2/2, no budget 2/2, says 2/3) |
+| Clarify steps that passed in round 1 | 14 of 14 |
+| Summaries that passed in round 1 | 10 of 14; all 14 passed in the end |
+| Answers that passed in round 1 | 2 of 2 |
+| Calculations that passed in round 1 | 0 of 1; it passed in round 2 |
+| Chat calls | 59 (1 reply was not valid JSON), 61,362 tokens in, 58,692 out |
+| Worker calls | 17, 10,016 tokens in, 1,232 out |
+| Seconds per turn | median 80.9, maximum 480.6 |
+
+The value that did not agree shows a real fault. The shopper wrote "Remove that one." The router chose `answer`, and the answer said "Removed Pick 5", but nothing was removed. Claude then changed two prompts in Task 7: the router chooses `exclude` also without a number, so Python asks which pick, and the answer step must never say that it changed the picks. After that change, this script passed (2 turns).
+
+Earlier runs on the same day found four faults that this plan now fixes:
+- The calculation tool had no retry. The model put a whole formula into one number field, and the shopper saw a raw error (Task 8).
+- The clarify step did not see that "a small fridge for my office desk" is a mini fridge, and it asked for the kind again (Task 6).
+- The clarify step chose its own search words ("kylfrys" in place of "kyl och frys") (Task 6).
+- One hung request held a run for many minutes, because the OpenAI library waits 600 seconds and tries 2 more times (Task 1).
+Two expected values in the scripts were wrong, and Claude changed them: after a lower budget the agent searches again when fewer than 10 stored products match, and that depends on the database; and the agent can ask "which pick" through the answer step. These are in the notes of the scripts.
+
+`gemini-3.8-flash`: the free daily quota of the chat model ran out after the first script. The first script (5 turns) gave 13 of 13 expected values, at 29 to 107 seconds a turn. The quota was already used on 2026-10-04, so this run says nothing about the daily limit. Run the full comparison on a day with a new quota.
+
+**Decision for Zheyun.** Nemotron passed all scripts after the fixes, and it has a larger free quota, but it is slow: it writes about 1,000 output tokens for each call on average, and a turn takes 81 seconds (median). Claude recommends `nvidia/nemotron-3-ultra-550b-a55b` as the `chat` fallback in place of Groq, and `gemini-3.8-flash` stays the main chat model. Run the Gemini comparison before this goes into `config/models.yaml`.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add config/models.yaml src/scout/eval/chat.py src/scout/cli.py eval/chat tests/test_eval_chat.py eval/results
+git commit -m "Scripted conversations: eval-chat scores the needs, the routes and the check rounds of each chat model"
+```
+
+---
+
+### Task 13: Read the price when amazon.se hides it
 
 **Why:** Zheyun reviewed the 32 labels that Claude made, on 2026-10-04. 27 were correct. 5 were wrong, and in all 5 the page shows no single price:
 
@@ -2605,7 +3415,7 @@ Now these products have no price, so a budget removes them from the picks, altho
 
 Add `--offers` and `--sizes` to `scout snap`.
 - With `--offers`, the browser opens the product page, clicks "Visa alla köpalternativ", waits up to 10 seconds for `#aod-container`, and saves the panel HTML and a screenshot in `snapshots/amazon_se/offers/<ASIN>/`.
-- With `--sizes`, the browser clicks each option in the row "Storlek" (at most 4), waits for the price to change, and saves the page HTML and a screenshot after each click in `snapshots/amazon_se/product/<ASIN>/`.
+- With `--sizes`, the browser opens the page of each size option by its own ASIN (`/dp/<ASIN>?th=1&psc=1`, at most 4), and saves the page HTML and a screenshot in `snapshots/amazon_se/product/<ASIN>/`. Check on these pages that one size is selected and that the price and the stock show. If they do not show, the adapter clicks the option in the row "Storlek" instead, and this step saves the page after each click.
 
 Run `--offers` on the 4 offer-panel ASINs and `--sizes` on B0H4YNM2BL. Zheyun is at the computer, because a captcha can come. Copy reduced versions to `tests/fixtures/amazon_se/` (remove scripts and images, keep the offer blocks and the price blocks). One offer fixture must have a used offer, if a real panel has one.
 
@@ -2613,7 +3423,7 @@ Run `--offers` on the 4 offer-panel ASINs and `--sizes` on B0H4YNM2BL. Zheyun is
 
 `ProductRecord` gets `price_hidden: Literal["offers", "size"] | None = None` and `price_source: Literal["buy_box", "all_offers", "size_choice"] | None = None`.
 - `offers`: the parser finds no price and finds `#buybox-see-all-buying-choices`.
-- `size`: the parser finds `.a-price-range` and a row with "Välj". It also reads the ASIN, colour and size of each option from `dimensionValuesDisplayData`.
+- `size`: the parser finds `.a-price-range` and a row with "Välj". It also reads the ASIN, colour and size of each option from `dimensionValuesDisplayData`. `ProductRecord` gets `size_options: list[SizeOption]` (ASIN, colour, size).
 
 Test this on the 38 labelled pages: the 4 offer pages give `offers`, B0H4YNM2BL gives `size`, and the other 33 give None.
 
@@ -2624,7 +3434,7 @@ Test this on the 38 labelled pages: the 4 offer pages give `offers`, B0H4YNM2BL 
 - [ ] **Step 4: Use the offer panel and the size choice in the crawl and the recheck**
 
 - `offers`: the adapter opens the panel in the same tab (one click, no new page load). The record takes the price of `lowest_new`, with `price_source="all_offers"`, and `in_stock` is True. When the panel has no new offer that can go in the cart, the price stays empty, as now.
-- `size`: the adapter clicks each size of the colour on the page, at most 4. Each size becomes one row in `variants`, with its own price and stock and `price_source="size_choice"`. The variant key is the ASIN of the option, and the label is the colour and the size. The budget filter keeps the listing when one variant is in the budget. The picks show the variant that is in the budget.
+- `size`: each size option of the colour on the page, at most 4, becomes its own listing with its own product page, as the colours already are. The crawl adds the option ASINs to the candidates, and `known_source_ids` skips the stored ones. A size has its own measurements, so it must not share the attributes of another size. Its price gets `price_source="size_choice"`. `load_cards` needs no change, because each listing then has one size.
 - The fetch log gets one line for each click. `variants` and `price_history` get the column `price_source`. The recheck of the picks does the same clicks.
 
 - [ ] **Step 5: Show it in the picks**
@@ -2647,7 +3457,7 @@ git commit -m "Read the price from the offer panel or the size choice when amazo
 
 ---
 
-### Task 13: Langfuse setup (Zheyun)
+### Task 14: Langfuse setup (Zheyun)
 
 - [ ] **Step 1: Choose where the traces go**
 
@@ -2673,7 +3483,7 @@ Expected: `keys accepted: True`. In Langfuse, **Tracing** shows a trace named "c
 
 ---
 
-### Task 14: Real conversations (Zheyun) and the numbers
+### Task 15: Real conversations (Zheyun) and the numbers
 
 - [ ] **Step 1: Conversation A, a fridge with a freezer part**
 
@@ -2702,7 +3512,7 @@ Ask for headphones. Check: the agent says which categories it can search now.
 
 - [ ] **Step 5: Measure (Claude)**
 
-From the terminal output and from Langfuse, write a table for conversations A and B:
+Run `scout eval-chat` again with the chat model of `config/models.yaml`, and compare the numbers with Task 12. From the terminal output and from Langfuse, write a table for conversations A and B:
 - turns, and LLM calls and tokens for each model;
 - seconds for each turn (median and maximum), and which step took the most time;
 - product pages fetched;
@@ -2713,7 +3523,7 @@ Report only the real numbers. Nothing goes into the CV until Zheyun confirms it.
 
 - [ ] **Step 6: Update the documents**
 
-1. Spec: write the eight decisions of this plan into sections 3, 4.1, 4.2, 4.3, 4.7, 4.8 and 4.11. In the table of LLM candidates, change the Groq row: it is the `chat` fallback, with the limits from 2026-10-04.
+1. Spec: write the 13 decisions of this plan into sections 3, 4.1, 4.2, 4.3, 4.7, 4.8 and 4.11, and the scripted conversations into section 6 (evaluation). In the table of LLM candidates, change the Groq row: it is the `chat` fallback, with the limits from 2026-10-04.
 2. Diagram (https://claude.ai/artifact/4jJqCkVudUFU24kTyXsiqZ): mark the phase 2 nodes as built and update the Progress section.
 3. Write the results of Steps 1 to 5 under this task.
 
