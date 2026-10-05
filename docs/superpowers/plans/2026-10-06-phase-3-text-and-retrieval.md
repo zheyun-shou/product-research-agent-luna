@@ -1,6 +1,6 @@
 # Phase 3 Text and Retrieval
 
-> **How to use this plan.** Zheyun reviews this plan first. Claude starts after she answers the questions below. Commit at the end of each task. Do not run a paid evaluation until she asks.
+> **How to use this plan.** Zheyun answered the questions on 2026-10-06 (see her decisions). Commit at the end of each task. Do not run a paid evaluation until she asks.
 
 **Goal:** The agent finds the right text of many products and many reviews, not only the full text of one product. It uses hybrid retrieval (bge-m3 vectors, BM25 and RRF). It reads the shop reviews behind the login, finds attribute values that the database does not have, and writes pros and complaints in the picks. An evaluation compares the retrieval methods with the long-context baseline.
 
@@ -16,12 +16,13 @@
 - The fridge profile has `complaint_types`: noise, frost, door seal, compressor life, after-sales service.
 - The GPU is an RTX 3060 Laptop with 6 GB. No torch and no embedding library are installed.
 
-## Questions for Zheyun
+## Decisions of Zheyun (2026-10-06)
 
-1. **Local model and libraries.** Claude installs torch with CUDA (about 2.5 GB) and FlagEmbedding in the conda env, and downloads bge-m3 from Hugging Face (about 2.3 GB) into the Hugging Face cache. FlagEmbedding gives the dense vector and the sparse weights of bge-m3 in one call, and the evaluation compares both. Is this OK?
-2. **Shop reviews need your login.** Amazon shows the full review pages only after a login. You log in to amazon.se in the dedicated Chrome profile. Then the agent reads the review pages of the top 10 picks, at most 3 pages for each pick, and at most 30 pages for each search (the spec limit). Is this volume OK?
-3. **Who makes the evaluation set.** You said that you cannot label. Proposal: Claude writes about 30 questions from the stored text. For each question Claude marks the chunks that hold the answer and copies the exact words. Python checks that the words are in those chunks. The retrieval scores need no judge. The answers of the chat model get the DeepSeek grader. The plan and any CV text say "made by Claude, checked by Python", not "labelled by hand".
-4. **Professional reviews.** The spec puts one or two professional review sites at the end of phase 3. Råd & Rön is for paying members. Proposal: move them after v1, and do the shop reviews well first.
+1. **Local model and libraries: yes.** torch with CUDA, FlagEmbedding and bge-m3 (from Hugging Face) go into the conda env and the Hugging Face cache. FlagEmbedding gives the dense vector and the sparse weights of bge-m3 in one call.
+2. **Shop reviews: read the good and the bad ones.** The agent reads the positive and the critical review pages of each top pick (amazon.se has a star filter for each). When amazon.se is not logged in, the agent tells the shopper to log in in the dedicated browser window, and waits. Limits: the top 10 picks, at most 3 pages for each pick, at most 30 pages for each search.
+3. **Claude makes the evaluation set.** Claude writes about 30 questions from the stored text, marks the chunks that hold each answer and copies the exact words. Python checks that the words are in those chunks. The DeepSeek grader marks the answers of the chat model. The plan and any CV text say "made by Claude, checked by Python", not "labelled by hand".
+4. **Professional reviews: a free source for all categories.** She asked for a free source that covers all kinds of products, for example YouTube or a web search. See Task 9.
+5. **A web page for the chat.** At the end, the shopper talks to the agent on a web page. This comes into the schedule, so that Zheyun can test the agent herself.
 
 ## Global constraints
 
@@ -64,8 +65,8 @@
 ### Task 5: Shop reviews behind the login
 
 - Parser for the review pages of amazon.se: title, rating, date, verified purchase, variant, text. No author.
-- Login check on each review page, from the page that was just fetched (no extra request). When the login is gone or a captcha shows, the agent stops and asks Zheyun.
-- After the picks, the agent reads the review pages of the top 10, within the page limits. The reviews go into `page_texts` and into chunks.
+- Login check on each review page, from the page that was just fetched (no extra request). When the login is gone or a captcha shows, the agent tells the shopper to log in or solve it in the dedicated browser window, and waits. It never types a password.
+- After the picks, the agent reads the positive and the critical review pages of the top 10, within the page limits. The reviews go into `page_texts` and into chunks. Each review keeps which filter found it.
 - Step that needs Zheyun: she logs in, and Claude saves one review page as a test fixture outside Git. The parser is written against that page.
 
 ### Task 6: On-demand attribute extraction
@@ -87,8 +88,19 @@
 - With Zheyun's permission: the chat model answers each question with the top 10 chunks of each method and with long context. The DeepSeek grader marks each answer. The report gives accuracy, tokens, cost and latency for each method.
 - The results go into this plan, with the size of the corpus. If the corpus is too small to show a difference, the plan says so.
 
+### Task 9: Reviews from the web (needs a decision)
+
+Findings of 2026-10-06:
+
+- A Google search by the program is not an option. Google does not allow automated searches, and it shows captchas. The program never bypasses captchas.
+- YouTube: the official YouTube Data API is free (a daily quota), but it does not give the transcripts of other people's videos. Tools that read transcripts use pages that are not an official API.
+- A search API made for agents fits best. Tavily has a free plan of 1,000 searches each month, with no credit card. It also gives the text of the found pages. Brave Search now needs a credit card, so it is not an option (never enable billing).
+- Swedish sites such as test.se and testexperterna.se collect tests for many categories. Many such sites are lists for affiliate links, so their quality varies.
+
+Proposal: a lookup tool `search_web(question)` that searches for "model number + test or review" through Tavily. The results are chunks with the source type "web" and their URL, and the picks show them as web sources, not as professional tests. Zheyun makes the Tavily account and puts the key in `.env`.
+
 ## Not in this plan
 
-- Professional review sites (question 4).
+- The web page for the chat (decision 5). It gets its own plan, together with FastAPI from phase 7.
 - PaddleOCR-VL for images (phase 4). `read_images` with the worker stays.
 - Python's fixed messages in the shopper's language.
