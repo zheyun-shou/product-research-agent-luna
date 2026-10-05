@@ -59,6 +59,9 @@ def test_tool_calls_written_as_text_are_accepted():
     text = '[[{"name": "remove_picks", "parameters": {"picks": [2]}}, {"name": "reply", "parameters": {"text": "ok"}}]]'
     llm, _ = make([written(text)])
     assert llm.tools("chat", "sys", "user", [RemovePicks, Reply]) == [RemovePicks(picks=[2]), Reply(text="ok")]
+    # Nemotron, 2026-10-05: the outer brackets do not match.
+    broken = '[[ {"name": "remove_picks", "parameters": {"picks": [5]}}, {"name": "reply", "parameters": {"text": "x"}} ]'
+    assert text_tool_calls(broken) == [("remove_picks", '{"picks": [5]}'), ("reply", '{"text": "x"}')]
 
 
 def test_a_wrong_call_is_sent_back_and_tried_again():
@@ -67,6 +70,7 @@ def test_a_wrong_call_is_sent_back_and_tried_again():
     assert llm.tools("chat", "sys", "user", [RemovePicks, Reply]) == [RemovePicks(picks=[2])]
     assert "there is no tool delete" in completions.requests[1]["messages"][-1]["content"]
     assert "no tool call" in completions.requests[2]["messages"][-1]["content"]
+    assert completions.requests[2]["messages"][-2] == {"role": "assistant", "content": "I removed it."}
     assert [c.valid for c in llm.calls] == [False, False, True]
 
 

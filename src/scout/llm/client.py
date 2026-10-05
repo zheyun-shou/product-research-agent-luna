@@ -71,19 +71,21 @@ def tool_spec(tool: type[BaseModel]) -> dict:
 
 
 def text_tool_calls(text: str) -> list[tuple[str, str]]:
-    """Tool calls that a model wrote as JSON text in place of real tool calls. Nemotron does this at times."""
-    try:
-        data = json.loads(strip_fences(text))
-    except ValueError:
-        return []
-    items, calls = [data], []
-    while items:
-        item = items.pop(0)
-        if isinstance(item, list):
-            items = item + items
-        elif isinstance(item, dict) and isinstance(item.get("name"), str):
+    """Tool calls that a model wrote as JSON text in place of real tool calls. Nemotron does this at times, and its
+    outer brackets often do not match ("[[ {...}, {...} ]"). So each JSON object is read on its own."""
+    text, decoder = strip_fences(text), json.JSONDecoder()
+    calls, start = [], text.find("{")
+    while start != -1:
+        try:
+            item, end = decoder.raw_decode(text, start)
+        except ValueError:
+            item, end = None, start + 1
+        if isinstance(item, dict) and isinstance(item.get("name"), str):
             args = item.get("arguments", item.get("parameters", {}))
             calls.append((item["name"], args if isinstance(args, str) else json.dumps(args)))
+        else:
+            end = start + 1  # look for calls inside this object
+        start = text.find("{", end)
     return calls
 
 
@@ -276,8 +278,9 @@ class LLM:
                 return calls
             record.valid = False
             last_error = "; ".join(problems) or "no tool call"
-            messages = messages + [{"role": "user", "content": f"Your reply did not call the tools correctly "
-                                                               f"({last_error}). Call the tools again."}]
+            said = [{"role": "assistant", "content": message.content}] if message.content else []
+            messages = messages + said + [{"role": "user", "content": f"Your reply did not call the tools correctly "
+                                                                      f"({last_error}). Call the tools again."}]
         if last_error == "rate limited":
             raise QuotaExhausted(f"{role_cfg.model} is still rate limited after {self.MAX_ATTEMPTS} tries.")
         if last_error == "unavailable":
