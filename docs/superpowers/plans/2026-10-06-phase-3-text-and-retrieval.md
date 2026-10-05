@@ -46,20 +46,29 @@ On 2026-10-06 `scout backfill-text` made 181 chunks from the stored pages: 41 sp
 - Reviews keep title, rating, date and verified in the chunk metadata, never the author.
 - Tests: the division, the overlap, the title prefix, no author.
 
-### Task 2: Embeddings with bge-m3
+### Task 2: Embeddings with bge-m3 (done)
+
+On 2026-10-06 Claude installed torch 2.6.0 (CUDA 12.4) and FlagEmbedding 1.4.2. The model download is about 4.3 GB, because the model repository also has an ONNX copy. `scout embed` gave the 181 chunks their vectors in 17.5 s on the RTX 3060. Chunk sizes are still counted as 4 characters for each token.
+
 
 - `Embedder` protocol: `embed(texts) -> (dense, sparse)`. `BgeM3Embedder` uses FlagEmbedding on the GPU in fp16, with batches. `FakeEmbedder` for tests.
 - `scout embed`: makes the chunks of each `page_texts` row that has none, and the vectors of each chunk without a vector or with an older `embed_model`. It prints the counts and the time.
 - New fetches make chunks and vectors when the record is saved, if the embedder is available. If not, `scout embed` does it later.
 
-### Task 3: BM25 and the retrieval interface
+### Task 3: BM25 and the retrieval interface (done)
+
+A first try on 2026-10-06, with four queries, showed that each method gives results. BM25 gives nothing for a Chinese query, because no stored text is in Chinese. The vector search finds reviews about noise for it. Each chunk starts with the product title, so BM25 gives all chunks of a product the same score for its model number. A search takes 0.05 s (BM25) to 0.3 s (hybrid).
+
 
 - BM25 in our own Python code (k1 = 1.2, b = 0.75). The tokens come from the bge-m3 tokenizer. A regex adds each model number (for example `RB38C7B5D22`) as one token.
 - `Retriever` protocol: `search(query, scope, k=10) -> list[Hit]`. scope sets the listings, the chunk kinds and the dates.
 - Implementations: `VectorRetriever`, `Bm25Retriever`, `SparseRetriever` (bge-m3 sparse weights), `HybridRetriever` (RRF, `1/(60 + rank)`), `LongContext` (all text of the scope, the baseline).
 - Tests with a small fixed corpus and the fake embedder: each method finds the expected chunk, RRF order, model number tokens, filters.
 
-### Task 4: `search_text` tool
+### Task 4: `search_text` tool (done)
+
+The bge-m3 model loads at the first `search_text` call in `scout chat`, and new chunks get their vectors before each search. No real chat turn has used the tool yet.
+
 
 - New lookup tool `search_text(question, picks=None, kinds=None)`. It gives the top 10 chunks, each with its chunk id, its pick or product and its kind. With no picks it searches all stored products of the category.
 - `read_product` stays. The model chooses: `search_text` for a question across many products or many reviews, `read_product` for one product.

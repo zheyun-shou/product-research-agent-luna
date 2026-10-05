@@ -10,6 +10,8 @@ from scout.picks.rank import load_cards_by_ids
 from scout.profiles import load_profile, profile_names, save_draft
 from scout.sources.amazon_se.adapter import AmazonSeAdapter
 from scout.sources.browser import BrowserSession
+from scout.text.embed import BgeM3Embedder
+from scout.text.retrieve import hybrid_search
 
 
 class LazyBrowser:
@@ -57,6 +59,7 @@ def shared_deps(conn, llm, crawl, refetch, k: int = 5, size_check: bool = True, 
         page_texts=lambda ids: page_texts(conn, ids),
         query=lambda profile, needs: shortlist(conn, profile, needs, llm, (), screened).ranked,
         read_images=image_reader(llm),
+        search_text=hybrid_search(conn, BgeM3Embedder),
         **rest,
     )
 

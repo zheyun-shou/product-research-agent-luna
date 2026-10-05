@@ -65,3 +65,28 @@ def test_after_three_lookups_the_model_must_answer():
     result = act(llm, PICKS, CARDS, [], "Shopper: quiet?", set(), "quiet?", lookup=make_lookup())
     assert result.reply.text == "Pick 1 is quiet." and len(result.lookups) == 3
     assert "you looked up enough" in llm.requests[4][1]
+
+
+def test_search_text_searches_the_category_and_marks_the_picks():
+    from scout.agent.lookup import SearchText
+    from scout.text.retrieve import Hit
+    asked = []
+
+    def search(question, scope, k):
+        asked.append((question, scope, k))
+        return [Hit(9, CARDS[1].listing_id, "review", "review 2", "Product: Fridge 2\nReview: loud at night"),
+                Hit(8, 999, "review", "review 1", "Product: Other\nReview: quiet")]
+    lookup = make_lookup()
+    lookup.search = search
+    text = lookup.run(SearchText(question="noise", kinds=["review"]))
+    assert asked[0][1].category == "fridge" and asked[0][1].listing_ids is None and asked[0][1].kinds == ["review"]
+    assert "[1] pick 2, review 2:\nProduct: Fridge 2\nReview: loud at night" in text
+    assert "[2] not a pick, review 1:" in text
+    lookup.run(SearchText(question="noise", picks=[1]))
+    assert asked[1][1].listing_ids == [CARDS[0].listing_id]
+    assert f"there are only {len(CARDS)} picks" in lookup.run(SearchText(question="x", picks=[7]))
+
+
+def test_search_text_without_a_search_says_so():
+    from scout.agent.lookup import SearchText
+    assert "not available" in make_lookup().run(SearchText(question="noise"))

@@ -179,3 +179,20 @@ def eliminated_products(conn: psycopg.Connection, thread_id: str) -> set[int]:
 def restore_products(conn: psycopg.Connection, thread_id: str, product_ids: list[int]) -> None:
     conn.execute("DELETE FROM eliminations WHERE thread_id = %s AND product_id = ANY(%s)", (thread_id, product_ids))
     conn.commit()
+
+
+def chunks_to_embed(conn: psycopg.Connection, embed_model: str, limit: int = 256) -> list[dict]:
+    """Chunks without a vector, or with a vector of another model."""
+    return conn.execute(
+        """SELECT id, text FROM chunks WHERE embedding IS NULL OR embed_model IS DISTINCT FROM %s
+           ORDER BY id LIMIT %s""", (embed_model, limit)).fetchall()
+
+
+def save_vectors(conn: psycopg.Connection, rows: list[tuple[int, list[float], dict, list[str]]],
+                 embed_model: str) -> None:
+    """rows: chunk id, dense vector, sparse weights, BM25 tokens."""
+    for chunk_id, dense, sparse, tokens in rows:
+        conn.execute(
+            "UPDATE chunks SET embedding = %s::vector, sparse = %s, tokens = %s, embed_model = %s WHERE id = %s",
+            (str(dense), Jsonb(sparse), tokens, embed_model, chunk_id),
+        )

@@ -43,6 +43,7 @@ class Deps:
     page_texts: Callable[[list[int]], dict] | None = None
     query: Callable[[CategoryProfile, Needs], list[Card]] | None = None
     read_images: Callable[[list[str], str], Any] | None = None
+    search_text: Callable[..., list] | None = None  # (question, scope, k) -> hits
     save_draft: Callable[[CategoryProfile], Any] | None = None  # without it, no new category is drafted
 
 
@@ -206,7 +207,7 @@ def build_graph(deps: Deps, checkpointer=None):
         if deps.page_texts and needs.category:
             lookup = Lookup(deps.load_profile(needs.category), needs, cards, deps.page_texts,
                             deps.query or (lambda profile, n: []),
-                            deps.read_images or (lambda urls, q: ImageAnswer(found=False)))
+                            deps.read_images or (lambda urls, q: ImageAnswer(found=False)), deps.search_text)
         result = act(llm, picks, cards, removed, history_text(state), allowed, last_user_text(state),
                      lookup=lookup)
         if result is None:

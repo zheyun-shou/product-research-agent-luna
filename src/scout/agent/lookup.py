@@ -1,7 +1,7 @@
 """Tools that look things up. Python runs them and gives the result back to the chat model in the same turn."""
 import base64
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Literal
 
 import httpx
 from pydantic import BaseModel, Field
@@ -10,9 +10,11 @@ from scout.needs import ConditionSpec, Needs
 from scout.picks.rank import Card
 from scout.picks.write import card_text
 from scout.profiles import CategoryProfile
+from scout.text.retrieve import Hit, Scope
 
 MAX_PRODUCT_CHARS = 12_000  # of one product's text in the prompt
 MAX_IMAGES = 6
+SEARCH_HITS = 10
 IMAGE_HOSTS = ("https://m.media-amazon.com/",)  # the image server of amazon.se, not its pages
 
 
@@ -41,7 +43,18 @@ class ReadImages(BaseModel):
     question: str
 
 
-LOOKUP_TOOLS = [ReadProduct, QueryProducts, ReadImages]
+class SearchText(BaseModel):
+    """Search the stored text of many products at once: specifications, descriptions and reviews. It gives the
+    10 best matching parts. Use it for a question across products or across many reviews, for example 'which
+    picks have reviews about noise'. For all the text of one or two picks, use read_product."""
+    question: str = Field(description="What you look for, in any language")
+    picks: list[int] = Field(default_factory=list, description="Pick numbers, or empty for all stored products "
+                                                                 "of this category")
+    kinds: list[Literal["specs", "description", "review"]] = Field(
+        default_factory=list, description="Only these kinds of text, or empty for all")
+
+
+LOOKUP_TOOLS = [ReadProduct, SearchText, QueryProducts, ReadImages]
 
 
 class ImageAnswer(BaseModel):
@@ -63,10 +76,13 @@ class Lookup:
     page_texts: Callable[[list[int]], dict[int, dict]]
     query: Callable[[CategoryProfile, Needs], list[Card]]
     read_images: Callable[[list[str], str], ImageAnswer]
+    search: Callable[[str, Scope, int], list[Hit]] | None = None
 
     def run(self, call: BaseModel) -> str:
         if isinstance(call, ReadProduct):
             return self.read_product(call)
+        if isinstance(call, SearchText):
+            return self.search_text(call)
         if isinstance(call, QueryProducts):
             return self.query_products(call)
         return self.images(call)
@@ -86,6 +102,25 @@ class Lookup:
             else:
                 parts.append(f"Pick {n}: {card.title}\n" + product_text(texts[card.listing_id]))
         return f"read_product ({call.question}):\n\n" + "\n\n".join(parts)
+
+    def search_text(self, call: SearchText) -> str:
+        head = f"search_text ({call.question})"
+        if self.search is None:
+            return f"{head}: the text search is not available now. Use read_product."
+        wanted = [self.card(n) for n in call.picks]
+        if call.picks and not all(wanted):
+            return f"{head}: there are only {len(self.cards)} picks."
+        scope = Scope(listing_ids=[c.listing_id for c in wanted] or None, kinds=list(call.kinds) or None,
+                      category=self.profile.category)
+        try:
+            hits = self.search(call.question, scope, SEARCH_HITS)
+        except (ImportError, OSError, RuntimeError) as e:
+            return f"{head}: the text search failed ({type(e).__name__}). Use read_product."
+        in_picks = {c.listing_id: n for n, c in enumerate(self.cards, 1)}
+        lines = [f"[{i}] {'pick ' + str(in_picks[h.listing_id]) if h.listing_id in in_picks else 'not a pick'}, "
+                 f"{h.ref}:\n{h.text}" for i, h in enumerate(hits, 1)]
+        return (f"{head}: the {len(hits)} best matching parts of the stored text, best first. Reviews are a "
+                "sample, not all reviews.\n\n" + ("\n\n".join(lines) or "Nothing matches."))
 
     def query_products(self, call: QueryProducts) -> str:
         known = {a.name for a in self.profile.attributes if a.type == "number"}

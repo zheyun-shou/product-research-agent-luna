@@ -20,6 +20,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+# bge-m3 on the local computer. Install torch with CUDA first, from the PyTorch index.
+retrieval = ["FlagEmbedding>=1.4,<2"]
 
 [project.scripts]
 scout = "scout.cli:app"

@@ -111,3 +111,36 @@ class FakeTracer:
 
     def flush(self):
         self.events.append(("flush",))
+
+
+class FakeEmbedder:
+    """Words in place of subwords, and a hashed bag of words in place of the bge-m3 vector, so that texts with
+    the same words are near each other."""
+
+    name = "fake-embedder"
+
+    def __init__(self):
+        self.embedded: list[str] = []
+
+    def subwords(self, text: str) -> list[str]:
+        import re
+        return re.findall(r"\w+", text.lower())
+
+    def count(self, text: str) -> int:
+        return len(text.split())
+
+    def embed(self, texts):
+        import hashlib
+        import math
+
+        from scout.text.embed import Embedded
+        out = []
+        for text in texts:
+            self.embedded.append(text)
+            words = self.subwords(text)
+            dense = [0.0] * 1024
+            for w in words:
+                dense[int(hashlib.md5(w.encode()).hexdigest(), 16) % 1024] += 1.0
+            norm = math.sqrt(sum(x * x for x in dense)) or 1.0
+            out.append(Embedded([x / norm for x in dense], {w: 1.0 for w in words}))
+        return out

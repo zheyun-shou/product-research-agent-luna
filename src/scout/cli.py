@@ -91,6 +91,54 @@ def backfill_text() -> None:
 
 
 @app.command()
+def embed() -> None:
+    """Give each stored chunk its bge-m3 vector and its BM25 tokens. bge-m3 runs on this computer."""
+    from scout.text.embed import BgeM3Embedder
+    from scout.text.index import index_chunks
+
+    settings = load_settings()
+    embedder = BgeM3Embedder()
+    with connect(settings.database_url) as conn:
+        init_schema(conn)
+        report = index_chunks(conn, embedder)
+    typer.echo(f"Embedded {report.chunks} chunks with {embedder.name} in {report.seconds:.1f} s.")
+
+
+@app.command("eval-retrieval")
+def eval_retrieval(k: int = 10) -> None:
+    """Compare the retrieval methods on eval/retrieval/questions.yaml. No API calls: bge-m3 runs on this computer."""
+    from scout.eval.retrieval import gold_ids, load_questions, score_method, scores_table
+    from scout.text.embed import BgeM3Embedder
+    from scout.text.index import index_chunks
+    from scout.text.retrieve import (Bm25Retriever, HybridRetriever, LongContext, SparseRetriever,
+                                     VectorRetriever)
+
+    settings = load_settings()
+    questions = load_questions()
+    embedder = BgeM3Embedder()
+    with connect(settings.database_url) as conn:
+        init_schema(conn)
+        index_chunks(conn, embedder)
+        problems = [p for q in questions for p in gold_ids(conn, q)[1]]
+        for p in problems:
+            typer.echo(f"Not used: {p}")
+        vector, bm25 = VectorRetriever(conn, embedder), Bm25Retriever(conn, embedder)
+        methods = [vector, bm25, SparseRetriever(conn, embedder), HybridRetriever([vector, bm25]), LongContext(conn)]
+        scores = [score_method(conn, m, questions, embedder.count, k) for m in methods]
+        chunks = conn.execute("SELECT count(*) AS n, count(DISTINCT listing_id) AS l FROM chunks").fetchone()
+    typer.echo(f"{len(questions)} questions, {chunks['n']} chunks of {chunks['l']} listings.\n")
+    typer.echo(scores_table(scores, k))
+    for s in scores:
+        if s.misses:
+            typer.echo(f"{s.method} found no gold chunk for: {', '.join(s.misses)}")
+    out = ROOT / "eval" / "results" / f"retrieval-{datetime.now():%Y%m%d-%H%M}.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps({"k": k, "chunks": chunks["n"], "listings": chunks["l"], "problems": problems,
+                               "scores": [s.__dict__ for s in scores]}, indent=2), encoding="utf-8")
+    typer.echo(f"Saved {out}")
+
+
+@app.command()
 def browser(url: str = typer.Argument(BASE_URL + "/")) -> None:
     """Open the product-scout Chrome profile to set cookies, the delivery address or log in."""
     settings = load_settings()
