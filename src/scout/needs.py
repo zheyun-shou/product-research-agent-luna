@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from scout.picks.rank import Condition
+from scout.picks.write import numbers_in
 from scout.profiles import CategoryProfile
 
 # A number counts as said when the shopper wrote it, or wrote it in another unit of the same length or weight.
@@ -28,6 +29,7 @@ class Needs(BaseModel):
     kind: str | None = None
     conditions: list[ConditionSpec] = Field(default_factory=list)
     budget: float | None = None  # SEK
+    budget_note: str | None = None  # a budget in another currency: the amount, the currency and the rate used
     preferences: list[str] = Field(default_factory=list)
     search_terms_sv: str | None = None
 
@@ -40,7 +42,7 @@ class Needs(BaseModel):
     def text(self) -> str:
         parts = [f"{c.attribute}{c.op}{c.value:g}" for c in self.conditions]
         if self.budget is not None:
-            parts.append(f"budget {self.budget:g} SEK")
+            parts.append(f"budget {self.budget:g} SEK" + (f" ({self.budget_note})" if self.budget_note else ""))
         parts += [f"prefers {p}" for p in self.preferences]
         return ", ".join(parts)
 
@@ -74,13 +76,17 @@ def check_needs(needs: Needs, profile: CategoryProfile, said: set[Decimal] | Non
             errors.append(f"'{cond.attribute}' is not an attribute in the profile")
         elif attr.type != "number":
             errors.append(f"'{cond.attribute}' is not a number attribute, so it cannot have a condition")
-        elif said is not None and not was_said(cond.value, said, UNIT_FACTORS.get(attr.unit or "", SAME)):
+        elif said is not None and attr.kind == "hard" and not was_said(cond.value, said,
+                                                                      UNIT_FACTORS.get(attr.unit or "", SAME)):
             errors.append(f"{cond.attribute} {cond.value:g} is not a number the shopper wrote "
                           f"({_said_text(said)}). Use one of them, or ask.")
     if needs.budget is not None:
         if needs.budget <= 0:
             errors.append("budget must be more than 0")
-        elif said is not None and not was_said(needs.budget, said):
+        elif said is not None and needs.budget_note and not (numbers_in(needs.budget_note) & said):
+            errors.append(f"budget_note '{needs.budget_note}' must give the amount that the shopper wrote "
+                          f"({_said_text(said)}), its currency and the rate")
+        elif said is not None and not needs.budget_note and not was_said(needs.budget, said):
             errors.append(f"budget {needs.budget:g} is not a number the shopper wrote ({_said_text(said)}). "
                           "Use one of them, or ask.")
     return errors

@@ -45,7 +45,7 @@ class World:
         self.crawls.append((needs.search_terms(profile), page))
         return CrawlReport(candidates=48, saved=20)
 
-    def picks(self, profile, needs, excluded, kept, first):
+    def picks(self, profile, needs, excluded, kept, first, language="English"):
         self.picked.append((set(excluded), [c.listing_id for c in kept], [c.listing_id for c in first]))
         kept = kept[:max(0, self.k - len(first))]
         taken = set(excluded) | {c.product_id for c in [*kept, *first]}

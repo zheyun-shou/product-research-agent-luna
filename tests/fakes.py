@@ -57,9 +57,10 @@ class FakeLLM:
     def structured(self, role, system, user, schema):
         return self._reply(role, user, schema.__name__)
 
-    def tools(self, role, system, user, tools, name="tools"):
-        """The queued reply is the list of tool objects that the model calls."""
-        return self._reply(role, user, name)
+    def tools(self, role, system, user, tools, name="tools", text_reply=None):
+        """The queued reply is the list of tool objects that the model calls, or a str for a text answer."""
+        reply = self._reply(role, user, name)
+        return [text_reply(text=reply)] if isinstance(reply, str) and text_reply else reply
 
     def mark_checked(self, passed, problems=()):
         if self.calls:

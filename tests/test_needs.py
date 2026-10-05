@@ -46,7 +46,16 @@ def test_check_needs_finds_unknown_names_and_invented_numbers():
     assert any("'energy_class' is not a number" in e for e in errors)
     assert any("budget 5000" in e for e in errors)
     assert not any("height" in e for e in errors)
+    # A soft condition can be the model's inference ("a family of four"). A size must be a number the shopper wrote.
     volume = needs(conditions=[ConditionSpec(attribute="total_volume", op=">=", value=200)])
-    assert any("total_volume 200 is not a number the shopper wrote" in e
-               for e in check_needs(volume, FRIDGE, said={Decimal("2")}))
+    assert check_needs(volume, FRIDGE, said={Decimal("4")}) == []
+    width = needs(conditions=[ConditionSpec(attribute="width", op="<=", value=60)])
+    assert any("width 60 is not a number the shopper wrote" in e
+               for e in check_needs(width, FRIDGE, said={Decimal("4")}))
+    # A budget in another currency: the model converts it and gives the amount, the currency and the rate.
+    euro = needs(budget=9200, budget_note="800 EUR at 11.5 SEK")
+    assert check_needs(euro, FRIDGE, said={Decimal("800")}) == []
+    assert "(800 EUR at 11.5 SEK)" in euro.text()
+    assert any("budget_note" in e for e in check_needs(euro.model_copy(update={"budget_note": "about 9200 SEK"}),
+                                                       FRIDGE, said={Decimal("800")}))
     assert check_needs(n.model_copy(update={"kind": None, "conditions": [], "budget": None}), FRIDGE) == []

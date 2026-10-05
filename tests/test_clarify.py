@@ -37,6 +37,10 @@ def test_ready_without_a_kind_is_not_accepted():
         clarify(FakeLLM([reply(True)] * 3), FRIDGE, Needs(category="fridge"), "Shopper: search now", set())
 
 
-def test_pick_category_accepts_only_known_names():
-    assert pick_category(FakeLLM([CategoryChoice(category="fridge")]), "Shopper: kylskåp", ["fridge"]) == "fridge"
-    assert pick_category(FakeLLM([CategoryChoice(category="sofa")]), "Shopper: soffa", ["fridge"]) is None
+def test_pick_category_accepts_only_known_names_and_shows_the_kinds():
+    fridge = load_profile("fridge")
+    llm = FakeLLM([CategoryChoice(category="fridge")])
+    assert pick_category(llm, "Shopper: 酒柜", [fridge]) == "fridge"
+    assert "- fridge (Fridge). Kinds: Fridge with a freezer part;" in llm.requests[0][1]
+    assert "Wine cooler" in llm.requests[0][1]
+    assert pick_category(FakeLLM([CategoryChoice(category="sofa")]), "Shopper: soffa", [fridge]) is None

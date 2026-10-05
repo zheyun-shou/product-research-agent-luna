@@ -33,7 +33,7 @@ The system makes the list of candidates smaller. The user makes the final select
 - Other review sources: community sites (Zhihu, Reddit, Flashback) and more professional review sites (Rtings, SweClockers and others). These sources also bring the category-level review search (phase 2b below).
 - Xiaohongshu. The posts contain too many advertisements. We cannot trust them as reviews.
 - Video reviews (YouTube, Bilibili). These come later. The difficult part is to get the transcripts. Cost is not the problem.
-- Currency conversion, shipping, duty or moms by default. The system calculates these only with the costs and rates that the user gives.
+- Shipping, duty or moms by default. The system adds these only when the user gives them. Since 2026-10-06 the chat model can convert a currency with a current rate, and it tells the user the rate.
 - A list of the removed products in the picks. The database keeps the removed products. The picks do not show them.
 - Tags for the complaint types in reviews. We add tags later if we need counts.
 - An LLM that controls a browser through MCP. The code opens pages in fixed steps. The LLM only reads the cleaned content.

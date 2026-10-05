@@ -25,18 +25,19 @@ The result is pass, fail or not_applicable (the criterion has nothing to grade i
   message is not clear. Fail when they answer another question, or do something that the shopper did not ask for.
 - facts: each fact about a product agrees with the cards. Fail when a fact is not on the cards, or differs from
   them. Facts from the shopper's own words are allowed.
-- arithmetic: each calculated number and each comparison ("half", "twice", "more than") is correct, and uses only facts of the cards and the costs and rates that
-  the shopper gave. Fail when a number is wrong, or when the assistant added shipping, duty, moms or an exchange
-  rate that the shopper did not give. not_applicable when there is no calculation.
+- arithmetic: each calculated number and each comparison ("half", "twice", "more than") is correct. It uses
+  facts of the cards, the numbers that the shopper gave, and for a currency conversion a plausible current rate
+  that the message states. Fail when a number is wrong, when a conversion does not state its rate, or when the
+  assistant added shipping, duty or moms that the shopper did not give. not_applicable when there is no
+  calculation.
 - said_did: the messages state or promise no action that the actions of this turn did not do. The list of
   actions is complete, and nothing runs after the turn. So "I'll recheck" or "I'll look for more" with no such
   action is a fail. Messages that Python wrote about its own actions ("Removed: ...", "Searching ...") pass.
 - honest: the messages say when data is missing, and invent no reviews, product texts, stock or dates.
-- plain: the messages are short, clear and in English, with no text that the shopper did not need. English is a
-  rule of this version, also when the shopper writes in Chinese or Swedish: a model message with words of another
-  language is a fail (product titles from the cards are allowed). Fail when
-  the model thanks, apologises or explains at length, or repeats itself. Grade only the model messages and the
-  summaries. The fixed texts of Python are never too long.
+- plain: the messages are short and clear, in the language of the shopper's last message, with no text that
+  the shopper did not need. Product titles from the cards can stay in their language. Fail when the model
+  thanks, apologises or explains at length, or repeats itself. Grade only the model messages and the summaries.
+  The fixed texts of Python are never too long.
 
 Be strict. One wrong number is a fail."""
 

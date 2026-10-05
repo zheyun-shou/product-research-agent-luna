@@ -39,9 +39,10 @@ def shared_deps(conn, llm, crawl, refetch, k: int = 5, size_check: bool = True, 
     def count(profile, needs, excluded):
         return len(shortlist(conn, profile, needs, llm, excluded, screened).ranked)
 
-    def picks(profile, needs, excluded, kept, first):
+    def picks(profile, needs, excluded, kept, first, language="English"):
         short = shortlist(conn, profile, needs, llm, set(excluded) | {c.product_id for c in [*kept, *first]}, screened)
-        return make_picks(short, needs, k, refetch(profile), llm, kept=kept, first=first, size_check=size_check)
+        return make_picks(short, needs, k, refetch(profile), llm, language, kept=kept, first=first,
+                          size_check=size_check)
 
     return Deps(
         llm=llm,

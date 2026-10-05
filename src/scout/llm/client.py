@@ -148,9 +148,13 @@ class LLM:
     def structured(self, role: Role, system: str, user: str, schema: type[T]) -> T:
         return self._with_fallback(role, lambda cfg: self._structured(role, cfg, system, user, schema))
 
-    def tools(self, role: Role, system: str, user: str, tools: list[type[BaseModel]], name: str = "tools") -> list:
-        """The model calls one or more of the tools. Return the arguments of each call, as tool objects, in order."""
-        return self._with_fallback(role, lambda cfg: self._tool_calls(role, cfg, system, user, tools, name))
+    def tools(self, role: Role, system: str, user: str, tools: list[type[BaseModel]], name: str = "tools",
+              text_reply: type[BaseModel] | None = None) -> list:
+        """The model calls one or more of the tools. Return the arguments of each call, as tool objects, in order.
+
+        With text_reply, the model can also answer in plain text without a tool: the text becomes
+        text_reply(text=...). Without it, the model must call a tool."""
+        return self._with_fallback(role, lambda cfg: self._tool_calls(role, cfg, system, user, tools, name, text_reply))
 
     def _with_fallback(self, role: Role, call):
         fallback = self.config.roles[role].fallback
@@ -235,7 +239,7 @@ class LLM:
         )
 
     def _tool_calls(self, role: Role, role_cfg: ModelConfig, system: str, user: str,
-                    tools: list[type[BaseModel]], name: str) -> list:
+                    tools: list[type[BaseModel]], name: str, text_reply: type[BaseModel] | None = None) -> list:
         client = self.client(role_cfg.provider)
         limiter = self._limiters.setdefault(
             (role_cfg.provider, role_cfg.model), RateLimiter(role_cfg.rpm, self._sleep, self._clock))
@@ -252,7 +256,8 @@ class LLM:
                     metadata={"provider": role_cfg.provider, "attempt": attempt},
                 ) as gen:
                     response = client.chat.completions.create(
-                        model=role_cfg.model, messages=messages, tools=specs, tool_choice="required",
+                        model=role_cfg.model, messages=messages, tools=specs,
+                        tool_choice="auto" if text_reply else "required",
                         **self._extra(role_cfg)
                     )
                     message = response.choices[0].message
@@ -287,6 +292,11 @@ class LLM:
                     calls.append(by_name[tool].model_validate_json(args or "{}"))
                 except ValidationError as exc:
                     problems.append(f"{tool}: {exc.errors()[:3]}")
+            text = (message.content or "").strip() if text_reply else ""
+            if text and not raw:  # the model chose to answer in text
+                return [text_reply(text=text)]
+            if text and message.tool_calls and calls and not any(isinstance(c, text_reply) for c in calls):
+                calls.append(text_reply(text=text))  # native tool calls and a text answer in one reply
             if calls and not problems:
                 return calls
             record.valid = False

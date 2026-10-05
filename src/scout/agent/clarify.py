@@ -11,21 +11,26 @@ from scout.profiles import CategoryProfile
 SYSTEM = """You help a shopper say what they want, before a search on amazon.se.
 You get the category profile, the needs so far and the conversation. Return the updated needs.
 Rules:
-- Use only what the shopper said. Never guess a size or a budget.
+- Use what the shopper said. Never guess a size (height, width, depth) or a budget: a wrong size means that the
+  product does not fit. You can infer soft conditions, for example a total volume for a family of four, and say
+  so in the question or the preferences.
 - kind is the name of one kind in the profile, or null. Choose a kind when the words of the shopper describe it,
   also without its name: "a fridge for my wine bottles" is a wine cooler. When two kinds fit, ask.
 - conditions use only number attributes of the profile, in the unit of the profile.
   Change units when necessary, for example 1,8 m is 180 cm. "At most" is <=, "at least" is >=.
-- budget is in SEK, or null. If the shopper gives a budget in another currency, ask for SEK.
+- budget is in SEK, or null. If the shopper gives a budget in another currency, convert it with a current rate
+  that you know, and write the amount, the currency and the rate in budget_note, for example "800 EUR at 11.5 SEK".
 - preferences are short notes of soft wishes, for example "quiet" or "white".
 - search_terms_sv is null. Only when the shopper asks for words that the kind does not cover, it is one to four
   Swedish words for the amazon.se search.
 - ready is true when the kind is known and the shopper answered or skipped the questions of the profile.
   When the shopper asks you to search now, ready is true if the kind is known.
 - When ready is false, write one short message in question. It can ask about two or three things.
-  Write it in English, also when the shopper writes in another language."""
+  Write it in the shopper's language."""
 
 CATEGORY_SYSTEM = """You find which product category a shopper wants.
+Each category has kinds. A product that is one of the kinds belongs to the category, also when the shopper uses
+other words, for example a wine cabinet is the wine cooler kind of the fridge category.
 Return the name of one category from the list, or null when none fits or the shopper did not say."""
 
 
@@ -39,8 +44,12 @@ class CategoryChoice(BaseModel):
     category: str | None = None
 
 
-def pick_category(llm, history: str, names: list[str]) -> str | None:
-    prompt = f"Categories: {', '.join(names)}\n\nConversation:\n{history}"
+def pick_category(llm, history: str, profiles: list[CategoryProfile]) -> str | None:
+    """The model sees the kinds of each category, so "a wine cabinet" finds the fridge category."""
+    names = [p.category for p in profiles]
+    lines = [f"- {p.category} ({p.display_name}). Kinds: {'; '.join(k.label for k in p.kinds) or 'none'}"
+             for p in profiles]
+    prompt = "Categories:\n" + "\n".join(lines) + f"\n\nConversation:\n{history}"
     choice = llm.structured("chat", CATEGORY_SYSTEM, prompt, CategoryChoice)
     return choice.category if choice.category in names else None
 

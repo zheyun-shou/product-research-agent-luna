@@ -90,3 +90,18 @@ def test_tool_names_and_specs():
     assert spec["description"] == "Remove picks." and spec["parameters"]["required"] == ["picks"]
     assert "title" not in spec["parameters"]
     assert text_tool_calls("not json") == [] and text_tool_calls('{"text": "no name"}') == []
+
+
+def test_with_text_reply_the_model_can_answer_without_a_tool():
+    llm, completions = make([written("Pick 2 is 177 cm high.")])
+    assert llm.tools("chat", "sys", "user", [RemovePicks, Reply], text_reply=Reply) == [
+        Reply(text="Pick 2 is 177 cm high.")]
+    assert completions.requests[0]["tool_choice"] == "auto"
+    both = SimpleNamespace(content="Done.", tool_calls=called(("remove_picks", {"picks": [2]})).tool_calls)
+    llm, _ = make([both])
+    assert llm.tools("chat", "sys", "user", [RemovePicks, Reply], text_reply=Reply) == [
+        RemovePicks(picks=[2]), Reply(text="Done.")]
+    llm, completions = make([written("no tool")] * 3)
+    with pytest.raises(LLMOutputError):
+        llm.tools("chat", "sys", "user", [Reply])  # without text_reply a tool call is still required
+    assert completions.requests[0]["tool_choice"] == "required"

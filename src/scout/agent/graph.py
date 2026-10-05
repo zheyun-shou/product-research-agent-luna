@@ -101,7 +101,7 @@ def build_graph(deps: Deps, checkpointer=None):
         needs, history = needs_of(state), history_text(state)
         if needs.category is None:
             names = deps.profile_names()
-            category = pick_category(llm, history, names)
+            category = pick_category(llm, history, [deps.load_profile(n) for n in names])
             if category is None:
                 return {"phase": "clarify", "route": {}, "messages": [assistant(
                     f"I can search these categories now: {', '.join(names)}. Which one do you want?")]}
@@ -161,7 +161,8 @@ def build_graph(deps: Deps, checkpointer=None):
             first = deps.cards((state.get("route") or {}).get("restored", []))
         elif action == "recheck":
             first = marked_cards(shown)
-        result = deps.picks(deps.load_profile(needs.category), needs, excluded, marked_cards(kept), first)
+        language = f"the language of this message from the shopper: {last_user_text(state)[:200]!r}"
+        result = deps.picks(deps.load_profile(needs.category), needs, excluded, marked_cards(kept), first, language)
         if kept:  # the kept picks were not fetched again, so their notes come from the state
             result.card_notes = {**{p["listing_id"]: p["note"] for p in kept if p.get("note")}, **result.card_notes}
             result.notes += [p["note"] for p in kept if p.get("note")]

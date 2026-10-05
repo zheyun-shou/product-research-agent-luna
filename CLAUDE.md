@@ -10,7 +10,7 @@ product-scout is a conversational agent. It helps to select products in any cate
 
 - The only source is amazon.se (Swedish, SEK). A dedicated Chrome profile fetches it at low volume. Taobao is the first source after v1.
 - The agent clarifies the needs, searches and stores, shows the top picks (default 5) and answers follow-up questions.
-- Price is a budget filter. It is never a ranking factor. There is no default conversion, shipping or duty. The chat model calculates with the costs and rates that the user gives, and a grader checks the arithmetic in the evaluation.
+- Price is a budget filter. It is never a ranking factor. There is no default shipping or duty. The chat model calculates by itself; it can convert a currency with a current rate that it states. A grader checks the arithmetic in the evaluation. The model can answer without a tool, and replies in the shopper's language.
 - The LLM layer is not tied to one provider. It has two roles, `chat` (strong) and `worker` (light, reads images). The first setup uses a free Gemini key. Never enable billing.
 - Each extracted value includes raw text, and Python finds this text in the source. Python checks each claim in the picks and the replies against the records.
 

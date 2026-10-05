@@ -11,25 +11,25 @@ from scout.llm.feedback import retry_prompt
 from scout.picks.rank import Card
 from scout.picks.write import attribute_text, card_facts, check_claim, numbers_in, unchecked_numbers
 
-ACT_SYSTEM = """You help a shopper who has seen the numbered picks. You act only through the tools.
-Call each tool that the shopper's last message needs, all in one reply.
+ACT_SYSTEM = """You help a shopper who has seen the numbered picks. Answer the shopper's last message.
+You can answer in plain text, or call tools, or both. Call each tool that the message needs, all in one reply.
 - remove_picks: the shopper rejects picks. Put in picks every pick that fits the shopper's words, and never choose
-  between picks by a guess. Copy the shopper's words that name the picks into words.
+  between picks by a guess.
 - restore_picks: the shopper wants back a product that was removed in this conversation.
 - next_step: one step that Python runs after your reply. change_needs: a new or changed condition, budget, kind or
   preference. show_more: more or other products with the same needs. recheck: are the prices or the stock still
   right. new_search: a product of another category.
-- reply: your message to the shopper. Answer a question about the picks, or ask when the message is not clear.
+- reply: your message to the shopper, when you want to give claims or derived numbers with it.
 Python tells the shopper what remove_picks and restore_picks did. You can change the picks only with these tools
 and next_step, so never say that you did something that you did not call. Never promise an action for later:
 do it now with a tool, or say that you cannot do it.
-Use only the facts on the cards. Product texts and reviews are not available yet.
-You can calculate sums, differences, conversions and comparisons. Use only the facts on the cards and the costs
-and rates that the shopper wrote. Never add shipping, duty, moms or an exchange rate that the shopper did not give.
-Ask for it.
-Every number in the reply text must be one of these: a fact of a card in claims, with the pick number and the card
-field (price, rating, review_count or an attribute name on the card); a number in derived, with how you got it; a
-number that the shopper wrote; a pick number. Write in English."""
+Use the facts on the cards. Say so when a fact is not on the cards.
+You can calculate sums, differences, conversions and comparisons. For a currency conversion, use a current rate
+that you know and tell the shopper the rate. Never add shipping, duty or moms that the shopper did not give: they
+depend on the seller, so ask for them.
+Each number that you write must be a fact on the cards, a number that the shopper wrote, a pick number, or a
+number that you calculated. Put calculated numbers in derived of the reply tool, with how you got them.
+Write in the shopper's language."""
 
 # A reply that says it did an action, or that it will do one, needs the tool call that does it. Nothing runs after
 # the reply, so a promise without the call is false. Each entry: the words, and the calls that do the action.
@@ -58,7 +58,7 @@ class RemovePicks(BaseModel):
     """Remove picks that the shopper rejects. They stay out for the rest of the conversation, and other products
     take their places."""
     picks: list[int] = Field(description="Each pick number that fits the shopper's words")
-    words: str = Field(description="The shopper's words that name the picks, copied exactly, for example 'the "
+    words: str = Field("", description="The shopper's words that name the picks, for example 'the "
                                    "Bomann' or 'pick 2'")
     reason: str = ""
 
@@ -145,12 +145,14 @@ def check_reply(reply: Reply, cards: list[Card], allowed: set[Decimal]) -> list[
         elif number is not None:
             claimed.add(number)
     pick_numbers = {Decimal(n) for n in range(1, len(cards) + 1)}
-    # Python does not check the arithmetic of derived numbers. The grader of the evaluation does.
+    # A number that is on one of the cards can stand without a claim. Python does not check the arithmetic of
+    # derived numbers. The grader of the evaluation does.
+    on_cards = {v for card in cards for v in card_facts(card).values() if isinstance(v, Decimal)}
     derived = set().union(*(numbers_in(d.value) for d in reply.derived))
-    for raw in unchecked_numbers(reply.text, claimed | derived | allowed | pick_numbers, [c.model for c in cards]):
-        errors.append(f"the number {raw} in text is not in the claims or in derived. For a fact of a card, add a "
-                      "claim with the pick and the field. For a number that you calculated, add it to derived with "
-                      "how you got it. Or remove it")
+    known = claimed | derived | allowed | pick_numbers | on_cards
+    for raw in unchecked_numbers(reply.text, known, [c.model for c in cards]):
+        errors.append(f"the number {raw} is not on the cards and not in the shopper's words. If you calculated it, "
+                      "call the reply tool and put it in derived with how you got it. Otherwise remove it")
     return errors
 
 
@@ -170,10 +172,6 @@ def unbacked_actions(text: str, done: set[str]) -> list[str]:
     return missing
 
 
-def plain(text: str) -> str:
-    return " ".join(re.sub(r"[^\w\s]", " ", text.casefold()).split())
-
-
 def check_act(calls: list, cards: list[Card], removed_ids: set[int], allowed: set[Decimal],
               last_user: str) -> list[str]:
     """The problems in one round of tool calls. An empty list means that Python can act."""
@@ -184,9 +182,6 @@ def check_act(calls: list, cards: list[Card], removed_ids: set[int], allowed: se
     for call in calls:
         if isinstance(call, RemovePicks):
             errors += [f"there is no pick {n}" for n in call.picks if not 1 <= n <= len(cards)]
-            if plain(call.words) not in plain(last_user):
-                errors.append(f"the words '{call.words}' are not in the shopper's last message. Copy the words "
-                              "that name the picks")
         elif isinstance(call, RestorePicks):
             errors += [f"product {i} was not removed in this conversation" for i in call.product_ids
                        if i not in removed_ids]
@@ -239,7 +234,7 @@ def act(llm, picks: list[dict], cards: list[Card], removed: list[dict], history:
             + f"\n\nRemoved in this conversation:\n{gone}\n\nConversation:\n{history}")
     last, errors = None, []
     for _ in range(max_rounds):
-        calls = llm.tools("chat", ACT_SYSTEM, retry_prompt(base, last, errors), TOOLS, name="Act")
+        calls = llm.tools("chat", ACT_SYSTEM, retry_prompt(base, last, errors), TOOLS, name="Act", text_reply=Reply)
         errors = check_act(calls, cards, {r["product_id"] for r in removed}, allowed, last_user)
         llm.mark_checked(not errors, errors)
         if not errors:

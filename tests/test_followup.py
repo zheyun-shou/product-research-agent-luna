@@ -92,11 +92,10 @@ def test_a_reply_that_promises_an_action_needs_the_call_now():
                      "are they still in stock") == []
 
 
-def test_words_must_come_from_the_shopper_and_picks_must_exist():
+def test_picks_must_exist_and_the_words_are_only_a_record():
     errors = check_act([RemovePicks(picks=[4], words="the loud one")], CARDS, set(), set(),
                        "Remove the noisy one")
-    assert "there is no pick 4" in errors
-    assert any("the words 'the loud one' are not in the shopper's last message" in e for e in errors)
+    assert errors == ["there is no pick 4"]  # "loud" for "noisy" is fine
     assert check_act([RemovePicks(picks=[2], words="第二个")], CARDS, set(), set(), "第二个我不要") == []
     assert check_act([NextStep(step="recheck"), NextStep(step="show_more")], CARDS, set(), set(), "x") == [
         "call next_step only once"]
@@ -126,6 +125,15 @@ def test_the_model_can_calculate_and_facts_are_still_checked():
                           derived=[Derived(value="5499", how="pick 1 price plus the 499 SEK shipping")])
     assert check_reply(with_shipping, CARDS, {Decimal("499")}) == []
     no_derived = with_shipping.model_copy(update={"derived": []})
-    assert [e[:22] for e in check_reply(no_derived, CARDS, {Decimal("499")})] == ["the number 5499 in tex"]
+    assert [e[:22] for e in check_reply(no_derived, CARDS, {Decimal("499")})] == ["the number 5499 is not"]
     wrong_fact = with_shipping.model_copy(update={"claims": [AnswerClaim(pick=1, field="price", value="4000")]})
     assert any("pick 1: price is 5000" in e for e in check_reply(wrong_fact, CARDS, {Decimal("499")}))
+
+
+def test_the_model_can_answer_in_text_and_card_numbers_need_no_claim():
+    result, llm = run_act(["Pick 1 is 143 cm high and costs 5000 SEK."], "How tall is 1?")
+    assert result.action == "answer" and result.reply.text == "Pick 1 is 143 cm high and costs 5000 SEK."
+    result, llm = run_act(["Pick 1 is 199 cm high.", "Pick 1 is 143 cm high."], "How tall is 1?")
+    assert "the number 199 is not on the cards" in llm.requests[1][1]
+    result, _ = run_act(["I'll recheck the prices.", [NextStep(step="recheck")]], "Still right?")
+    assert result.action == "recheck"
