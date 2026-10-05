@@ -42,6 +42,15 @@ class FakeLLM:
             raise reply
         return reply
 
+    def tools(self, role, system, user, tools, name="tools"):
+        """The queued reply is the list of tool objects that the model calls."""
+        self.requests.append((role, user))
+        self.calls.append(CallRecord(role, f"fake-{role}", 0, 0, 0.0, name))
+        reply = self.replies.pop(0)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
+
     def model_for(self, role):
         return f"fake-{role}"
 
