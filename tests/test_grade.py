@@ -1,4 +1,7 @@
-from scout.eval.grade import CRITERIA, CriterionGrade, Grade, check_grader, good_enough, grade_results, turn_prompt
+import json
+
+from scout.eval.grade import (CRITERIA, CriterionGrade, Grade, check_grader, good_enough, grade_results, model_texts,
+                              turn_prompt)
 from tests.fakes import FakeLLM
 
 
@@ -6,12 +9,20 @@ def grade(**fails) -> Grade:
     return Grade(**{name: CriterionGrade(reason="r", result=fails.get(name, "pass")) for name in CRITERIA})
 
 
+def act_output(text: str) -> str:
+    """A round of tool calls as the call record keeps it."""
+    return json.dumps([["reply", json.dumps({"text": text})]])
+
+
 TURNS = [
     {"script": "s", "turn": 1, "say": "a fridge", "replies": ["Here are 5 picks."], "measured": True,
      "cards": [], "new_cards": ["Pick 1: Fridge 1 | price=5000 SEK"], "actions": None, "searched": True},
     {"script": "s", "turn": 2, "say": "pick 1 plus 499 shipping?", "replies": ["5499 SEK. I'll recheck the price."],
      "measured": True, "cards": ["Pick 1: Fridge 1 | price=5000 SEK"], "new_cards": [],
-     "actions": {"action": "answer", "tools": ["reply"], "pick_numbers": []}, "searched": False},
+     "actions": {"action": "answer", "tools": ["reply"], "pick_numbers": []}, "searched": False,
+     "rounds": [{"schema": "Act", "passed": False, "problems": ["x"], "output": act_output("6000 SEK.")},
+                {"schema": "Act", "passed": True, "problems": [],
+                 "output": act_output("5499 SEK. I'll recheck the price.")}]},
     {"script": "s", "turn": 3, "say": "ok", "replies": ["I cannot finish this step now."], "measured": False},
 ]
 
@@ -21,7 +32,9 @@ def test_the_grader_sees_the_cards_the_history_and_the_actions():
     assert "Cards before this turn:\nPick 1: Fridge 1 | price=5000 SEK" in prompt
     assert "Conversation before this turn:\nShopper: a fridge\nAssistant: Here are 5 picks." in prompt
     assert "tools called: reply" in prompt and "search started: no" in prompt
-    assert prompt.endswith("Messages to the shopper in this turn:\n5499 SEK. I'll recheck the price.")
+    assert prompt.endswith("Messages to the shopper in this turn:\n[Model] 5499 SEK. I'll recheck the price.")
+    assert "[Python] Here are 5 picks." in turn_prompt(TURNS[0], [])
+    assert model_texts({"model_texts": ["a"], "rounds": []}) == {"a"}
     assert "Cards after this turn:\nPick 1" in turn_prompt(TURNS[0], [])
 
 
@@ -42,7 +55,9 @@ def test_check_grader_counts_found_faults_and_failed_correct_replies():
     items = [{"id": "a", "expected": {"facts": "fail"}}, {"id": "b", "expected": {"facts": "fail"}},
              {"id": "c", "expected": {"facts": "pass", "said_did": "pass"}}]
     rows = check_grader(items, [grade(facts="fail"), grade(), grade(said_did="fail")])
-    assert rows["facts"] == {"faults": 2, "found": 1, "correct": 1, "failed": 0, "missed": ["b"]}
-    assert rows["said_did"] == {"faults": 0, "found": 0, "correct": 1, "failed": 1, "missed": []}
+    assert rows["facts"] == {"faults": 2, "found": 1, "correct": 1, "failed": 0, "missed": ["b"],
+                             "wrongly_failed": []}
+    assert rows["said_did"] == {"faults": 0, "found": 0, "correct": 1, "failed": 1, "missed": [],
+                                "wrongly_failed": ["c"]}
     assert not good_enough(rows["facts"]) and not good_enough(rows["said_did"])
     assert good_enough({"faults": 10, "found": 9, "correct": 10, "failed": 1})

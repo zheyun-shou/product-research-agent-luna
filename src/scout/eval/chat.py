@@ -179,7 +179,8 @@ def run_scripts(scripts: list[Script], deps: Deps, searches: list, llm, progress
                 "rounds": [{"schema": c.schema, "passed": c.checked, "problems": c.problems, "output": c.output}
                            for c in calls if c.checked is not None],
                 "calls": [{"role": c.role, "model": c.model, "schema": c.schema, "valid": c.valid,
-                           "input_tokens": c.input_tokens, "output_tokens": c.output_tokens} for c in calls],
+                           "input_tokens": c.input_tokens, "output_tokens": c.output_tokens, "cost": c.cost}
+                          for c in calls],
             })
             failed = sum(not c["ok"] for c in records[-1]["checks"])
             progress(f"{script.id} turn {number}: {records[-1]['seconds']} s, {len(calls)} LLM calls, "
@@ -211,6 +212,8 @@ def summarize(records: list[dict]) -> dict:
             entry["not_valid"] += not call["valid"]
             entry["input_tokens"] += call["input_tokens"]
             entry["output_tokens"] += call["output_tokens"]
+            if call.get("cost") is not None:
+                entry["cost_usd"] = round(entry.get("cost_usd", 0) + call["cost"], 6)
     seconds = [r["seconds"] for r in records]
     return {
         "turns": len(records),
@@ -235,5 +238,6 @@ def summary_text(summary: dict) -> str:
               for step, s in summary["steps"].items()]
     lines.append("LLM calls:")
     lines += [f"  {model}: {m['calls']} calls ({m['not_valid']} not valid JSON), tokens in {m['input_tokens']}, "
-              f"out {m['output_tokens']}" for model, m in summary["models"].items()]
+              f"out {m['output_tokens']}" + (f", cost {m['cost_usd']:.4f} USD" if "cost_usd" in m else "")
+              for model, m in summary["models"].items()]
     return "\n".join(lines)

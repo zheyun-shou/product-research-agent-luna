@@ -127,8 +127,9 @@ class Act:
 
 def card_text(n: int, card: Card) -> str:
     attrs = ", ".join(f"{k}={attribute_text(v)}" for k, v in card.attributes.items())
-    return (f"Pick {n}: {card.title} | price={card.price} {card.currency or ''} | rating={card.rating} | "
-            f"review_count={card.review_count} | {attrs or 'no attributes on the card'}")
+    stock = {True: "yes", False: "no", None: "not known"}[card.in_stock]
+    return (f"Pick {n}: {card.title} | price={card.price} {card.currency or ''} | in_stock={stock} | "
+            f"rating={card.rating} | review_count={card.review_count} | {attrs or 'no attributes on the card'}")
 
 
 def check_reply(reply: Reply, cards: list[Card], allowed: set[Decimal]) -> list[str]:

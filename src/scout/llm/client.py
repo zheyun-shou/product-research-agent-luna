@@ -41,6 +41,7 @@ class CallRecord:
     checked: bool | None = None  # set by the step that checks the reply: True when the reply passed
     output: str = ""  # the reply text, or the tool calls as JSON
     problems: list[str] = field(default_factory=list)  # what the checking step found
+    cost: float | None = None  # USD, when the provider reports it (OpenRouter)
 
 
 def inline_refs(schema: dict) -> dict:
@@ -126,6 +127,10 @@ class LLM:
             self.calls[-1].checked = passed
             self.calls[-1].problems = list(problems)
 
+    def _extra(self, role_cfg: ModelConfig) -> dict:
+        """OpenRouter reports the cost of each call when the request asks for it."""
+        return {"extra_body": {"usage": {"include": True}}} if role_cfg.provider == "openrouter" else {}
+
     def model_for(self, role: Role) -> str:
         return self._target(role).model
 
@@ -178,7 +183,8 @@ class LLM:
                     metadata={"provider": role_cfg.provider, "attempt": attempt},
                 ) as gen:
                     response = client.chat.completions.create(
-                        model=role_cfg.model, messages=messages, response_format=response_format
+                        model=role_cfg.model, messages=messages, response_format=response_format,
+                        **self._extra(role_cfg)
                     )
                     text = response.choices[0].message.content or ""
                     usage = getattr(response, "usage", None)
@@ -208,7 +214,7 @@ class LLM:
                 last_error = str(exc)
                 continue
             record = CallRecord(role, role_cfg.model, tokens_in, tokens_out, self._clock() - started, schema.__name__,
-                                output=text)
+                                output=text, cost=getattr(usage, "cost", None))
             self.calls.append(record)
             try:
                 return schema.model_validate_json(strip_fences(text))
@@ -246,7 +252,8 @@ class LLM:
                     metadata={"provider": role_cfg.provider, "attempt": attempt},
                 ) as gen:
                     response = client.chat.completions.create(
-                        model=role_cfg.model, messages=messages, tools=specs, tool_choice="required"
+                        model=role_cfg.model, messages=messages, tools=specs, tool_choice="required",
+                        **self._extra(role_cfg)
                     )
                     message = response.choices[0].message
                     raw = [(call.function.name, call.function.arguments) for call in (message.tool_calls or [])]
@@ -268,7 +275,8 @@ class LLM:
                 self._sleep(15 * attempt)
                 continue
             record = CallRecord(role, role_cfg.model, tokens_in, tokens_out, self._clock() - started, name,
-                                output=json.dumps(raw or message.content or "", ensure_ascii=False))
+                                output=json.dumps(raw or message.content or "", ensure_ascii=False),
+                                cost=getattr(usage, "cost", None))
             self.calls.append(record)
             problems, calls = [], []
             for tool, args in raw:

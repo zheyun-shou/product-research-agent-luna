@@ -162,8 +162,10 @@ def report_llm_use(llm: LLM) -> None:
         typer.echo(f"{role} moved to {llm.model_for(role)}: {reason}")
     for model in dict.fromkeys(c.model for c in llm.calls):
         calls = [c for c in llm.calls if c.model == model]
+        costs = [c.cost for c in calls if c.cost is not None]
         typer.echo(f"LLM {model}: calls {len(calls)}, tokens in {sum(c.input_tokens for c in calls)}, "
-                   f"out {sum(c.output_tokens for c in calls)}")
+                   f"out {sum(c.output_tokens for c in calls)}"
+                   + (f", cost {sum(costs):.4f} USD" if costs else ""))
 
 
 @app.command()
@@ -387,6 +389,7 @@ def eval_chat(
 
 def judge_llm(judge: Optional[str]) -> LLM:
     """The LLM with the judge role from models.yaml, or from --judge provider:model. Stops when it cannot run."""
+    load_settings()  # reads .env, which has the API keys
     config = load_llm_config()
     try:
         if judge:
@@ -429,8 +432,16 @@ def check_grader_command(
     test_set = yaml.safe_load(items.read_text(encoding="utf-8"))
     grades = [grade_turn(llm, item, item.get("history") or []) for item in test_set]
     typer.echo(f"Grader: {llm.model_for('judge')}, {len(test_set)} items")
-    for name, row in check_grader(test_set, grades).items():
+    rows = check_grader(test_set, grades)
+    slug = re.sub(r"[^\w.-]", "_", llm.model_for("judge"))
+    out = ROOT / "eval" / "results" / f"grader-{slug}-{datetime.now():%Y%m%d-%H%M}.json"
+    out.write_text(json.dumps({"judge": llm.model_for("judge"), "rows": rows,
+                               "grades": {item["id"]: grade.model_dump() for item, grade in zip(test_set, grades)}},
+                              indent=2, ensure_ascii=False), encoding="utf-8")
+    for name, row in rows.items():
         typer.echo(f"  {name}: found {row['found']} of {row['faults']} planted faults, failed {row['failed']} of "
                    f"{row['correct']} correct replies, {'good enough' if good_enough(row) else 'NOT good enough'}"
-                   + (f", missed {', '.join(row['missed'])}" if row["missed"] else ""))
+                   + (f", missed {', '.join(row['missed'])}" if row["missed"] else "")
+                   + (f", wrongly failed {', '.join(row['wrongly_failed'])}" if row["wrongly_failed"] else ""))
     report_llm_use(llm)
+    typer.echo(f"saved {out}")
