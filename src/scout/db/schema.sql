@@ -78,3 +78,22 @@ CREATE TABLE IF NOT EXISTS page_texts (
     reviews      jsonb NOT NULL DEFAULT '[]'::jsonb,
     images       jsonb NOT NULL DEFAULT '[]'::jsonb
 );
+
+-- Parts of the page texts for retrieval (spec 4.4 and 4.6). source is the page kind that the text came from.
+CREATE TABLE IF NOT EXISTS chunks (
+    id           bigserial PRIMARY KEY,
+    listing_id   bigint NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
+    source       text NOT NULL DEFAULT 'product_page',
+    kind         text NOT NULL,
+    ref          text NOT NULL,
+    text         text NOT NULL,
+    meta         jsonb NOT NULL DEFAULT '{}'::jsonb,
+    fetched_at   timestamptz NOT NULL,
+    tokens       text[],
+    embedding    vector(1024),
+    sparse       jsonb,
+    embed_model  text,
+    UNIQUE (listing_id, source, ref)
+);
+CREATE INDEX IF NOT EXISTS chunks_listing ON chunks (listing_id);
+CREATE INDEX IF NOT EXISTS chunks_embedding ON chunks USING hnsw (embedding vector_cosine_ops);

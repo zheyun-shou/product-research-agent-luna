@@ -5,6 +5,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from scout.sources.base import Candidate, ProductRecord
+from scout.text.chunks import Chunk, page_chunks
 
 
 @dataclass(frozen=True)
@@ -67,16 +68,31 @@ def save_page_text(conn: psycopg.Connection, listing_id: int, rec: ProductRecord
     nothing."""
     if not (rec.specs or rec.bullets or rec.description or rec.reviews):
         return
-    conn.execute(
+    row = conn.execute(
         """INSERT INTO page_texts (listing_id, fetched_at, specs, bullets, description, reviews, images)
            VALUES (%s, %s, %s, %s, %s, %s, %s)
            ON CONFLICT (listing_id) DO UPDATE SET fetched_at = EXCLUDED.fetched_at, specs = EXCLUDED.specs,
                bullets = EXCLUDED.bullets, description = EXCLUDED.description, reviews = EXCLUDED.reviews,
                images = EXCLUDED.images
-           WHERE page_texts.fetched_at <= EXCLUDED.fetched_at""",
+           WHERE page_texts.fetched_at <= EXCLUDED.fetched_at
+           RETURNING specs, bullets, description, reviews""",
         (listing_id, rec.fetched_at, Jsonb(rec.specs), Jsonb(rec.bullets), rec.description, Jsonb(rec.reviews),
          Jsonb(rec.images)),
-    )
+    ).fetchone()
+    if row:  # this page is the newest, so its chunks replace the old ones
+        save_chunks(conn, listing_id, page_chunks(rec.title or "", dict(row)), rec.fetched_at)
+
+
+def save_chunks(conn: psycopg.Connection, listing_id: int, chunks: list[Chunk], fetched_at,
+                source: str = "product_page") -> None:
+    """Replace the chunks of one page kind of a listing. The new chunks have no vectors yet."""
+    conn.execute("DELETE FROM chunks WHERE listing_id = %s AND source = %s", (listing_id, source))
+    for c in chunks:
+        conn.execute(
+            """INSERT INTO chunks (listing_id, source, kind, ref, text, meta, fetched_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+            (listing_id, source, c.kind, c.ref, c.text, Jsonb(c.meta), fetched_at),
+        )
 
 
 def page_texts(conn: psycopg.Connection, listing_ids: list[int]) -> dict[int, dict]:

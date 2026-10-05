@@ -35,7 +35,10 @@
 
 ## Tasks
 
-### Task 1: Chunks
+### Task 1: Chunks (done)
+
+On 2026-10-06 `scout backfill-text` made 181 chunks from the stored pages: 41 specs, 26 description and 114 review chunks. A chunk has 423 characters on average for a review and about 1,200 to 1,600 for specs and descriptions. The chunks are made each time a newer product page is stored. Until Task 2, the size is counted as 4 characters for each token.
+
 
 - New table `chunks`: id, listing_id, kind (spec, bullets, description, review, image_text), ref (for example the review number), text, tokens (BM25 tokens, `text[]`), embedding `vector(1024)`, sparse (`jsonb`, token weights), embed_model, created_at.
 - HNSW index on the embedding (cosine). Queries with strict filters use `hnsw.iterative_scan = relaxed_order` (pgvector 0.8).

@@ -115,3 +115,14 @@ def test_the_page_text_of_the_newest_page_is_kept(db):
     older = record(when=NOW - timedelta(days=1)).model_copy(update={"description": "old"})
     save_record(db, older, "fridge")
     assert page_texts(db, [ids.listing_id])[ids.listing_id]["description"] != "old"
+
+
+def test_the_newest_page_makes_the_chunks(db):
+    ids = save_record(db, record(), "fridge")
+    rows = db.execute("SELECT kind, ref, text, embedding FROM chunks WHERE listing_id = %s ORDER BY id",
+                      (ids.listing_id,)).fetchall()
+    assert {r["kind"] for r in rows} >= {"specs", "review"} and all(r["embedding"] is None for r in rows)
+    assert any(r["ref"] == "review 1" and "Bra men högljudd" in r["text"] for r in rows)
+    save_record(db, record(when=NOW - timedelta(days=1)).model_copy(update={"description": "old"}), "fridge")
+    again = db.execute("SELECT count(*) AS n FROM chunks WHERE text LIKE '%%old%%'").fetchone()["n"]
+    assert again == 0 and count(db, "chunks") == len(rows)
