@@ -172,7 +172,8 @@ def test_an_unclear_removal_asks_which_pick_and_removes_nothing():
     graph = build_graph(world.deps(llm), InMemorySaver())
     run(graph, "t1", "A fridge with a freezer")
     state = run(graph, "t1", "Remove that one")
-    assert state["messages"][-1]["content"].startswith("Which do you mean, all of these or only one: pick 1 (Fridge 1), pick 2")
+    assert state["messages"][-1]["content"].startswith(
+        "Which do you mean, all of these or only one: pick 1 (Fridge 1), pick 2")
     assert world.removed == {} and shown(state) == [1, 2] and len(world.picked) == 1
 
 
