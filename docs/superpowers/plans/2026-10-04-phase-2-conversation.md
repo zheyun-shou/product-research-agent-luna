@@ -4,7 +4,7 @@
 
 **Goal:** Replace the one-shot `scout picks` command with a conversation in the terminal. The agent clarifies the needs of the user, searches amazon.se when the stored data is not enough, shows the picks, and handles follow-up turns: questions, calculations, rejected picks, changed needs and "show me more". The user can stop and continue a conversation later. Langfuse records each turn.
 
-**Architecture:** A LangGraph `StateGraph` runs one turn for each user message. A Postgres checkpointer keeps the state of each thread. The state keeps only product IDs and the needs, never full records. Each node uses code from phase 1: the picks steps move into one module (`scout/picks/pipeline.py`) that the command and the graph share. The chat model selects the next action through structured output (one `Route` object per turn). Python validates each choice, does all filters and all arithmetic, and checks each number in each answer against the records. The worker model screens titles for the kind of product that the user wants and checks the sizes on each pick against the rest of the page.
+**Architecture:** A LangGraph `StateGraph` runs one turn for each user message. A Postgres checkpointer keeps the state of each thread. The state keeps only product IDs and the needs, never full records. Each node uses code from phase 1: the picks steps move into one module (`scout/picks/pipeline.py`) that the command and the graph share. Before the picks, the chat model fills the needs through structured output. After the picks, it acts through native tool calls: it can remove picks, bring them back, ask, answer, and start the next step, several of these in one reply. Python validates each call, does all filters and all arithmetic, and checks each number in each reply against the records. The worker model screens titles for the kind of product that the user wants and checks the sizes on each pick against the rest of the page.
 
 **Tech Stack:** Phase 1 stack, plus `langgraph` 1.2, `langgraph-checkpoint-postgres` 3.1 (`PostgresSaver`) and `langfuse` 4.16. Claude installed these three on Python 3.10 in a scratch environment on 2026-10-04 and checked the APIs that this plan uses: `StateGraph`, conditional edges, nodes that take `(state, config)`, `InMemorySaver`, `PostgresSaver(conn).setup()`, `Langfuse.start_as_current_observation`, `propagate_attributes(session_id=...)`.
 
@@ -12,7 +12,7 @@
 
 **Video:** a walkthrough of this plan, with captions and voice, is at https://claude.ai/artifact/BRmWUvhE8E82DBwQQYeLNx. Fig. 4 of the diagram (https://claude.ai/artifact/4jJqCkVudUFU24kTyXsiqZ) shows one turn of the conversation.
 
-**Dry run.** On 2026-10-04 Claude applied all code of this plan in a temporary Git worktree, on commit f676761. 204 tests passed: the 163 tests of phase 1 and 41 new ones. Then Claude ran one real clarify turn of `scout chat` in Chinese ("a fridge, 60 cm wide, 186 cm high, budget 9000 kronor"). The agent stored width<=60, height<=186 and budget 9000. It asked about the kind (with or without a freezer part), the depth and the noise. No browser opened. The chat role used 2 calls on Groq, because the Gemini chat quota was used up. Claude then deleted that thread and the worktree. Later on 2026-10-04, Zheyun added decisions 7 and 8. Claude applied the changed plan again in a new worktree: 207 tests passed (163 and 44 new). On 2026-10-05 Zheyun reviewed the plan. Decisions 9 to 13 and Task 12 come from that review. Claude applied the plan a third time: 220 tests passed (163 and 57 new), and Task 12 ran the 12 scripted conversations with Nemotron 3 Ultra. The Gemini chat quota ran out after the first script. The results are under Task 12. Task 13 was not part of any run. The tasks below are still not done in the repository.
+**Dry run.** On 2026-10-04 Claude applied all code of this plan in a temporary Git worktree, on commit f676761. 204 tests passed: the 163 tests of phase 1 and 41 new ones. Then Claude ran one real clarify turn of `scout chat` in Chinese ("a fridge, 60 cm wide, 186 cm high, budget 9000 kronor"). The agent stored width<=60, height<=186 and budget 9000. It asked about the kind (with or without a freezer part), the depth and the noise. No browser opened. The chat role used 2 calls on Groq, because the Gemini chat quota was used up. Claude then deleted that thread and the worktree. Later on 2026-10-04, Zheyun added decisions 7 and 8. Claude applied the changed plan again in a new worktree: 207 tests passed (163 and 44 new). On 2026-10-05 Zheyun reviewed the plan. Decisions 9 to 13 and Task 12 come from that review. Claude applied the plan a third time: 220 tests passed (163 and 57 new), and Task 12 ran the 12 scripted conversations with Nemotron 3 Ultra. The Gemini chat quota ran out after the first script. The results are under Task 12. Later on 2026-10-05, the scripts showed that every tested model guesses or removes too much when the shopper's words do not name one pick. Zheyun then decided that the chat model acts through tool calls after the picks (decision 1), with the checks of decision 14 and an undo (decision 15). Claude applied the changed plan in a fourth worktree: 233 tests passed (163 and 70 new), and Task 12 ran 24 scripted conversations. Task 13 was not part of any run. The tasks below are still not done in the repository.
 
 ## Global Constraints
 
@@ -30,7 +30,7 @@
 
 These points differ from the spec or make it more exact. Task 15 writes them into the spec.
 
-1. **Tool selection is structured output, not native tool calls.** Each follow-up turn makes one `Route` object with one action. This uses the same JSON path for Gemini and Groq, and Python validates each choice before a tool runs. The spec tools map to actions as follows. `query_products`: `change_needs`, then the SQL and Python filters. `exclude_and_rerank`: `exclude`. `fetch_more`: `more`. `calculate`: `calculate`. `recheck_availability`: `recheck`. `search_text` and `extract_attribute` need chunks and come in phase 3. `update_profile` comes in phase 4, with profile generation.
+1. **After the picks, the chat model acts through native tool calls.** Zheyun decided this on 2026-10-05, because shoppers write freely: two things in one message, an undo, a question about the order. One fixed action per turn (the first version of this plan) could not do these, and it made the model guess when it had to ask. The model gets four tools (Task 7): `remove_picks`, `restore_picks`, `next_step` and `reply`, and it sees the full cards. It can call several tools in one reply. Python checks each call before anything changes, and it writes the text about what changed. The clarify step stays structured output, because Python checks each field of the needs. The spec tools map as follows. `query_products`: `next_step` `change_needs`, then the SQL and Python filters. `exclude_and_rerank`: `remove_picks`. `fetch_more`: `next_step` `show_more`. `calculate`: `next_step` `calculate`. `recheck_availability`: `next_step` `recheck`. `search_text` and `extract_attribute` need chunks and come in phase 3. `update_profile` comes in phase 4, with profile generation.
 2. **Login and captcha pauses stay a prompt in the terminal.** The graph runs in the same process as the terminal, so the crawl can wait for the user, as in phase 1. The LangGraph interrupt comes in phase 7, when a web page replaces the terminal.
 3. **Profiles get kinds.** The 5 l cosmetics cooler ranked second in the phase 1 runs, because "fridge" was too wide. A profile now lists kinds (for the fridge: with a freezer part, without one, mini fridge, wine cooler, cool box), each with Swedish search terms. The clarify step must know the kind before it searches. The title screening keeps only items of that kind.
 4. **The clarify step must not invent numbers.** Each condition and the budget must agree with a number that the user wrote, with a unit change of a power of ten at most (1,8 m is 180 cm). Otherwise the model must ask.
@@ -42,7 +42,9 @@ These points differ from the spec or make it more exact. Task 15 writes them int
 10. **A follow-up changes only what it must.** "More" leaves out the products that the thread showed since the needs last changed. "Exclude" keeps the other picks without a new page load and adds new ones. "Recheck" checks the shown picks first and replaces the ones that fail. A kept pick keeps its size doubt and its note.
 11. **Only lengths and weights can change unit.** 1,8 m is 180 cm, and 600 mm is 60 cm. The budget and the other attributes must use a number that the shopper wrote: "2 people" is not 200 l, and "60 cm" is not a budget of 6000. "9k", "9 tusen", "9千" and "1万" count as written numbers.
 12. **A problem in one step ends the turn, not the conversation.** Each node catches all errors and gives a short message. The chat loop catches the rest, closes the database transaction and waits for the next message.
-13. **Scripted conversations measure the agent.** `scout eval-chat` runs 12 scripts with the real chat model over the stored products, without the browser. Python compares the needs, the route and other values with the values that the script expects, and it counts the check rounds of each step. A new chat model must pass this run before it goes into `config/models.yaml`.
+13. **Scripted conversations measure the agent.** `scout eval-chat` runs 24 scripts with the real chat model over the stored products, without the browser. Python compares the needs, the next step, the removed picks and other values with the values that the script expects, and it counts the check rounds of each step. A new chat model must pass this run before it goes into `config/models.yaml`.
+14. **The model never guesses which pick the shopper means.** `remove_picks` takes every pick that fits the shopper's words, the words themselves, and `one_pick`: true when the words name one pick. When several picks fit but the shopper means one ("the Bomann" with three Bomann picks), or no pick fits ("that one" with no earlier pick), Python asks "Which pick do you mean" and lists the candidates. The words must be in the shopper's last message. A reply that says that products were removed or brought back needs the tool call that did it. In the scripts of 2026-10-05, without these rules, Groq removed a guessed pick or all candidates in 3 of 3 unclear cases, and Nemotron in 1 of 3.
+15. **A removal can be undone.** `restore_picks` brings back products that the shopper removed in this thread. They are checked first and shown with the kept picks.
 
 ## Review Focus
 
@@ -61,6 +63,9 @@ These points differ from the spec or make it more exact. Task 15 writes them int
 13. The browser fails during a search. The turn ends with a message, the picks step does not run, and the needs stay. A failed SQL statement does not block the next turn. Tests in Tasks 9 and 10.
 14. The shopper writes "a family of 4". A condition of 400 l or a budget of 4000 must go back to the model. Tests in Tasks 2 and 5.
 15. The shopper writes "Remove that one" with no number. No reply may say that a pick was removed. The script `en-unclear-exclude` of Task 12 checks this with a real model.
+16. Three picks are Bomann, and the shopper writes "Remove the Bomann". The model returns all three with `one_pick` true. Python must ask which one and remove nothing. Tests in Tasks 7 and 9, and the script `en-unclear-brand`.
+17. A reply says "Removed pick 3" without a `remove_picks` call. It must go back to the model, and after three rounds nothing changes. Tests in Tasks 7 and 9.
+18. The shopper removes pick 1 and then wants it back. It must leave the eliminations of this thread, and the other threads keep theirs. Tests in Tasks 4 and 9.
 
 ---
 
@@ -69,7 +74,7 @@ These points differ from the spec or make it more exact. Task 15 writes them int
 ```
 pyproject.toml                       add langgraph, langgraph-checkpoint-postgres, langfuse
 config/models.yaml                   add the nvidia provider
-eval/chat/conversations.yaml         12 scripted conversations with the expected values
+eval/chat/conversations.yaml         24 scripted conversations with the expected values
 profiles/fridge.yaml                 add search_terms_sv and kinds
 src/scout/
   trace.py                           NoTracer, LangfuseTracer, tracer_from_env
@@ -78,7 +83,7 @@ src/scout/
   profiles.py                        add ProductKind, CategoryProfile.kinds and .kind()
   crawl.py                           add first_page, skip_known, CrawlReport.known
   cli.py                             picks uses the pipeline; add chat, threads, trace-ping, eval-chat
-  llm/client.py                      a tracer records each attempt; each call records its schema
+  llm/client.py                      a tracer records each attempt; each call records its schema; tool calls
   eval/chat.py                       run and score the scripted conversations
   extract/screen.py                  screen_titles takes the wanted kind
   extract/doubt.py                   worker size check with checked quotes
@@ -86,7 +91,8 @@ src/scout/
   sources/amazon_se/product.py       detect a hidden price: offer panel or size choice
   db/schema.sql                      add eliminations
   db/conn.py                         add end_transaction, connect_checkpoints
-  db/store.py                        add known_source_ids, refresh_listings, add_eliminations, eliminated_products
+  db/store.py                        add known_source_ids, refresh_listings, add_eliminations, eliminated_products,
+                                     restore_products
   picks/pipeline.py                  shortlist (screens a title one time), make_picks (kept and first cards)
   picks/rank.py                      add load_cards_by_ids
   picks/write.py                     shared claim checks; "(doubtful)" in the output
@@ -95,14 +101,14 @@ src/scout/
     state.py                         ChatState
     history.py                       history_text, user_numbers, compact
     clarify.py                       pick_category, clarify
-    followup.py                      Route, choose_route, answer_question
+    followup.py                      the follow-up tools, check_act, act
     calc.py                          CalcPlan, run_plan, calculate
     graph.py                         Deps, build_graph
     live.py                          LazyBrowser, live_deps
 tests/
   fakes.py                           add FakeTracer
   test_trace.py, test_needs.py, test_picks_pipeline.py, test_history.py, test_clarify.py,
-  test_followup.py, test_calc.py, test_graph.py, test_chat_db.py, test_doubt.py, test_eval_chat.py
+  test_llm_tools.py, test_followup.py, test_calc.py, test_graph.py, test_chat_db.py, test_doubt.py, test_eval_chat.py
 ```
 
 ---
@@ -815,6 +821,9 @@ def test_kept_cards_need_no_new_check_and_first_cards_are_checked_first(db):
     checked.clear()
     make_picks(short, needs, 2, counting, None, first=[second])
     assert checked == [second.listing_id, top.listing_id]
+    checked.clear()
+    back = make_picks(short, needs, 1, counting, None, kept=[top], first=[second])  # a product came back
+    assert [c.listing_id for c in back.chosen] == [second.listing_id] and checked == [second.listing_id]
 ```
 
 - [ ] **Step 2: Run the tests to see them fail**
@@ -1048,8 +1057,10 @@ def make_picks(short: Shortlist, needs: Needs, k: int, refetch: Refetch, llm, la
                kept: Sequence[Card] = (), first: Sequence[Card] = ()) -> PicksResult:
     """Recheck the top cards on the live pages, then write summaries with checked numbers.
 
-    `kept` cards stay picks without a new check. `first` cards are checked before the shortlist.
+    `kept` cards stay picks without a new check. `first` cards are checked before the shortlist. When kept and
+    first are more than k, the last kept cards go.
     """
+    kept = list(kept)[:max(0, k - len(first))]
     taken = {c.product_id for c in [*kept, *first]}
     ranked = [*first, *(c for c in short.ranked if c.product_id not in taken)]
     new, recheck_notes = recheck_picks(ranked, k - len(kept), refetch, needs.budget_sek(), needs.rank_conditions())
@@ -1159,16 +1170,19 @@ def test_stored_listings_get_the_rating_of_the_result_card(db, tmp_path):
 Add to `tests/test_store.py`:
 
 ```python
-from scout.db.store import add_eliminations, eliminated_products, known_source_ids
+from scout.db.store import add_eliminations, eliminated_products, known_source_ids, restore_products
 from tests.test_picks_db import save
 
 
-def test_rejected_products_belong_to_one_thread(db):
+def test_rejected_products_belong_to_one_thread_and_can_come_back(db):
     save(db, "product_full.html", "B0AAAAAAA1")
     product_id = db.execute("SELECT id FROM products").fetchone()["id"]
     add_eliminations(db, "t1", [product_id], "too loud")
+    add_eliminations(db, "t2", [product_id], "too big")
     assert eliminated_products(db, "t1") == {product_id}
-    assert eliminated_products(db, "t2") == set()
+    assert eliminated_products(db, "t3") == set()
+    restore_products(db, "t1", [product_id])
+    assert eliminated_products(db, "t1") == set() and eliminated_products(db, "t2") == {product_id}
 
 
 def test_known_source_ids_finds_stored_listings(db):
@@ -1234,6 +1248,11 @@ def add_eliminations(conn: psycopg.Connection, thread_id: str, product_ids: list
 def eliminated_products(conn: psycopg.Connection, thread_id: str) -> set[int]:
     rows = conn.execute("SELECT product_id FROM eliminations WHERE thread_id = %s", (thread_id,)).fetchall()
     return {row["product_id"] for row in rows}
+
+
+def restore_products(conn: psycopg.Connection, thread_id: str, product_ids: list[int]) -> None:
+    conn.execute("DELETE FROM eliminations WHERE thread_id = %s AND product_id = ANY(%s)", (thread_id, product_ids))
+    conn.commit()
 ```
 
 Import `Candidate` from `scout.sources.base` in `store.py`, if it is not imported. Run `scout db-init` one time, so that the main database gets the new table.
@@ -1583,99 +1602,414 @@ git commit -m "Clarify step: needs from the conversation, checked against the pr
 
 ---
 
-### Task 7: Follow-up routing and checked answers
+### Task 7: Follow-up tools and checked replies
+
+After the picks, the chat model acts through native tool calls. It can call several tools in one reply, and it can ask the shopper a question at any time. Python checks each call and each number before anything changes.
 
 **Files:**
+- Modify: `src/scout/llm/client.py` (tool calls), `tests/fakes.py` (`FakeLLM.tools`)
 - Create: `src/scout/agent/followup.py`
-- Create: `tests/test_followup.py`
+- Create: `tests/test_llm_tools.py`, `tests/test_followup.py`
+
+**The tools:**
+- `remove_picks(picks, words, one_pick, reason)`: the model puts in `picks` every pick that fits the shopper's words, and copies these words into `words`. `one_pick` is true when the words name one pick ("that one", "it", "the Bomann"). When the words fit no pick, or several picks but the shopper means one, Python asks "Which pick do you mean" with the candidates, and nothing else of the turn runs. The model never has to choose by a guess.
+- `restore_picks(product_ids)`: brings back products that the shopper removed in this thread. The prompt lists them.
+- `next_step(step)`: one step that Python runs after the reply: `change_needs`, `show_more`, `recheck`, `new_search` or `calculate`.
+- `reply(text, claims)`: the message to the shopper. Each number needs a claim, as in phase 1.
+
+**The checks:** a pick number must exist. The words must be in the shopper's last message. A restored product must be in the removed list. Each tool can be called once. A reply sentence that says that products were removed or brought back needs the tool call; a question ("Which pick should be removed?") is allowed. A failed round goes back to the model with the problems (decision 8). After 3 failed rounds, nothing changes.
+
+The model sees the full cards, not only the titles, so it can find "the widest one" or "the one without sizes". Python, not the model, writes what `remove_picks` and `restore_picks` did, so this text is always true.
+
+Some models write the tool calls as JSON text in place of real tool calls. Nemotron 3 Ultra did this in 1 of 2 tries on 2026-10-05. The client reads these calls too.
 
 - [ ] **Step 1: Write the failing tests**
+
+Create `tests/test_llm_tools.py`:
+
+```python
+import json
+from types import SimpleNamespace
+
+import pytest
+from pydantic import BaseModel
+
+from scout.llm.client import LLM, LLMOutputError, text_tool_calls, tool_name, tool_spec
+from tests.test_llm import CONFIG, FakeClock
+
+
+class RemovePicks(BaseModel):
+    """Remove picks."""
+    picks: list[int]
+
+
+class Reply(BaseModel):
+    """The message to the shopper."""
+    text: str
+
+
+def called(*calls):
+    """A reply with real tool calls: (name, arguments) pairs."""
+    tool_calls = [SimpleNamespace(function=SimpleNamespace(name=n, arguments=json.dumps(a))) for n, a in calls]
+    return SimpleNamespace(content=None, tool_calls=tool_calls)
+
+
+def written(text):
+    """A reply with the tool calls as text."""
+    return SimpleNamespace(content=text, tool_calls=None)
+
+
+class FakeCompletions:
+    def __init__(self, replies):
+        self.replies, self.requests = list(replies), []
+
+    def create(self, **kwargs):
+        self.requests.append(kwargs)
+        return SimpleNamespace(choices=[SimpleNamespace(message=self.replies.pop(0))],
+                               usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5))
+
+
+def make(replies):
+    completions, clock = FakeCompletions(replies), FakeClock()
+    fake = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    return LLM(CONFIG, clients={"gemini": fake}, sleep=clock.sleep, clock=clock.clock), completions
+
+
+def test_tool_calls_come_back_as_tool_objects_in_order():
+    llm, completions = make([called(("remove_picks", {"picks": [2]}), ("reply", {"text": "Removed pick 2."}))])
+    calls = llm.tools("chat", "sys", "user", [RemovePicks, Reply], name="Act")
+    assert calls == [RemovePicks(picks=[2]), Reply(text="Removed pick 2.")]
+    request = completions.requests[0]
+    assert request["tool_choice"] == "required"
+    assert [t["function"]["name"] for t in request["tools"]] == ["remove_picks", "reply"]
+    assert [(c.schema, c.valid) for c in llm.calls] == [("Act", True)]
+
+
+def test_tool_calls_written_as_text_are_accepted():
+    text = '[[{"name": "remove_picks", "parameters": {"picks": [2]}}, {"name": "reply", "parameters": {"text": "ok"}}]]'
+    llm, _ = make([written(text)])
+    assert llm.tools("chat", "sys", "user", [RemovePicks, Reply]) == [RemovePicks(picks=[2]), Reply(text="ok")]
+
+
+def test_a_wrong_call_is_sent_back_and_tried_again():
+    llm, completions = make([called(("delete", {"picks": [2]})), written("I removed it."),
+                             called(("remove_picks", {"picks": [2]}))])
+    assert llm.tools("chat", "sys", "user", [RemovePicks, Reply]) == [RemovePicks(picks=[2])]
+    assert "there is no tool delete" in completions.requests[1]["messages"][-1]["content"]
+    assert "no tool call" in completions.requests[2]["messages"][-1]["content"]
+    assert [c.valid for c in llm.calls] == [False, False, True]
+
+
+def test_three_wrong_replies_raise():
+    llm, _ = make([written("no")] * 3)
+    with pytest.raises(LLMOutputError, match="no valid tool calls"):
+        llm.tools("chat", "sys", "user", [Reply])
+
+
+def test_tool_names_and_specs():
+    assert tool_name(RemovePicks) == "remove_picks"
+    spec = tool_spec(RemovePicks)["function"]
+    assert spec["description"] == "Remove picks." and spec["parameters"]["required"] == ["picks"]
+    assert "title" not in spec["parameters"]
+    assert text_tool_calls("not json") == [] and text_tool_calls('{"text": "no name"}') == []
+```
 
 Create `tests/test_followup.py`:
 
 ```python
 from decimal import Decimal
 
-from scout.agent.followup import Answer, AnswerClaim, Route, answer_question, check_answer, choose_route
+from scout.agent.followup import (AnswerClaim, NextStep, RemovePicks, Reply, RestorePicks, act, check_act,
+                                  check_reply, says_done)
 from tests.fakes import FakeLLM
 from tests.test_picks_rank import card
 
 PICKS = [{"listing_id": 1, "product_id": 1, "title": "Bomann KG 320"},
-         {"listing_id": 2, "product_id": 2, "title": "FOHERE 90L"}]
-CARDS = [card(1, 4.4, 1779, height=143.0, no_frost=True), card(2, 4.2, 54, height=48.0)]
+         {"listing_id": 2, "product_id": 2, "title": "Bomann SBS 7344"},
+         {"listing_id": 3, "product_id": 3, "title": "FOHERE 90L"}]
+CARDS = [card(1, 4.4, 1779, height=143.0, no_frost=True), card(2, 4.2, 54, height=177.0),
+         card(3, 4.2, 54, height=48.0)]
+REMOVED = [{"product_id": 9, "listing_id": 9, "title": "Severin RKG 8930"}]
 
 
-def test_route_drops_pick_numbers_that_do_not_exist():
-    llm = FakeLLM([Route(action="exclude", pick_numbers=[2, 2, 7], reason="too expensive")])
-    route = choose_route(llm, PICKS, "Shopper: remove 2 and 7")
-    assert route.pick_numbers == [2]
-    assert "1. Bomann KG 320" in llm.requests[0][1]
+def run_act(calls, last_user, removed=()):
+    llm = FakeLLM(calls)
+    return act(llm, PICKS, CARDS, list(removed), f"Shopper: {last_user}", set(), last_user), llm
 
 
-def test_check_answer_allows_claims_the_shoppers_numbers_and_pick_numbers():
-    good = Answer(text="Pick 1 is 143 cm high, under your 186.",
-                  claims=[AnswerClaim(pick=1, field="height", value="143")])
-    assert check_answer(good, CARDS, {Decimal("186")}) == []
-    bad = Answer(text="Pick 2 is 80 cm high.", claims=[AnswerClaim(pick=2, field="height", value="80")])
-    errors = check_answer(bad, CARDS, set())
-    assert any("height is 48.0, not 80" in e for e in errors)
-    assert any("the number 80" in e for e in errors)
-    no_pick = Answer(text="ok", claims=[AnswerClaim(pick=3, field="price", value="1")])
-    assert check_answer(no_pick, CARDS, set()) == ["there is no pick 3"]
+def test_check_reply_allows_claims_the_shoppers_numbers_and_pick_numbers():
+    good = Reply(text="Pick 1 is 143 cm high, under your 186.",
+                 claims=[AnswerClaim(pick=1, field="height", value="143")])
+    assert check_reply(good, CARDS, {Decimal("186")}) == []
+    bad = Reply(text="Pick 3 is 80 cm high.", claims=[AnswerClaim(pick=3, field="height", value="80")])
+    errors = check_reply(bad, CARDS, set())
+    assert any("height is 48.0, not 80" in e for e in errors) and any("the number 80" in e for e in errors)
+    assert check_reply(Reply(text="ok", claims=[AnswerClaim(pick=4, field="price", value="1")]), CARDS, set()) == [
+        "there is no pick 4"]
 
 
-def test_answer_question_retries_and_gives_up_after_three_rounds():
-    bad = Answer(text="Pick 2 is 80 cm high.", claims=[])
-    good = Answer(text="Pick 2 is 48 cm high on its page.", claims=[AnswerClaim(pick=2, field="height", value="48")])
-    llm = FakeLLM([bad, good])
-    assert answer_question(llm, CARDS, "Shopper: how tall is 2?", set()) == good.text
-    assert "the number 80" in llm.requests[1][1]
-    assert answer_question(FakeLLM([bad] * 3), CARDS, "Shopper: how tall?", set()) is None
+def test_a_clear_removal_and_a_next_step_in_one_reply():
+    result, llm = run_act([[RemovePicks(picks=[3], words="the FOHERE", one_pick=True, reason="too small"),
+                            NextStep(step="show_more")]], "Drop the FOHERE and show me more")
+    assert result.remove.picks == [3] and result.step == "show_more" and result.action == "more"
+    assert result.question is None and result.tools == ["remove_picks", "next_step"]
+    assert "Pick 3: Fridge 3 | price=5000 SEK" in llm.requests[0][1] and "height=48.0" in llm.requests[0][1]
+    assert "product 9" not in llm.requests[0][1]
+
+
+def test_one_pick_meant_but_several_fit_makes_python_ask():
+    result, _ = run_act([[RemovePicks(picks=[2, 1], words="the Bomann", one_pick=True),
+                          Reply(text="Removed the Bomann.")]], "Remove the Bomann")
+    assert result.action == "stop"
+    assert result.question == ("Which pick do you mean: pick 1 (Bomann KG 320), pick 2 (Bomann SBS 7344)? "
+                               "Give its number.")
+    result, _ = run_act([[RemovePicks(picks=[], words="that one", one_pick=True)]], "Remove that one")
+    assert result.question.startswith("Which pick do you want to remove?")
+
+
+def test_several_picks_can_go_when_the_shopper_means_several():
+    result, _ = run_act([[RemovePicks(picks=[1, 2], words="both Bomanns", one_pick=False)]], "Remove both Bomanns")
+    assert result.remove.picks == [1, 2] and result.question is None and result.action == "exclude"
+
+
+def test_a_reply_that_claims_a_removal_without_the_tool_goes_back():
+    errors = check_act([Reply(text="Removed pick 3.")], CARDS, set(), set(), "remove that one")
+    assert any("you did not call remove_picks" in e for e in errors)
+    assert check_act([Reply(text="Which pick should be removed?")], CARDS, set(), set(), "remove it") == []
+    assert says_done("Done. I removed pick 2.") and not says_done("Do you want pick 2 removed?")
+
+
+def test_words_must_come_from_the_shopper_and_picks_must_exist():
+    errors = check_act([RemovePicks(picks=[4], words="the loud one", one_pick=True)], CARDS, set(), set(),
+                       "Remove the noisy one")
+    assert "there is no pick 4" in errors
+    assert any("the words 'the loud one' are not in the shopper's last message" in e for e in errors)
+    assert check_act([RemovePicks(picks=[2], words="第二个", one_pick=True)], CARDS, set(), set(), "第二个我不要") == []
+    assert check_act([NextStep(step="recheck"), NextStep(step="show_more")], CARDS, set(), set(), "x") == [
+        "call next_step only once"]
+
+
+def test_restore_takes_only_removed_products():
+    assert check_act([RestorePicks(product_ids=[5])], CARDS, {9}, set(), "bring it back") == [
+        "product 5 was not removed in this conversation"]
+    result, llm = run_act([[RestorePicks(product_ids=[9])]], "Bring back the Severin", REMOVED)
+    assert result.action == "restore" and "product 9: Severin RKG 8930" in llm.requests[0][1]
+
+
+def test_act_retries_with_the_problems_and_gives_up_after_three_rounds():
+    bad = [Reply(text="Pick 3 is 80 cm high.")]
+    good = [Reply(text="Pick 3 is 48 cm high.", claims=[AnswerClaim(pick=3, field="height", value="48")])]
+    result, llm = run_act([bad, good], "How tall is 3?")
+    assert result.reply == good[0] and result.action == "answer"
+    assert "the number 80" in llm.requests[1][1] and '"tool":"reply"' in llm.requests[1][1]
+    assert [c.schema for c in llm.calls] == ["Act", "Act"]
+    assert run_act([bad] * 3, "How tall?")[0] is None
 ```
 
 - [ ] **Step 2: Run the tests to see them fail**
 
-Run: `python -m pytest tests/test_followup.py -v`
-Expected: FAIL with `ModuleNotFoundError`.
+Run: `python -m pytest tests/test_llm_tools.py tests/test_followup.py -v`
+Expected: FAIL with `ImportError` (no `text_tool_calls`) and `ModuleNotFoundError`.
 
-- [ ] **Step 3: Write the module**
+- [ ] **Step 3: Add tool calls to the LLM client**
+
+In `src/scout/llm/client.py`, add `import re` after `import os`. Change the first line of the file to `"""One calling interface for OpenAI-compatible endpoints (Gemini, Groq) with structured output and tool calls."""`. Add these functions before `strip_fences`:
+
+```python
+def tool_name(tool: type[BaseModel]) -> str:
+    """RemovePicks -> remove_picks"""
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", tool.__name__).lower()
+
+
+def tool_spec(tool: type[BaseModel]) -> dict:
+    parameters = inline_refs(tool.model_json_schema())
+    parameters.pop("title", None)
+    parameters.pop("description", None)
+    return {"type": "function", "function": {"name": tool_name(tool), "description": (tool.__doc__ or "").strip(),
+                                             "parameters": parameters}}
+
+
+def text_tool_calls(text: str) -> list[tuple[str, str]]:
+    """Tool calls that a model wrote as JSON text in place of real tool calls. Nemotron does this at times."""
+    try:
+        data = json.loads(strip_fences(text))
+    except ValueError:
+        return []
+    items, calls = [data], []
+    while items:
+        item = items.pop(0)
+        if isinstance(item, list):
+            items = item + items
+        elif isinstance(item, dict) and isinstance(item.get("name"), str):
+            args = item.get("arguments", item.get("parameters", {}))
+            calls.append((item["name"], args if isinstance(args, str) else json.dumps(args)))
+    return calls
+```
+
+Replace the method `structured` with these three methods. The fallback logic does not change. It moves to `_with_fallback`, so that tool calls use it too:
+
+```python
+    def structured(self, role: Role, system: str, user: str, schema: type[T]) -> T:
+        return self._with_fallback(role, lambda cfg: self._structured(role, cfg, system, user, schema))
+
+    def tools(self, role: Role, system: str, user: str, tools: list[type[BaseModel]], name: str = "tools") -> list:
+        """The model calls one or more of the tools. Return the arguments of each call, as tool objects, in order."""
+        return self._with_fallback(role, lambda cfg: self._tool_calls(role, cfg, system, user, tools, name))
+
+    def _with_fallback(self, role: Role, call):
+        fallback = self.config.roles[role].fallback
+        if role not in self.fallbacks:
+            try:
+                return call(self.config.roles[role])
+            except LLMUnavailable as exc:
+                if fallback is None:
+                    raise
+                key_env = self.config.providers[fallback.provider].api_key_env
+                if fallback.provider not in self._clients and not os.environ.get(key_env):
+                    raise LLMUnavailable(f"{exc} The fallback {fallback.model} needs {key_env} in .env.") from exc
+                self.fallbacks[role] = str(exc)
+        return call(fallback)
+```
+
+Add this method at the end of `LLM`:
+
+```python
+    def _tool_calls(self, role: Role, role_cfg: ModelConfig, system: str, user: str,
+                    tools: list[type[BaseModel]], name: str) -> list:
+        client = self.client(role_cfg.provider)
+        limiter = self._limiters.setdefault(
+            (role_cfg.provider, role_cfg.model), RateLimiter(role_cfg.rpm, self._sleep, self._clock))
+        by_name = {tool_name(t): t for t in tools}
+        specs = [tool_spec(t) for t in tools]
+        messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+        last_error = ""
+        for attempt in range(1, self.MAX_ATTEMPTS + 1):
+            limiter.wait()
+            started = self._clock()
+            try:
+                with self._tracer.generation(
+                    f"{role} {name}", role_cfg.model, input=messages,
+                    metadata={"provider": role_cfg.provider, "attempt": attempt},
+                ) as gen:
+                    response = client.chat.completions.create(
+                        model=role_cfg.model, messages=messages, tools=specs, tool_choice="required"
+                    )
+                    message = response.choices[0].message
+                    raw = [(call.function.name, call.function.arguments) for call in (message.tool_calls or [])]
+                    raw = raw or text_tool_calls(message.content or "")
+                    usage = getattr(response, "usage", None)
+                    tokens_in = getattr(usage, "prompt_tokens", 0) or 0
+                    tokens_out = getattr(usage, "completion_tokens", 0) or 0
+                    gen.update(output=raw or message.content, usage_details={"input": tokens_in, "output": tokens_out})
+            except RateLimitError as exc:
+                if "perday" in str(exc).lower().replace(" ", ""):
+                    raise QuotaExhausted(
+                        f"The free daily quota for {role_cfg.model} is used up. It resets tomorrow."
+                    ) from exc
+                last_error = "rate limited"
+                self._sleep(15 * attempt)
+                continue
+            except (InternalServerError, APIConnectionError):
+                last_error = "unavailable"
+                self._sleep(15 * attempt)
+                continue
+            record = CallRecord(role, role_cfg.model, tokens_in, tokens_out, self._clock() - started, name)
+            self.calls.append(record)
+            problems, calls = [], []
+            for tool, args in raw:
+                if tool not in by_name:
+                    problems.append(f"there is no tool {tool}")
+                    continue
+                try:
+                    calls.append(by_name[tool].model_validate_json(args or "{}"))
+                except ValidationError as exc:
+                    problems.append(f"{tool}: {exc.errors()[:3]}")
+            if calls and not problems:
+                return calls
+            record.valid = False
+            last_error = "; ".join(problems) or "no tool call"
+            messages = messages + [{"role": "user", "content": f"Your reply did not call the tools correctly "
+                                                               f"({last_error}). Call the tools again."}]
+        if last_error == "rate limited":
+            raise QuotaExhausted(f"{role_cfg.model} is still rate limited after {self.MAX_ATTEMPTS} tries.")
+        if last_error == "unavailable":
+            raise LLMUnavailable(f"{role_cfg.model} is busy or unreachable after {self.MAX_ATTEMPTS} tries.")
+        raise LLMOutputError(f"{role_cfg.model} gave no valid tool calls after {self.MAX_ATTEMPTS} tries: {last_error}")
+```
+
+`tool_choice="required"` makes the model call at least one tool. On 2026-10-05, Claude sent one message that needs two tools (`remove_picks` and `reply`) to each provider. Groq `openai/gpt-oss-120b`, Gemini `gemini-3.5-flash-lite` and Mistral `ministral-14b-latest` returned real tool calls. NVIDIA `nvidia/nemotron-3-ultra-550b-a55b` returned real tool calls in 1 of 2 tries, and the same calls as JSON text in the other. `gemini-3.8-flash` was busy (503) at that time.
+
+Add this method to `FakeLLM` in `tests/fakes.py`, after `structured`:
+
+```python
+    def tools(self, role, system, user, tools, name="tools"):
+        """The queued reply is the list of tool objects that the model calls."""
+        self.requests.append((role, user))
+        self.calls.append(CallRecord(role, f"fake-{role}", 0, 0, 0.0, name))
+        reply = self.replies.pop(0)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
+```
+
+- [ ] **Step 4: Write the module**
 
 Create `src/scout/agent/followup.py`:
 
 ```python
-"""After the picks: choose the next action, and answer questions with numbers that Python checks."""
+"""After the picks: the chat model acts through tools. Python checks each call and each number before it acts."""
+import re
+from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from scout.llm.client import tool_name
 from scout.llm.feedback import retry_prompt
 from scout.picks.rank import Card
 from scout.picks.write import attribute_text, card_facts, check_claim, unchecked_numbers
 
-ROUTE_SYSTEM = """You read the shopper's last message. The shopper has seen the numbered picks. Choose one action.
-- answer: a question about the picks, or a comparison of them.
-- calculate: a sum, a conversion, a price with extra costs, or another calculation.
-- exclude: the shopper rejects one or more picks. Put their numbers in pick_numbers and the reason in reason.
-  Choose exclude also when the shopper gives no number. Then pick_numbers is empty, and Python asks which pick.
-- change_needs: the shopper changes or adds a condition, the budget, the kind or a preference.
-- more: the shopper wants more or other products with the same needs.
-- recheck: the shopper asks if the prices or the stock are still correct.
-- new_search: the shopper wants a product of a different category."""
+ACT_SYSTEM = """You help a shopper who has seen the numbered picks. You act only through the tools.
+Call each tool that the shopper's last message needs, all in one reply.
+- remove_picks: the shopper rejects picks. Put in picks every pick that fits the shopper's words, and never choose
+  between picks by a guess. Copy the shopper's words that name the picks into words.
+- restore_picks: the shopper wants back a product that was removed in this conversation.
+- next_step: one step that Python runs after your reply. change_needs: a new or changed condition, budget, kind or
+  preference. show_more: more or other products with the same needs. recheck: are the prices or the stock still
+  right. new_search: a product of another category. calculate: a sum, a conversion, a price with extra costs.
+- reply: your message to the shopper. Answer a question about the picks, or ask when the message is not clear.
+Python tells the shopper what remove_picks and restore_picks did. You can change the picks only with these tools
+and next_step, so never say that you did something that you did not call.
+Use only the facts on the cards. Product texts and reviews are not available yet.
+Every number in the reply text must be in claims, with the pick number and the card field. Claim fields are price,
+rating, review_count or an attribute name on the card. You can also repeat numbers that the shopper wrote, and pick
+numbers. Write in English."""
 
-ANSWER_SYSTEM = """You answer a shopper's question about the picks that they saw.
-You only answer. You cannot remove, add or change picks, so never say that you did.
-Use only the facts on the cards. If the cards do not have the answer, say so. Product texts and reviews are not
-available yet.
-Every number in text must be in claims, with the pick number and the card field. Claim fields are price, rating,
-review_count or an attribute name on the card. You can also repeat numbers that the shopper wrote, and pick numbers.
-Write text in English."""
+# A reply that says it removed or brought back products needs the tool call that did it.
+DONE_WORDS = re.compile(r"\b(removed|deleted|excluded|dropped|took out|taken out|restored|brought back|added back|"
+                        r"put back)\b", re.IGNORECASE)
 
 
-class Route(BaseModel):
-    action: Literal["answer", "calculate", "exclude", "change_needs", "more", "recheck", "new_search"]
-    pick_numbers: list[int] = Field(default_factory=list)
+class RemovePicks(BaseModel):
+    """Remove picks that the shopper rejects. They stay out for the rest of the conversation, and other products
+    take their places."""
+    picks: list[int] = Field(description="Each pick number that fits the shopper's words")
+    words: str = Field(description="The shopper's words that name the picks, copied exactly, for example 'the "
+                                   "Bomann' or 'pick 2'")
+    one_pick: bool = Field(description="True when the words name one pick, for example 'that one', 'it' or 'the "
+                                       "Bomann'")
     reason: str = ""
+
+
+class RestorePicks(BaseModel):
+    """Bring back products that were removed in this conversation."""
+    product_ids: list[int] = Field(description="IDs from the list of removed products")
+
+
+class NextStep(BaseModel):
+    """A step that Python runs after this reply."""
+    step: Literal["change_needs", "show_more", "recheck", "new_search", "calculate"]
 
 
 class AnswerClaim(BaseModel):
@@ -1684,31 +2018,55 @@ class AnswerClaim(BaseModel):
     value: str
 
 
-class Answer(BaseModel):
+class Reply(BaseModel):
+    """Your message to the shopper."""
     text: str
     claims: list[AnswerClaim] = Field(default_factory=list)
 
 
-def picks_list(picks: list[dict]) -> str:
-    return "\n".join(f"{n}. {p['title']}" for n, p in enumerate(picks, 1))
+TOOLS = [RemovePicks, RestorePicks, NextStep, Reply]
+STEP_ACTIONS = {"change_needs": "change_needs", "show_more": "more", "recheck": "recheck",
+                "new_search": "new_search", "calculate": "calculate"}
 
 
-def choose_route(llm, picks: list[dict], history: str) -> Route:
-    route = llm.structured("chat", ROUTE_SYSTEM, f"Picks:\n{picks_list(picks)}\n\nConversation:\n{history}", Route)
-    route.pick_numbers = sorted({n for n in route.pick_numbers if 1 <= n <= len(picks)})
-    return route
+class ToolCalls(BaseModel):
+    """The calls of one round, for the retry prompt."""
+    calls: list[dict]
+
+
+@dataclass
+class Act:
+    tools: list[str] = field(default_factory=list)
+    remove: RemovePicks | None = None
+    restore: RestorePicks | None = None
+    step: str | None = None
+    reply: Reply | None = None
+    question: str | None = None  # Python asks which pick, and nothing else runs
+
+    @property
+    def action(self) -> str:
+        """What the graph does next."""
+        if self.question:
+            return "stop"
+        if self.step:
+            return STEP_ACTIONS[self.step]
+        if self.remove:
+            return "exclude"
+        if self.restore:
+            return "restore"
+        return "answer"
 
 
 def card_text(n: int, card: Card) -> str:
     attrs = ", ".join(f"{k}={attribute_text(v)}" for k, v in card.attributes.items())
     return (f"Pick {n}: {card.title} | price={card.price} {card.currency or ''} | rating={card.rating} | "
-            f"review_count={card.review_count} | {attrs}")
+            f"review_count={card.review_count} | {attrs or 'no attributes on the card'}")
 
 
-def check_answer(answer: Answer, cards: list[Card], allowed: set[Decimal]) -> list[str]:
+def check_reply(reply: Reply, cards: list[Card], allowed: set[Decimal]) -> list[str]:
     errors: list[str] = []
     claimed: set[Decimal] = set()
-    for claim in answer.claims:
+    for claim in reply.claims:
         if not 1 <= claim.pick <= len(cards):
             errors.append(f"there is no pick {claim.pick}")
             continue
@@ -1718,35 +2076,101 @@ def check_answer(answer: Answer, cards: list[Card], allowed: set[Decimal]) -> li
         elif number is not None:
             claimed.add(number)
     pick_numbers = {Decimal(n) for n in range(1, len(cards) + 1)}
-    for raw in unchecked_numbers(answer.text, claimed | allowed | pick_numbers, [c.model for c in cards]):
+    for raw in unchecked_numbers(reply.text, claimed | allowed | pick_numbers, [c.model for c in cards]):
         errors.append(f"the number {raw} in text is not in the claims. Add a claim with the pick and the field "
                       "that has it, or remove it")
     return errors
 
 
-def answer_question(llm, cards: list[Card], history: str, allowed: set[Decimal],
-                    max_rounds: int = 3) -> str | None:
-    """Return the checked answer, or None when no round passed the checks."""
-    base = "Cards:\n" + "\n".join(card_text(n, c) for n, c in enumerate(cards, 1)) + f"\n\nConversation:\n{history}"
-    answer, errors = None, []
+def says_done(text: str) -> bool:
+    """True when a sentence that is not a question says that products were removed or brought back."""
+    return any(DONE_WORDS.search(s) for s in re.findall(r"[^.!?\n]+[.!?]?", text) if not s.strip().endswith("?"))
+
+
+def plain(text: str) -> str:
+    return " ".join(re.sub(r"[^\w\s]", " ", text.casefold()).split())
+
+
+def check_act(calls: list, cards: list[Card], removed_ids: set[int], allowed: set[Decimal],
+              last_user: str) -> list[str]:
+    """The problems in one round of tool calls. An empty list means that Python can act."""
+    errors: list[str] = []
+    names = [tool_name(type(c)) for c in calls]
+    errors += [f"call {n} only once" for n in sorted(set(names)) if names.count(n) > 1]
+    did = set()
+    for call in calls:
+        if isinstance(call, RemovePicks):
+            errors += [f"there is no pick {n}" for n in call.picks if not 1 <= n <= len(cards)]
+            if plain(call.words) not in plain(last_user):
+                errors.append(f"the words '{call.words}' are not in the shopper's last message. Copy the words "
+                              "that name the picks")
+            did.add("remove")
+        elif isinstance(call, RestorePicks):
+            errors += [f"product {i} was not removed in this conversation" for i in call.product_ids
+                       if i not in removed_ids]
+            did.add("restore")
+    for call in calls:
+        if isinstance(call, Reply):
+            errors += check_reply(call, cards, allowed)
+            if says_done(call.text) and not did:
+                errors.append("the reply says that products were removed or brought back, but you did not call "
+                              "remove_picks or restore_picks. Call the tool, or change the text")
+    return errors
+
+
+def unclear_question(remove: RemovePicks, picks: list[dict]) -> str | None:
+    """Python asks when the words fit no pick, or several picks but the shopper means one."""
+    if not remove.picks:
+        return "Which pick do you want to remove? Give its number."
+    if remove.one_pick and len(remove.picks) > 1:
+        options = ", ".join(f"pick {n} ({picks[n - 1]['title'][:50]})" for n in sorted(remove.picks))
+        return f"Which pick do you mean: {options}? Give its number."
+    return None
+
+
+def collect(calls: list, picks: list[dict]) -> Act:
+    act = Act(tools=[tool_name(type(c)) for c in calls])
+    for call in calls:
+        if isinstance(call, RemovePicks):
+            act.remove = call
+        elif isinstance(call, RestorePicks):
+            act.restore = call
+        elif isinstance(call, NextStep):
+            act.step = call.step
+        elif isinstance(call, Reply):
+            act.reply = call
+    if act.remove:
+        act.remove.picks = sorted(set(act.remove.picks))
+        act.question = unclear_question(act.remove, picks)
+    return act
+
+
+def act(llm, picks: list[dict], cards: list[Card], removed: list[dict], history: str, allowed: set[Decimal],
+        last_user: str, max_rounds: int = 3) -> Act | None:
+    """Return the checked tool calls, or None when no round passed the checks."""
+    gone = "\n".join(f"product {r['product_id']}: {r['title']}" for r in removed) or "none"
+    base = ("Cards:\n" + "\n".join(card_text(n, c) for n, c in enumerate(cards, 1))
+            + f"\n\nRemoved in this conversation:\n{gone}\n\nConversation:\n{history}")
+    last, errors = None, []
     for _ in range(max_rounds):
-        answer = llm.structured("chat", ANSWER_SYSTEM, retry_prompt(base, answer, errors), Answer)
-        errors = check_answer(answer, cards, allowed)
+        calls = llm.tools("chat", ACT_SYSTEM, retry_prompt(base, last, errors), TOOLS, name="Act")
+        errors = check_act(calls, cards, {r["product_id"] for r in removed}, allowed, last_user)
         if not errors:
-            return answer.text
+            return collect(calls, picks)
+        last = ToolCalls(calls=[{"tool": tool_name(type(c)), "args": c.model_dump()} for c in calls])
     return None
 ```
 
-- [ ] **Step 4: Run the tests**
+- [ ] **Step 5: Run the tests**
 
-Run: `python -m pytest tests/test_followup.py -v`
-Expected: 3 passed.
+Run: `python -m pytest tests/test_llm_tools.py tests/test_followup.py -v`
+Expected: 13 passed.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add src/scout/agent/followup.py tests/test_followup.py
-git commit -m "Follow-up routing as structured output; answers from the cards with checked numbers"
+git add src/scout/llm/client.py tests/fakes.py src/scout/agent/followup.py tests/test_llm_tools.py tests/test_followup.py
+git commit -m "Follow-up tools: native tool calls, checked replies, Python asks when a pick is not clear"
 ```
 
 ---
@@ -1977,16 +2401,20 @@ The graph:
 ```
 START → compact → phase is picks? ── no ──→ clarify ── ready ──→ search → recommend → END
                         │                     └─ not ready: question → END
-                        └── yes ──→ route ─┬─ answer ──────────→ END
-                                           ├─ calculate ───────→ END
-                                           ├─ exclude ─────────→ recommend (keeps the other picks) → END
-                                           ├─ change_needs ────→ clarify
-                                           ├─ more ────────────→ search (always crawls) → recommend (new products only)
-                                           ├─ recheck ─────────→ recommend (the shown picks first)
-                                           └─ new_search ──────→ reset → clarify
+                        └── yes ──→ act (tool calls) ─┬─ reply only ─────────→ END
+                                                      ├─ pick not clear ─────→ "Which pick do you mean" → END
+                                                      ├─ calculate ──────────→ END
+                                                      ├─ remove_picks ───────→ recommend (keeps the other picks) → END
+                                                      ├─ restore_picks ──────→ recommend (the products that came back first)
+                                                      ├─ change_needs ───────→ clarify
+                                                      ├─ show_more ──────────→ search (always crawls) → recommend (new products only)
+                                                      ├─ recheck ────────────→ recommend (the shown picks first)
+                                                      └─ new_search ─────────→ reset → clarify
 ```
 
-Each node except `compact` catches all errors. The node then gives a short message and the turn ends: a failed search or exclude does not go on to `recommend`. The state stays as it was, so the user can try again.
+`act` runs the checked tool calls of Task 7 in this order: `remove_picks`, `restore_picks`, `reply`. Then the graph goes to the `next_step`. Without a `next_step`, a removal or a restore goes to `recommend`, and a reply alone ends the turn. So "Drop the FOHERE and show me more" removes pick 4 and then searches for more. The state keeps the removed products with their titles, so the model can bring them back.
+
+Each node except `compact` catches all errors. The node then gives a short message and the turn ends: a failed search does not go on to `recommend`. The state stays as it was, so the user can try again.
 
 The search reads result page 1 again when the budget is higher than the lowest budget of the earlier reads of these words. `searches` keeps the last page and that budget for each set of search words. `seen` keeps the products that the thread showed since the needs last changed. Each pick in the state keeps its doubtful sizes and its note, so a kept pick and an answer show them without a new page load.
 
@@ -2000,7 +2428,7 @@ import copy
 from langgraph.checkpoint.memory import InMemorySaver
 
 from scout.agent.clarify import CategoryChoice, ClarifyReply
-from scout.agent.followup import Answer, AnswerClaim, Route
+from scout.agent.followup import AnswerClaim, NextStep, RemovePicks, Reply, RestorePicks
 from scout.agent.graph import Deps, build_graph
 from scout.crawl import CrawlReport
 from scout.llm.client import QuotaExhausted
@@ -2034,6 +2462,7 @@ class World:
             cards=lambda ids: [copy.deepcopy(self.cards[i]) for i in ids],  # fresh from the database
             eliminate=lambda thread, ids, reason: self.removed.setdefault(thread, set()).update(ids),
             eliminated=lambda thread: self.removed.get(thread, set()),
+            restore=lambda thread, ids: self.removed.setdefault(thread, set()).difference_update(ids),
             say=self.said.append,
         )
 
@@ -2041,16 +2470,18 @@ class World:
         self.crawls.append((needs.search_terms(profile), page))
         return CrawlReport(candidates=48, saved=20)
 
-    def picks(self, profile, needs, excluded, keep, recheck):
-        self.picked.append((set(excluded), [c.listing_id for c in keep], recheck))
-        taken = set(excluded) | {c.product_id for c in keep}
-        new = [copy.deepcopy(c) for c in self.cards.values() if c.product_id not in taken][:self.k - len(keep)]
+    def picks(self, profile, needs, excluded, kept, first):
+        self.picked.append((set(excluded), [c.listing_id for c in kept], [c.listing_id for c in first]))
+        kept = kept[:max(0, self.k - len(first))]
+        taken = set(excluded) | {c.product_id for c in [*kept, *first]}
+        others = [copy.deepcopy(c) for c in self.cards.values() if c.product_id not in taken]
+        new = [*first, *others][:self.k - len(kept)]
         notes = {}
         for c in new:
             if c.listing_id in self.doubts:
                 c.attributes["height"] = {**c.attributes["height"], "doubtful": True}
                 notes[c.listing_id] = self.doubts[c.listing_id]
-        return PicksResult([*keep, *new], None, [], list(notes.values()), 0, needs.text(), notes)
+        return PicksResult([*kept, *new], None, [], list(notes.values()), 0, needs.text(), notes)
 
 
 def run(graph, thread, text):
@@ -2075,7 +2506,7 @@ def test_clarify_asks_first_and_does_not_search():
 
 def test_a_new_thread_reads_page_1_once_then_uses_the_stored_products():
     world = World(stored=20)
-    llm = FakeLLM([CategoryChoice(category="fridge"), ready(budget=9000), Route(action="change_needs"),
+    llm = FakeLLM([CategoryChoice(category="fridge"), ready(budget=9000), [NextStep(step="change_needs")],
                    ready(budget=8000)])
     graph = build_graph(world.deps(llm), InMemorySaver())
     state = run(graph, "t1", "A fridge with a freezer, budget 9000")
@@ -2089,8 +2520,8 @@ def test_a_new_thread_reads_page_1_once_then_uses_the_stored_products():
 
 def test_a_higher_budget_reads_page_1_again():
     world = World(stored=20)
-    llm = FakeLLM([CategoryChoice(category="fridge"), ready(budget=9000), Route(action="change_needs"),
-                   ready(budget=12000), Route(action="change_needs"), ready(budget=10000)])
+    llm = FakeLLM([CategoryChoice(category="fridge"), ready(budget=9000), [NextStep(step="change_needs")],
+                   ready(budget=12000), [NextStep(step="change_needs")], ready(budget=10000)])
     graph = build_graph(world.deps(llm), InMemorySaver())
     run(graph, "t1", "A fridge with a freezer, budget 9000")
     state = run(graph, "t1", "Make the budget 12000")
@@ -2112,25 +2543,25 @@ def test_few_stored_products_start_a_search_with_the_kind_terms():
 def test_follow_ups_in_one_thread():
     world = World()
     llm = FakeLLM([CategoryChoice(category="fridge"), ready(),
-                   Route(action="exclude", pick_numbers=[1], reason="too small"),
-                   Route(action="answer"),
-                   Answer(text="Pick 1 is 170 cm high.", claims=[AnswerClaim(pick=1, field="height", value="170")]),
-                   Route(action="more")])
+                   [RemovePicks(picks=[1], words="the first one", one_pick=True, reason="too small")],
+                   [Reply(text="Pick 1 is 170 cm high.", claims=[AnswerClaim(pick=1, field="height", value="170")])],
+                   [NextStep(step="show_more")]])
     graph = build_graph(world.deps(llm), InMemorySaver())
     run(graph, "t1", "A fridge with a freezer")
     state = run(graph, "t1", "Remove the first one, it is too small")
     assert world.removed["t1"] == {1} and shown(state) == [2, 3]
-    assert world.picked[-1] == ({1}, [2], False)  # pick 2 stays without a new check
+    assert world.picked[-1] == ({1}, [2], [])  # pick 2 stays without a new check
+    assert state["removed"] == [{"product_id": 1, "listing_id": 1, "title": "Fridge 1"}]
     state = run(graph, "t1", "How tall is it?")
     assert state["messages"][-1]["content"] == "Pick 1 is 170 cm high."
     state = run(graph, "t1", "Show me more")
     assert world.crawls == [(TERMS, 1), (TERMS, 2)] and state["phase"] == "picks"
-    assert world.picked[-1] == ({1, 2, 3}, [], False) and shown(state) == [4]
+    assert world.picked[-1] == ({1, 2, 3}, [], []) and shown(state) == [4]
 
 
 def test_more_keeps_the_picks_when_no_other_product_matches():
     world = World(n=2)
-    llm = FakeLLM([CategoryChoice(category="fridge"), ready(), Route(action="more")])
+    llm = FakeLLM([CategoryChoice(category="fridge"), ready(), [NextStep(step="show_more")]])
     graph = build_graph(world.deps(llm), InMemorySaver())
     run(graph, "t1", "A fridge with a freezer")
     state = run(graph, "t1", "Show me others")
@@ -2139,17 +2570,17 @@ def test_more_keeps_the_picks_when_no_other_product_matches():
 
 def test_recheck_checks_the_shown_picks_first():
     world = World()
-    llm = FakeLLM([CategoryChoice(category="fridge"), ready(), Route(action="recheck")])
+    llm = FakeLLM([CategoryChoice(category="fridge"), ready(), [NextStep(step="recheck")]])
     graph = build_graph(world.deps(llm), InMemorySaver())
     run(graph, "t1", "A fridge with a freezer")
     run(graph, "t1", "Are the prices still right?")
-    assert world.picked[-1] == (set(), [1, 2], True)
+    assert world.picked[-1] == (set(), [], [1, 2])
 
 
 def test_a_kept_pick_keeps_its_size_doubt():
     world = World(doubts={2: "Fridge 2: height may be wrong."})
     llm = FakeLLM([CategoryChoice(category="fridge"), ready(),
-                   Route(action="exclude", pick_numbers=[1]), Route(action="answer"), Answer(text="See the picks.")])
+                   [RemovePicks(picks=[1], words="Remove 1", one_pick=True)], [Reply(text="See the picks.")]])
     graph = build_graph(world.deps(llm), InMemorySaver())
     run(graph, "t1", "A fridge with a freezer")
     state = run(graph, "t1", "Remove 1")
@@ -2159,13 +2590,41 @@ def test_a_kept_pick_keeps_its_size_doubt():
     assert "height=170.0 (doubtful)" in llm.requests[-1][1]
 
 
-def test_exclude_without_a_valid_number_asks_which_pick():
+def test_an_unclear_removal_asks_which_pick_and_removes_nothing():
     world = World()
-    llm = FakeLLM([CategoryChoice(category="fridge"), ready(), Route(action="exclude", pick_numbers=[7])])
+    llm = FakeLLM([CategoryChoice(category="fridge"), ready(),
+                   [RemovePicks(picks=[1, 2], words="that one", one_pick=True), Reply(text="Removed it.")]])
     graph = build_graph(world.deps(llm), InMemorySaver())
     run(graph, "t1", "A fridge with a freezer")
     state = run(graph, "t1", "Remove that one")
-    assert "Which pick" in state["messages"][-1]["content"] and world.removed == {}
+    assert state["messages"][-1]["content"].startswith("Which pick do you mean: pick 1 (Fridge 1), pick 2")
+    assert world.removed == {} and shown(state) == [1, 2] and len(world.picked) == 1
+
+
+def test_a_removed_product_can_come_back():
+    world = World()
+    llm = FakeLLM([CategoryChoice(category="fridge"), ready(),
+                   [RemovePicks(picks=[1], words="pick 1", one_pick=True)],
+                   [RestorePicks(product_ids=[1]), Reply(text="Pick 1 is back, as you asked.")]])
+    graph = build_graph(world.deps(llm), InMemorySaver())
+    run(graph, "t1", "A fridge with a freezer")
+    run(graph, "t1", "Remove pick 1")
+    state = run(graph, "t1", "No, I want it back")
+    assert world.removed["t1"] == set() and state["removed"] == []
+    assert world.picked[-1] == (set(), [2, 3], [1]) and shown(state) == [2, 1]
+    texts = [m["content"] for m in state["messages"][-3:]]
+    assert texts[0] == "Brought back: Fridge 1." and texts[1] == "Pick 1 is back, as you asked."
+
+
+def test_a_reply_that_fails_three_rounds_changes_nothing():
+    world = World()
+    bad = [Reply(text="Removed pick 1, it is 80 cm high.")]
+    llm = FakeLLM([CategoryChoice(category="fridge"), ready(), bad, bad, bad])
+    graph = build_graph(world.deps(llm), InMemorySaver())
+    run(graph, "t1", "A fridge with a freezer")
+    state = run(graph, "t1", "Remove the small one")
+    assert "so I changed nothing" in state["messages"][-1]["content"] and world.removed == {}
+    assert "you did not call remove_picks" in llm.requests[-1][1]
 
 
 def test_an_unavailable_model_gives_a_message_and_the_turn_ends():
@@ -2213,7 +2672,8 @@ class ChatState(TypedDict, total=False):
     picks: list[dict]  # listing_id, product_id, title, doubtful sizes and the note of each pick, in the order shown
     seen: list[int]    # product IDs shown since the needs last changed; "more" leaves them out
     searches: dict     # search terms -> {"page": the last result page read, "budget": the lowest budget of those reads}
-    route: dict        # the follow-up decision of this turn
+    removed: list[dict]  # product_id, listing_id and title of each product that the shopper removed
+    route: dict        # what the follow-up tools of this turn did, and the next step
 ```
 
 - [ ] **Step 4: Write the graph**
@@ -2221,7 +2681,7 @@ class ChatState(TypedDict, total=False):
 Create `src/scout/agent/graph.py`:
 
 ```python
-"""The conversation graph: clarify, search, recommend, and the follow-up actions."""
+"""The conversation graph: clarify, search, recommend, and the follow-up tools."""
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -2229,8 +2689,8 @@ from langgraph.graph import END, START, StateGraph
 
 from scout.agent.calc import calculate
 from scout.agent.clarify import clarify, pick_category
-from scout.agent.followup import answer_question, choose_route
-from scout.agent.history import assistant, compact, history_text, user_numbers
+from scout.agent.followup import act
+from scout.agent.history import assistant, compact, history_text, last_user_text, user_numbers
 from scout.agent.state import ChatState
 from scout.crawl import CrawlReport
 from scout.llm.client import LLMOutputError, LLMUnavailable
@@ -2243,8 +2703,8 @@ from scout.trace import NoTracer
 
 MIN_STORED = 10  # after the first search of a thread, fewer stored matches than this start a new search
 
-AFTER_ROUTE = {"answer": "answer", "calculate": "calculate", "exclude": "exclude", "change_needs": "clarify",
-               "more": "search", "recheck": "recommend", "new_search": "reset", "stop": END}
+AFTER_ACT = {"answer": END, "calculate": "calculate", "exclude": "recommend", "restore": "recommend",
+             "change_needs": "clarify", "more": "search", "recheck": "recommend", "new_search": "reset", "stop": END}
 
 
 @dataclass
@@ -2254,11 +2714,12 @@ class Deps:
     load_profile: Callable[[str], CategoryProfile]
     count: Callable[[CategoryProfile, Needs, set[int]], int]
     crawl: Callable[[CategoryProfile, Needs, int], CrawlReport]
-    # profile, needs, excluded product IDs, the cards to keep, and True when the kept cards need a new check
-    picks: Callable[[CategoryProfile, Needs, set[int], list[Card], bool], PicksResult]
+    # profile, needs, excluded product IDs, the cards that stay without a new check, the cards to check first
+    picks: Callable[[CategoryProfile, Needs, set[int], list[Card], list[Card]], PicksResult]
     cards: Callable[[list[int]], list[Card]]
     eliminate: Callable[[str, list[int], str], None]
     eliminated: Callable[[str], set[int]]
+    restore: Callable[[str, list[int]], None]
     say: Callable[[str], None] = print
     tracer: Any = field(default_factory=NoTracer)
 
@@ -2372,18 +2833,20 @@ def build_graph(deps: Deps, checkpointer=None):
         needs, action = needs_of(state), action_of(state)
         excluded = set(deps.eliminated(thread_of(config)))
         shown = state.get("picks", [])
-        keep: list[dict] = []
+        kept: list[dict] = []
+        first: list[Card] = []
         if action == "more":
             excluded |= set(state.get("seen", []))
-        elif action == "exclude":
-            keep = [p for p in shown if p["product_id"] not in excluded]
+        elif action in ("exclude", "restore"):
+            kept = [p for p in shown if p["product_id"] not in excluded]
+        if action == "restore":  # the products that came back are checked first
+            first = deps.cards((state.get("route") or {}).get("restored", []))
         elif action == "recheck":
-            keep = shown
-        result = deps.picks(deps.load_profile(needs.category), needs, excluded, marked_cards(keep),
-                            action == "recheck")
-        if action == "exclude":  # the kept picks were not fetched again, so their notes come from the state
-            result.card_notes = {**{p["listing_id"]: p["note"] for p in keep if p.get("note")}, **result.card_notes}
-            result.notes += [p["note"] for p in keep if p.get("note")]
+            first = marked_cards(shown)
+        result = deps.picks(deps.load_profile(needs.category), needs, excluded, marked_cards(kept), first)
+        if kept:  # the kept picks were not fetched again, so their notes come from the state
+            result.card_notes = {**{p["listing_id"]: p["note"] for p in kept if p.get("note")}, **result.card_notes}
+            result.notes += [p["note"] for p in kept if p.get("note")]
         picks = [{"listing_id": c.listing_id, "product_id": c.product_id, "title": c.title,
                   "doubtful": [k for k, v in c.attributes.items() if v.get("doubtful")],
                   "note": result.card_notes.get(c.listing_id)} for c in result.chosen]
@@ -2391,38 +2854,47 @@ def build_graph(deps: Deps, checkpointer=None):
             return {"phase": "picks", "route": {}, "messages": [assistant(
                 "No other stored product meets these needs. You can loosen a condition, or ask for more again.")]}
         ids = [p["product_id"] for p in picks]
-        seen = ids if action not in ("more", "exclude", "recheck") else [*state.get("seen", []), *ids]
+        seen = ids if action not in ("more", "exclude", "restore", "recheck") else [*state.get("seen", []), *ids]
         text = result.render() if picks else ("No stored product meets these needs. You can loosen a condition, "
                                               "or ask me to search more.")
         return {"picks": picks, "seen": sorted(set(seen)), "phase": "picks", "route": {},
                 "messages": [assistant(text)]}
 
-    def route_node(state, config):
-        route = choose_route(llm, state.get("picks", []), history_text(state))
-        if route.action == "exclude" and not route.pick_numbers:
-            return {"route": {"action": "stop"},
-                    "messages": [assistant("Which pick do you want to remove? Give its number.")]}
-        return {"route": route.model_dump()}
-
-    def answer_node(state, config):
+    def act_node(state, config):
+        picks, removed = state.get("picks", []), list(state.get("removed", []))
         allowed = user_numbers(state) | numbers_in(needs_of(state).text())
-        text = answer_question(llm, marked_cards(state.get("picks", [])), history_text(state), allowed)
-        return {"messages": [assistant(text or "I could not write an answer whose numbers agree with the records, "
-                                               "so I do not show it. The facts are in the picks above.")]}
+        result = act(llm, picks, marked_cards(picks), removed, history_text(state), allowed, last_user_text(state))
+        if result is None:
+            return {"route": {"action": "stop"}, "messages": [assistant(
+                "I could not write a reply whose numbers and actions agree with the records, so I changed nothing. "
+                "You can say it in other words.")]}
+        route = {"action": result.action, "tools": result.tools, "pick_numbers": [], "restored": []}
+        if result.question:
+            return {"route": route, "messages": [assistant(result.question)]}
+        thread, messages = thread_of(config), []
+        if result.remove:  # Python says what it removed, so the text is always true
+            chosen = [picks[n - 1] for n in result.remove.picks]
+            deps.eliminate(thread, [p["product_id"] for p in chosen], result.remove.reason)
+            removed += [{k: p[k] for k in ("product_id", "listing_id", "title")} for p in chosen]
+            route["pick_numbers"] = result.remove.picks
+            messages.append(assistant(f"Removed: {'; '.join(p['title'][:60] for p in chosen)}. "
+                                      "They stay out for the rest of this conversation."))
+        if result.restore:
+            back = [r for r in removed if r["product_id"] in set(result.restore.product_ids)]
+            deps.restore(thread, [r["product_id"] for r in back])
+            removed = [r for r in removed if r not in back]
+            route["restored"] = [r["listing_id"] for r in back]
+            messages.append(assistant(f"Brought back: {'; '.join(r['title'][:60] for r in back)}."))
+        if result.reply:
+            messages.append(assistant(result.reply.text))
+        return {"route": route, "removed": removed, "messages": messages}
 
     def calculate_node(state, config):
         text = calculate(llm, marked_cards(state.get("picks", [])), history_text(state), user_numbers(state))
         return {"messages": [assistant(text)]}
 
-    def exclude_node(state, config):
-        route, picks = state["route"], state.get("picks", [])
-        chosen = [picks[n - 1] for n in route["pick_numbers"]]
-        deps.eliminate(thread_of(config), [p["product_id"] for p in chosen], route.get("reason", ""))
-        names = "; ".join(p["title"][:60] for p in chosen)
-        return {"messages": [assistant(f"Removed: {names}. They stay out for the rest of this conversation.")]}
-
     def reset_node(state, config):
-        return {"needs": {}, "picks": [], "seen": [], "phase": "clarify"}
+        return {"needs": {}, "picks": [], "seen": [], "removed": [], "phase": "clarify"}
 
     def unless_stopped(state):
         return END if action_of(state) == "stop" else "recommend"
@@ -2430,20 +2902,17 @@ def build_graph(deps: Deps, checkpointer=None):
     graph = StateGraph(ChatState)
     graph.add_node("compact", compact_node)
     for name, fn in [("clarify", clarify_node), ("search", search_node), ("recommend", recommend_node),
-                     ("route", route_node), ("answer", answer_node), ("calculate", calculate_node),
-                     ("exclude", exclude_node), ("reset", reset_node)]:
+                     ("act", act_node), ("calculate", calculate_node), ("reset", reset_node)]:
         graph.add_node(name, guarded(name, fn))
     graph.add_edge(START, "compact")
-    graph.add_conditional_edges("compact", lambda s: "route" if s.get("phase") == "picks" else "clarify",
-                                ["clarify", "route"])
+    graph.add_conditional_edges("compact", lambda s: "act" if s.get("phase") == "picks" else "clarify",
+                                ["clarify", "act"])
     graph.add_conditional_edges("clarify", lambda s: "search" if s.get("phase") == "search" else END,
                                 ["search", END])
     graph.add_conditional_edges("search", unless_stopped, ["recommend", END])
     graph.add_edge("recommend", END)
-    graph.add_conditional_edges("route", lambda s: s["route"]["action"], AFTER_ROUTE)
-    graph.add_edge("answer", END)
+    graph.add_conditional_edges("act", lambda s: s["route"]["action"], AFTER_ACT)
     graph.add_edge("calculate", END)
-    graph.add_conditional_edges("exclude", unless_stopped, ["recommend", END])
     graph.add_edge("reset", "clarify")
     return graph.compile(checkpointer=checkpointer)
 ```
@@ -2451,7 +2920,7 @@ def build_graph(deps: Deps, checkpointer=None):
 - [ ] **Step 5: Run the tests**
 
 Run: `python -m pytest tests/test_graph.py -v`
-Expected: 11 passed.
+Expected: 13 passed.
 
 - [ ] **Step 6: Run all tests**
 
@@ -2462,7 +2931,7 @@ Expected: all tests pass.
 
 ```bash
 git add src/scout/agent/state.py src/scout/agent/graph.py tests/test_graph.py
-git commit -m "Conversation graph: clarify, search when stored data is not enough, recommend, follow-up actions"
+git commit -m "Conversation graph: clarify, search when stored data is not enough, recommend, follow-up tools"
 ```
 
 ---
@@ -2546,7 +3015,7 @@ def connect_checkpoints(url: str) -> psycopg.Connection:
     return psycopg.connect(url, autocommit=True, prepare_threshold=0, row_factory=dict_row)
 ```
 
-`end_transaction` runs after each turn. The connection of the agent is not in autocommit mode, so without it a read keeps a transaction open while the user types, and one failed statement blocks all later turns. A failed run leaves its step pending in the checkpoint. `update_state(..., as_node="answer")` adds the message and ends that step, because `answer` leads to END. Claude checked this with `InMemorySaver` on 2026-10-05.
+`end_transaction` runs after each turn. The connection of the agent is not in autocommit mode, so without it a read keeps a transaction open while the user types, and one failed statement blocks all later turns. A failed run leaves its step pending in the checkpoint. `update_state(..., as_node="calculate")` adds the message and ends that step, because `calculate` always leads to END. Claude checked this with `InMemorySaver` on 2026-10-05: a stopped search left `('search',)` pending, and after the update nothing was pending.
 
 The checkpointer creates its own tables (`checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `checkpoint_migrations`) in the same database. `PostgresSaver.setup()` creates them when they do not exist.
 
@@ -2563,7 +3032,7 @@ Create `src/scout/agent/live.py`:
 """The real dependencies of the chat graph: Postgres, the amazon.se browser and the LLM."""
 from scout.agent.graph import Deps
 from scout.crawl import crawl as run_crawl
-from scout.db.store import add_eliminations, eliminated_products
+from scout.db.store import add_eliminations, eliminated_products, restore_products
 from scout.extract.page import enrich_record
 from scout.extract.screen import screen_titles
 from scout.picks.pipeline import make_picks, refetcher, shortlist
@@ -2604,15 +3073,13 @@ def live_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, k: int =
                          enrich=lambda rec: enrich_record(rec, profile, llm),
                          screen=lambda cands: screen_titles(cands, profile, llm, needs.wanted(profile)))
 
-    def picks(profile, needs, excluded, keep, recheck):
-        short = shortlist(conn, profile, needs, llm, set(excluded) | {c.product_id for c in keep}, screened)
+    def picks(profile, needs, excluded, kept, first):
+        short = shortlist(conn, profile, needs, llm, set(excluded) | {c.product_id for c in [*kept, *first]}, screened)
 
         def refetch(card):  # the browser opens only when there is a card to check
             return refetcher(browser.adapter(), conn, profile.category, on_problem)(card)
 
-        if recheck:  # check the shown picks again, and replace the ones that fail
-            return make_picks(short, needs, k, refetch, llm, first=keep)
-        return make_picks(short, needs, k, refetch, llm, kept=keep)
+        return make_picks(short, needs, k, refetch, llm, kept=kept, first=first)
 
     return Deps(
         llm=llm,
@@ -2624,6 +3091,7 @@ def live_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, k: int =
         cards=lambda ids: load_cards_by_ids(conn, ids),
         eliminate=lambda thread, ids, reason: add_eliminations(conn, thread, ids, reason),
         eliminated=lambda thread: eliminated_products(conn, thread),
+        restore=lambda thread, ids: restore_products(conn, thread, ids),
         say=say,
         tracer=tracer,
     )
@@ -2680,7 +3148,7 @@ def chat(thread: Optional[str] = typer.Option(None, help="the ID of a conversati
                     replies = [f"Something went wrong ({type(exc).__name__}: {exc}). You can try again."]
                     end_transaction(conn)
                     with contextlib.suppress(Exception):  # the thread gets the message, and the failed turn ends
-                        graph.update_state(config, {"messages": [assistant(replies[0])]}, as_node="answer")
+                        graph.update_state(config, {"messages": [assistant(replies[0])]}, as_node="calculate")
                 end_transaction(conn)
                 for reply in replies:
                     typer.echo(f"\n{reply}")
@@ -2871,8 +3339,10 @@ def make_picks(short: Shortlist, needs: Needs, k: int, refetch: Refetch, llm, la
                kept: Sequence[Card] = (), first: Sequence[Card] = ()) -> PicksResult:
     """Recheck the top cards on the live pages, check their sizes, then write summaries with checked numbers.
 
-    `kept` cards stay picks without a new check. `first` cards are checked before the shortlist.
+    `kept` cards stay picks without a new check. `first` cards are checked before the shortlist. When kept and
+    first are more than k, the last kept cards go.
     """
+    kept = list(kept)[:max(0, k - len(first))]
     fetched: dict[int, ProductRecord] = {}
 
     def refetch_and_keep(card: Card) -> ProductRecord | None:
@@ -2925,7 +3395,7 @@ git commit -m "Worker size check on the picks: doubtful sizes are marked, quotes
 
 ### Task 12: Scripted conversations and the numbers
 
-Zheyun asked for this in her review on 2026-10-05: three real conversations (Task 15) give too few numbers for the CV. This task adds 12 scripted conversations. They run the real chat model through the graph over the stored products. No browser opens, and a search only records its words and page. Python compares the values after each turn with the values that the script expects, and it counts the check rounds of each step. The run also tests a new chat model before it goes into `config/models.yaml` (decision 13).
+Zheyun asked for this in her review on 2026-10-05: three real conversations (Task 15) give too few numbers for the CV. This task adds 24 scripted conversations. They run the real chat model through the graph over the stored products. No browser opens, and a search only records its words and page. Python compares the values after each turn with the values that the script expects, and it counts the check rounds of each step. The run also tests a new chat model before it goes into `config/models.yaml` (decision 13).
 
 **Files:**
 - Modify: `config/models.yaml` (the `nvidia` provider)
@@ -2938,9 +3408,10 @@ Create `tests/test_eval_chat.py`:
 
 ```python
 from scout.agent.clarify import CategoryChoice, ClarifyReply
-from scout.agent.followup import Route
+from scout.agent.followup import RemovePicks
 from scout.config import ROOT
 from scout.eval.chat import Expect, Script, Turn, load_scripts, run_scripts, summarize
+from scout.llm.client import QuotaExhausted
 from scout.needs import Needs
 from tests.fakes import FakeLLM
 from tests.test_graph import World, ready
@@ -2950,11 +3421,12 @@ def test_a_script_is_scored_turn_by_turn():
     world = World()
     llm = FakeLLM([CategoryChoice(category="fridge"), ClarifyReply(needs=Needs(budget=9000), ready=False,
                                                                    question="Which kind?"),
-                   ready(budget=9000), Route(action="exclude", pick_numbers=[2])])
+                   ready(budget=9000), [RemovePicks(picks=[2], words="remove 2", one_pick=True)]])
     script = Script(id="s", turns=[
         Turn(say="a fridge, budget 9000", expect=Expect(phase="clarify", budget=9000, searched=False)),
         Turn(say="with a freezer", expect=Expect(phase="picks", kind="fridge_freezer", conditions=["height<=186"])),
-        Turn(say="remove 2", expect=Expect(route="exclude", pick_numbers=[2], says="Removed")),
+        Turn(say="remove 2", expect=Expect(route="exclude", tools=["remove_picks"], pick_numbers=[2], says="Removed",
+                                           not_says="Which pick")),
     ])
     records = run_scripts([script], world.deps(llm), world.crawls, llm)
     assert [c["ok"] for c in records[0]["checks"]] == [True, True, True]
@@ -2969,7 +3441,16 @@ def test_a_script_is_scored_turn_by_turn():
 
 def test_the_scripts_load():
     scripts = load_scripts(ROOT / "eval" / "chat" / "conversations.yaml")
-    assert len(scripts) == 12 and len({s.id for s in scripts}) == 12
+    assert len(scripts) == 24 and len({s.id for s in scripts}) == 24
+
+
+def test_a_turn_that_a_node_ended_counts_as_an_error():
+    world = World()
+    llm = FakeLLM([QuotaExhausted("The free daily quota is used up.")])
+    script = Script(id="s", turns=[Turn(say="a fridge", expect=Expect(phase="clarify"))])
+    records = run_scripts([script], world.deps(llm), world.crawls, llm)
+    assert records[0]["error"].startswith("I cannot finish this step now")
+    assert summarize(records)["errors"] == 1
 ```
 
 - [ ] **Step 2: Run the tests to see them fail**
@@ -3003,8 +3484,11 @@ from scout.sources.base import ProductRecord
 # The steps whose output Python checks, by schema name, and the reply text when the last round still failed.
 CHECKED = {"ClarifyReply": ("clarify", "The needs were still not valid"),
            "PicksText": ("summaries", "did not pass the checks"),
-           "Answer": ("answers", "I could not write an answer"),
+           "Act": ("actions", "so I changed nothing"),
            "CalcPlan": ("calculations", "I could not turn this request")}
+
+
+NODE_ERRORS = ("I cannot finish this step now", "Something went wrong in the step")
 
 
 class Expect(BaseModel):
@@ -3016,10 +3500,12 @@ class Expect(BaseModel):
     budget: float | None = None
     no_budget: bool = False
     conditions: list[str] | None = None     # for example ["height<=186"]; [] means no conditions
-    route: str | None = None
-    pick_numbers: list[int] | None = None
+    route: str | None = None                # the next step after the follow-up tools, or "answer"
+    tools: list[str] | None = None          # the tools that the model called, in order
+    pick_numbers: list[int] | None = None   # the picks that were removed
     searched: bool | None = None
     says: str | None = None                 # a text in the replies of the turn
+    not_says: str | None = None             # a text that no reply of the turn may have
 
 
 class Turn(BaseModel):
@@ -3059,11 +3545,9 @@ def offline_deps(conn, llm, k: int = 5) -> tuple[Deps, list]:
         searches.append((needs.search_terms(profile), page))
         return CrawlReport(notes=["Evaluation run: no search on amazon.se, only the stored products."])
 
-    def picks(profile, needs, excluded, keep, recheck):
-        short = shortlist(conn, profile, needs, llm, set(excluded) | {c.product_id for c in keep}, screened)
-        if recheck:
-            return make_picks(short, needs, k, stored_record, llm, first=keep)
-        return make_picks(short, needs, k, stored_record, llm, kept=keep)
+    def picks(profile, needs, excluded, kept, first):
+        short = shortlist(conn, profile, needs, llm, set(excluded) | {c.product_id for c in [*kept, *first]}, screened)
+        return make_picks(short, needs, k, stored_record, llm, kept=kept, first=first)
 
     deps = Deps(
         llm=llm,
@@ -3075,6 +3559,7 @@ def offline_deps(conn, llm, k: int = 5) -> tuple[Deps, list]:
         cards=lambda ids: load_cards_by_ids(conn, ids),
         eliminate=lambda thread, ids, reason: removed.setdefault(thread, set()).update(ids),
         eliminated=lambda thread: set(removed.get(thread, set())),
+        restore=lambda thread, ids: removed.setdefault(thread, set()).difference_update(ids),
         say=lambda text: None,
     )
     return deps, searches
@@ -3091,14 +3576,16 @@ def compare(expect: Expect, state: dict, route: dict | None, searched: bool, rep
         "no_budget": needs.budget is None,
         "conditions": sorted(f"{c.attribute}{c.op}{c.value:g}" for c in needs.conditions),
         "route": (route or {}).get("action"),
+        "tools": (route or {}).get("tools"),
         "pick_numbers": (route or {}).get("pick_numbers"),
         "searched": searched,
     }
     checks = []
     for name, wanted in expect.model_dump(exclude_none=True, exclude_defaults=True).items():
-        if name == "says":
+        if name in ("says", "not_says"):
             got = any(wanted in r for r in replies)
-            checks.append({"check": name, "expected": wanted, "actual": got, "ok": got})
+            ok = got if name == "says" else not got
+            checks.append({"check": name, "expected": wanted, "actual": got, "ok": ok})
             continue
         if name == "conditions":
             wanted = sorted(wanted)
@@ -3119,12 +3606,14 @@ def run_scripts(scripts: list[Script], deps: Deps, searches: list, llm, progress
             try:
                 for update in graph.stream({"messages": [{"role": "user", "content": turn.say}]}, config,
                                            stream_mode="updates"):
-                    if (update.get("route") or {}).get("route"):
-                        route = update["route"]["route"]
+                    if (update.get("act") or {}).get("route"):
+                        route = update["act"]["route"]
             except Exception as exc:  # report it, and go on with the next turn
                 error = f"{type(exc).__name__}: {exc}"
             state = graph.get_state(config).values
             replies = [m["content"] for m in state.get("messages", [])[before + 1:]]
+            # A node caught the problem (quota, server, browser), so the model was not measured in this turn.
+            error = error or next((r for r in replies if r.startswith(NODE_ERRORS)), None)
             calls = llm.calls[calls_before:]
             steps = {}
             for schema, (step, failed_text) in CHECKED.items():
@@ -3201,8 +3690,9 @@ Create `eval/chat/conversations.yaml`:
 ```yaml
 # Scripted conversations for `scout eval-chat`. Each turn has the words of the shopper and the values that
 # Python expects after the turn. Zheyun checks the expected values before the first run.
-# Expect keys: phase, category ("none" = no category), kind, budget, no_budget, conditions, route, pick_numbers,
-# searched (the turn started a search), says (a text in the replies).
+# Expect keys: phase, category ("none" = no category), kind, budget, no_budget, conditions, route (the next step
+# after the follow-up tools, or answer), tools (the tools called, in order), pick_numbers (the removed picks),
+# searched (the turn started a search), says (a text in the replies), not_says (a text that no reply may have).
 
 - id: zh-fridge-freezer
   note: The main conversation. The kind is missing in turn 1, so the agent must ask.
@@ -3285,13 +3775,115 @@ Create `eval/chat/conversations.yaml`:
     - say: A fridge with a freezer, any size, budget 9000. Search now.
       expect: {phase: picks}
     - say: Remove that one.
-      expect: {says: Which}
+      expect: {says: Which, not_says: Removed}
 
 - id: zh-wine-cooler
   note: '"20 bottles" is not an attribute, so there is no condition.'
   turns:
     - say: 想要一个酒柜，放20瓶左右，预算5000克朗，别的都不重要，直接搜
       expect: {phase: picks, kind: wine_cooler, budget: 5000, conditions: []}
+
+# References to picks. The first turn gives the same 5 picks from the stored products:
+# 1 Severin (red, 61.5 cm wide), 2 Bomann 175 L (red, 49.5 cm), 3 Bomann side-by-side (90 cm),
+# 4 FOHERE 90 L (41 dB), 5 Bomann KG7357 (no sizes on its card).
+- id: en-ref-it
+  note: '"it" is the pick of the turn before.'
+  turns:
+    - say: A fridge with a freezer, any size, budget 9000. Search now.
+      expect: {phase: picks}
+    - say: How loud is pick 4?
+      expect: {route: answer}
+    - say: Too loud for me. Remove it.
+      expect: {route: exclude, pick_numbers: [4], not_says: Which}
+
+- id: en-ref-brand
+  note: Only pick 1 is a Severin.
+  turns:
+    - say: A fridge with a freezer, any size, budget 9000. Search now.
+      expect: {phase: picks}
+    - say: I don't want the Severin.
+      expect: {route: exclude, pick_numbers: [1], not_says: Which}
+
+- id: en-ref-widest
+  note: Pick 3 is 90 cm wide. Its title says so.
+  turns:
+    - say: A fridge with a freezer, any size, budget 9000. Search now.
+      expect: {phase: picks}
+    - say: Remove the widest one.
+      expect: {route: exclude, pick_numbers: [3], not_says: Which}
+
+- id: en-ref-no-sizes
+  note: Only the card of pick 5 has no sizes. Its title does not say so.
+  turns:
+    - say: A fridge with a freezer, any size, budget 9000. Search now.
+      expect: {phase: picks}
+    - say: Drop the one without dimensions.
+      expect: {route: exclude, pick_numbers: [5], not_says: Which}
+
+- id: zh-ref-second
+  turns:
+    - say: 要一个带冷冻的冰箱，尺寸无所谓，预算9000克朗，直接搜
+      expect: {phase: picks}
+    - say: 第二个我不要
+      expect: {route: exclude, pick_numbers: [2], not_says: Which}
+
+- id: en-unclear-brand
+  note: Picks 2, 3 and 5 are Bomann, and the shopper says "the Bomann". The agent must ask.
+  turns:
+    - say: A fridge with a freezer, any size, budget 9000. Search now.
+      expect: {phase: picks}
+    - say: Remove the Bomann.
+      expect: {says: Which, not_says: Removed}
+
+- id: zh-unclear-red
+  note: Picks 1 and 2 are red. The agent must ask.
+  turns:
+    - say: 要一个带冷冻的冰箱，尺寸无所谓，预算9000克朗，直接搜
+      expect: {phase: picks}
+    - say: 去掉红色那个
+      expect: {says: Which, not_says: Removed}
+
+# Free wording. The same 5 picks as above.
+- id: en-two-things
+  note: One message removes a pick and asks for more.
+  turns:
+    - say: A fridge with a freezer, any size, budget 9000. Search now.
+      expect: {phase: picks}
+    - say: Drop the FOHERE and show me some more.
+      expect: {route: more, pick_numbers: [4], searched: true}
+
+- id: zh-two-things
+  note: One message removes a pick and lowers the budget.
+  turns:
+    - say: 要一个带冷冻的冰箱，尺寸无所谓，预算9000克朗，直接搜
+      expect: {phase: picks}
+    - say: 第3个太宽了不要，预算降到6000
+      expect: {route: change_needs, pick_numbers: [3], budget: 6000}
+
+- id: en-undo
+  note: The shopper takes a removal back.
+  turns:
+    - say: A fridge with a freezer, any size, budget 9000. Search now.
+      expect: {phase: picks}
+    - say: Remove pick 1.
+      expect: {route: exclude, pick_numbers: [1]}
+    - say: Sorry, I want the Severin back.
+      expect: {route: restore, says: Brought back}
+
+- id: en-why
+  note: A question about the order. The agent only answers.
+  turns:
+    - say: A fridge with a freezer, any size, budget 9000. Search now.
+      expect: {phase: picks}
+    - say: Why is the Severin first and not the Bomann with 1779 ratings?
+      expect: {route: answer, not_says: Removed}
+
+- id: en-off-topic
+  turns:
+    - say: A fridge with a freezer, any size, budget 9000. Search now.
+      expect: {phase: picks}
+    - say: By the way, what will the weather be in Stockholm tomorrow?
+      expect: {route: answer, not_says: Removed}
 ```
 
 Zheyun checks the expected values before the numbers go anywhere. A wrong expected value makes a correct agent look wrong.
@@ -3308,7 +3900,7 @@ In `config/models.yaml`, add under `providers`:
 
 Zheyun made the free key on build.nvidia.com on 2026-10-05. It is `NVIDIA_API_KEY` in `.env`.
 
-In `src/scout/cli.py`, import `load_scripts`, `offline_deps`, `run_scripts`, `summarize` and `summary_text` from `scout.eval.chat`, and `RoleConfig` from `scout.llm.config`. Then add:
+In `src/scout/cli.py`, add `import re`, import `load_scripts`, `offline_deps`, `run_scripts`, `summarize` and `summary_text` from `scout.eval.chat`, and `RoleConfig` from `scout.llm.config`. Then add:
 
 ```python
 @app.command("eval-chat")
@@ -3317,7 +3909,7 @@ def eval_chat(
     chat: Optional[str] = typer.Option(None, help="provider:model for the chat role, for example "
                                                   "nvidia:nvidia/nemotron-3-ultra-550b-a55b"),
     rpm: int = 10,
-    only: Optional[str] = typer.Option(None, help="run only the script with this id"),
+    only: Optional[str] = typer.Option(None, help="run only the scripts with these ids, separated by commas"),
     k: int = 5,
 ) -> None:
     """Run the scripted conversations over the stored products, and save the numbers. No browser opens."""
@@ -3328,13 +3920,13 @@ def eval_chat(
         config.roles["chat"] = RoleConfig(provider=provider, model=model, rpm=rpm)
     config.roles["chat"].fallback = None  # one chat model for each run, so the numbers belong to it
     llm = LLM(config)
-    todo = [s for s in load_scripts(scripts) if only in (None, s.id)]
+    todo = [s for s in load_scripts(scripts) if only is None or s.id in only.split(",")]
     with connect(settings.database_url) as conn:
         deps, searches = offline_deps(conn, llm, k)
         records = run_scripts(todo, deps, searches, llm, typer.echo)
     summary = {"chat_model": llm.model_for("chat"), "worker_model": llm.model_for("worker"),
                "run_at": datetime.now(timezone.utc).isoformat(), **summarize(records)}
-    slug = llm.model_for("chat").replace("/", "_")
+    slug = re.sub(r"[^\w.-]", "_", llm.model_for("chat"))  # "a/b:free" is not a file name on Windows
     out = ROOT / "eval" / "results" / f"chat-{slug}-{datetime.now():%Y%m%d-%H%M}.json"
     out.write_text(json.dumps({"summary": summary, "turns": records}, indent=2, ensure_ascii=False), encoding="utf-8")
     for record in records:
@@ -3523,7 +4115,7 @@ Report only the real numbers. Nothing goes into the CV until Zheyun confirms it.
 
 - [ ] **Step 6: Update the documents**
 
-1. Spec: write the 13 decisions of this plan into sections 3, 4.1, 4.2, 4.3, 4.7, 4.8 and 4.11, and the scripted conversations into section 6 (evaluation). In the table of LLM candidates, change the Groq row: it is the `chat` fallback, with the limits from 2026-10-04.
+1. Spec: write the 15 decisions of this plan into sections 3, 4.1, 4.2, 4.3, 4.7, 4.8 and 4.11, and the scripted conversations into section 6 (evaluation). In the table of LLM candidates, change the Groq row: it is the `chat` fallback, with the limits from 2026-10-04.
 2. Diagram (https://claude.ai/artifact/4jJqCkVudUFU24kTyXsiqZ): mark the phase 2 nodes as built and update the Progress section.
 3. Write the results of Steps 1 to 5 under this task.
 
