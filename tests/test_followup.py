@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from scout.agent.followup import (AnswerClaim, NextStep, RemovePicks, Reply, RestorePicks, act, check_act,
-                                  check_reply, says_done)
+                                  check_reply, unbacked_actions)
 from tests.fakes import FakeLLM
 from tests.test_picks_rank import card
 
@@ -55,9 +55,32 @@ def test_several_picks_can_go_when_the_shopper_means_several():
 
 def test_a_reply_that_claims_a_removal_without_the_tool_goes_back():
     errors = check_act([Reply(text="Removed pick 3.")], CARDS, set(), set(), "remove that one")
-    assert any("you did not call remove_picks" in e for e in errors)
+    assert any("the reply says 'Removed'" in e for e in errors)
     assert check_act([Reply(text="Which pick should be removed?")], CARDS, set(), set(), "remove it") == []
-    assert says_done("Done. I removed pick 2.") and not says_done("Do you want pick 2 removed?")
+    assert unbacked_actions("Done. I removed pick 2.", set()) == ["removed"]
+    assert unbacked_actions("Do you want pick 2 removed?", set()) == []
+
+
+def test_a_reply_that_promises_an_action_needs_the_call_now():
+    cases = [
+        ("I'll recheck the prices now.", "recheck", {"next_step:recheck"}),
+        ("Let me search for more kettles.", "search for more", {"next_step:show_more"}),
+        ("I will remove the Bomann.", "remove", {"remove_picks"}),
+        ("I rechecked the stock.", "I rechecked", {"next_step:recheck"}),
+        ("Sure, I'll bring back the Severin.", "bring back", {"restore_picks"}),
+    ]
+    for text, words, done in cases:
+        assert unbacked_actions(text, set()) == [words], text
+        assert unbacked_actions(text, done) == [], text
+    for text in ["Do you want me to recheck the prices?", "I cannot recheck now. The prices are from 3 October.",
+                 "If you want, I'll search for more.", "The price dropped on 3 October.",
+                 "The prices were rechecked on 3 October.", "Let me explain: pick 1 is the tallest."]:
+        assert unbacked_actions(text, set()) == [], text
+    errors = check_act([Reply(text="I'll recheck the prices.")], CARDS, set(), set(), "are they still in stock")
+    assert errors == ["the reply says 'recheck', but no tool call in this reply does it. Nothing runs after your "
+                      "reply. Call the tool in this reply, or change the text"]
+    assert check_act([NextStep(step="recheck"), Reply(text="I'll recheck the prices.")], CARDS, set(), set(),
+                     "are they still in stock") == []
 
 
 def test_words_must_come_from_the_shopper_and_picks_must_exist():

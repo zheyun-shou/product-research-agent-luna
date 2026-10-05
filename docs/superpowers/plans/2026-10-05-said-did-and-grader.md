@@ -89,7 +89,7 @@ Now Python checks only the past tense ("removed", "brought back"). Add the promi
 
 **Files:** `src/scout/agent/followup.py`, `tests/test_followup.py`.
 
-- [ ] **Step 1: Write the failing tests.** Each of these replies with no matching tool call gives one problem, and with the matching call gives none:
+- [x] **Step 1: Write the failing tests.** Each of these replies with no matching tool call gives one problem, and with the matching call gives none:
 
 | Reply text | Needs |
 |---|---|
@@ -100,7 +100,7 @@ Now Python checks only the past tense ("removed", "brought back"). Add the promi
 | "Do you want me to recheck the prices?" | nothing (a question) |
 | "I cannot recheck now, the prices are from 3 October." | nothing (no promise) |
 
-- [ ] **Step 2: Map the words to the tools.**
+- [x] **Step 2: Map the words to the tools.** The code in the repository differs a little from this sketch: past-tense words (`DONE`) and promised actions (`WILL_DO`) are two lists, and offers ("if you want", "want me to") also do not count.
 
 ```python
 # Words that state or promise an action, and the tool calls that do it.
@@ -130,7 +130,7 @@ def unbacked_actions(text: str, done: set[str]) -> list[str]:
 
 `done` holds the names of the calls of the round, with the step for `next_step`, for example `"next_step:recheck"`. `NEGATION` matches "cannot", "can't", "do not", "did not", "not". This replaces `says_done`.
 
-- [ ] **Step 3: Give the model the problem.** In `check_act`:
+- [x] **Step 3: Give the model the problem.** In `check_act`:
 
 ```python
 for words in unbacked_actions(call.text, done):
@@ -140,9 +140,9 @@ for words in unbacked_actions(call.text, done):
 
 Add to `ACT_SYSTEM`: "Never promise an action for later. Do it now with a tool, or say that you cannot do it."
 
-- [ ] **Step 4: Run the tests.** All pass.
+- [x] **Step 4: Run the tests.** All pass.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ---
 

@@ -199,7 +199,7 @@ def test_a_reply_that_fails_three_rounds_changes_nothing():
     run(graph, "t1", "A fridge with a freezer")
     state = run(graph, "t1", "Remove the small one")
     assert "so I changed nothing" in state["messages"][-1]["content"] and world.removed == {}
-    assert "you did not call remove_picks" in llm.requests[-1][1]
+    assert "the reply says 'Removed'" in llm.requests[-1][1]
 
 
 def test_an_unavailable_model_gives_a_message_and_the_turn_ends():

@@ -21,15 +21,32 @@ Call each tool that the shopper's last message needs, all in one reply.
   right. new_search: a product of another category. calculate: a sum, a conversion, a price with extra costs.
 - reply: your message to the shopper. Answer a question about the picks, or ask when the message is not clear.
 Python tells the shopper what remove_picks and restore_picks did. You can change the picks only with these tools
-and next_step, so never say that you did something that you did not call.
+and next_step, so never say that you did something that you did not call. Never promise an action for later:
+do it now with a tool, or say that you cannot do it.
 Use only the facts on the cards. Product texts and reviews are not available yet.
 Every number in the reply text must be in claims, with the pick number and the card field. Claim fields are price,
 rating, review_count or an attribute name on the card. You can also repeat numbers that the shopper wrote, and pick
 numbers. Write in English."""
 
-# A reply that says it removed or brought back products needs the tool call that did it.
-DONE_WORDS = re.compile(r"\b(removed|deleted|excluded|dropped|took out|taken out|restored|brought back|added back|"
-                        r"put back)\b", re.IGNORECASE)
+# A reply that says it did an action, or that it will do one, needs the tool call that does it. Nothing runs after
+# the reply, so a promise without the call is false. Each entry: the words, and the calls that do the action.
+DONE = [
+    (re.compile(r"\b(removed|deleted|excluded|took out|taken out)\b", re.I), {"remove_picks"}),
+    (re.compile(r"\b(restored|brought back|added back|put back)\b", re.I), {"restore_picks"}),
+    (re.compile(r"\bI(?:'ve| have)? (re-?checked|checked (again|the (current )?(prices?|stock)))\b", re.I),
+     {"next_step:recheck"}),
+]
+PROMISE = re.compile(r"\b(I'?ll|I will|I'?m going to|I am going to|let me|I'?m now|I am now)\b(?P<rest>.*)", re.I)
+WILL_DO = [
+    (re.compile(r"\b(remove|delete|exclude|drop|take out)\b", re.I), {"remove_picks"}),
+    (re.compile(r"\b(restore|bring back|add back|put back)\b", re.I), {"restore_picks"}),
+    (re.compile(r"\b(re-?check(ing)?|check(ing)? (again|the (current )?(prices?|stock)))\b", re.I),
+     {"next_step:recheck"}),
+    (re.compile(r"\b(search(ing)?( for)?|look(ing)? for|find(ing)?|show(ing)?)( you)? (more|other|another|new|similar|"
+                r"cheaper)\b", re.I), {"next_step:show_more", "next_step:new_search", "next_step:change_needs"}),
+]
+NOT_DONE = re.compile(r"\b(can'?t|cannot|can not|unable|not able|won'?t|will not|didn'?t|did not|if you|would you|"
+                      r"should I|want me to)\b", re.I)
 
 
 class RemovePicks(BaseModel):
@@ -123,9 +140,20 @@ def check_reply(reply: Reply, cards: list[Card], allowed: set[Decimal]) -> list[
     return errors
 
 
-def says_done(text: str) -> bool:
-    """True when a sentence that is not a question says that products were removed or brought back."""
-    return any(DONE_WORDS.search(s) for s in re.findall(r"[^.!?\n]+[.!?]?", text) if not s.strip().endswith("?"))
+def unbacked_actions(text: str, done: set[str]) -> list[str]:
+    """The words of each statement in the reply that says an action was done, or will be done, when no call in
+    done does it. Questions, offers and refusals do not count."""
+    missing = []
+    for sentence in re.findall(r"[^.!?\n]+[.!?]?", text):
+        if sentence.strip().endswith("?") or NOT_DONE.search(sentence):
+            continue
+        checks = [(sentence, pattern, tools) for pattern, tools in DONE]
+        if promise := PROMISE.search(sentence):
+            checks += [(promise.group("rest"), pattern, tools) for pattern, tools in WILL_DO]
+        for part, pattern, tools in checks:
+            if (found := pattern.search(part)) and not tools & done:
+                missing.append(found.group(0))
+    return missing
 
 
 def plain(text: str) -> str:
@@ -138,24 +166,23 @@ def check_act(calls: list, cards: list[Card], removed_ids: set[int], allowed: se
     errors: list[str] = []
     names = [tool_name(type(c)) for c in calls]
     errors += [f"call {n} only once" for n in sorted(set(names)) if names.count(n) > 1]
-    did = set()
+    done = set()
     for call in calls:
         if isinstance(call, RemovePicks):
             errors += [f"there is no pick {n}" for n in call.picks if not 1 <= n <= len(cards)]
             if plain(call.words) not in plain(last_user):
                 errors.append(f"the words '{call.words}' are not in the shopper's last message. Copy the words "
                               "that name the picks")
-            did.add("remove")
         elif isinstance(call, RestorePicks):
             errors += [f"product {i} was not removed in this conversation" for i in call.product_ids
                        if i not in removed_ids]
-            did.add("restore")
+        done.add(f"next_step:{call.step}" if isinstance(call, NextStep) else tool_name(type(call)))
     for call in calls:
         if isinstance(call, Reply):
             errors += check_reply(call, cards, allowed)
-            if says_done(call.text) and not did:
-                errors.append("the reply says that products were removed or brought back, but you did not call "
-                              "remove_picks or restore_picks. Call the tool, or change the text")
+            for words in unbacked_actions(call.text, done):
+                errors.append(f"the reply says '{words}', but no tool call in this reply does it. Nothing runs "
+                              "after your reply. Call the tool in this reply, or change the text")
     return errors
 
 
