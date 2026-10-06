@@ -80,12 +80,12 @@
       expect: {category: none, says: I can search these categories now}
 
 - id: en-unclear-exclude
-  note: No pick number, so the agent must ask which pick. It can ask through the exclude step or the answer step.
+  note: No pick number, so the agent must ask which pick, in its own words.
   turns:
     - say: A fridge with a freezer, any size, budget 9000. Search now.
       expect: {phase: picks}
     - say: Remove that one.
-      expect: {says: Which, not_says: Removed}
+      expect: {route: answer, not_says: Removed}
 
 - id: zh-wine-cooler
   note: '"20 bottles" is not an attribute, so there is no condition.'
@@ -144,7 +144,7 @@
     - say: A fridge with a freezer, any size, budget 9000. Search now.
       expect: {phase: picks, picks: [Severin RKG 8930, KG 320, SBS 7344, FOHERE, 315L]}
     - say: Remove the Bomann.
-      expect: {says: Which, not_says: Removed}
+      expect: {route: answer, not_says: Removed}
 
 - id: zh-unclear-red
   note: Picks 1 and 2 are red. The agent must ask.
@@ -152,7 +152,7 @@
     - say: 要一个带冷冻的冰箱，尺寸无所谓，预算9000克朗，直接搜
       expect: {phase: picks, picks: [Severin RKG 8930, KG 320, SBS 7344, FOHERE, 315L]}
     - say: 去掉红色那个
-      expect: {says: Which, not_says: Removed}
+      expect: {route: answer, not_says: Removed}
 
 # Free wording. The same 5 picks as above.
 - id: en-two-things

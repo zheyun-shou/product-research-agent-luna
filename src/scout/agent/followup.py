@@ -14,8 +14,8 @@ from scout.picks.write import card_facts, card_text, check_claim, numbers_in, un
 
 ACT_SYSTEM = """You help a shopper who has seen the numbered picks. Answer the shopper's last message.
 You can answer in plain text, or call tools, or both. Call each tool that the message needs, all in one reply.
-- remove_picks: the shopper rejects picks. Put in picks every pick that fits the shopper's words, and never choose
-  between picks by a guess.
+- remove_picks: the shopper rejects picks. Put in picks the picks that the shopper means. When you cannot tell
+  which picks the shopper means, do not call it: ask the shopper in plain text.
 - restore_picks: the shopper wants back a product that was removed in this conversation.
 - next_step: one step that Python runs after your reply. change_needs: a new or changed condition, budget, kind or
   preference. show_more: more or other products with the same needs. recheck: are the prices or the stock still
@@ -54,12 +54,6 @@ WILL_DO = [
                 r"cheaper)\b", re.I), {"next_step:show_more", "next_step:new_search", "next_step:change_needs"}),
 ]
 # Words that say the shopper means each pick that fits.
-ALL_WORDS = re.compile(r"\b(all|both|every|each|these|those|them)\b|全部|所有|都|两个|三个|这些|它们", re.I)
-# Words for a group: "the red ones". A Chinese phrase without a measure word after 这, 那, 哪 or 一 names a group
-# too: "超声波的不要" means all ultrasonic picks, "去掉红色那个" means one.
-GROUP_WORDS = re.compile(r"\bones\b", re.I)
-CHINESE = re.compile(r"[\u4e00-\u9fff]")
-ONE_ZH = re.compile(r"[这那哪一][个款台只件]")
 NOT_DONE = re.compile(r"\b(can['’]?t|cannot|can not|unable|not able|won['’]?t|will not|didn['’]?t|did not|"
                       r"if you|would you|should I|want me to)\b", re.I)
 
@@ -119,14 +113,11 @@ class Act:
     restore: RestorePicks | None = None
     step: str | None = None
     reply: Reply | None = None
-    question: str | None = None  # Python asks which pick, and nothing else runs
     lookups: list[str] = field(default_factory=list)  # the lookup tools that ran before the answer
 
     @property
     def action(self) -> str:
         """What the graph does next."""
-        if self.question:
-            return "stop"
         if self.step:
             return STEP_ACTIONS[self.step]
         if self.remove:
@@ -186,6 +177,9 @@ def check_act(calls: list, cards: list[Card], removed_ids: set[int], allowed: se
     for call in calls:
         if isinstance(call, RemovePicks):
             errors += [f"there is no pick {n}" for n in call.picks if not 1 <= n <= len(cards)]
+            if not call.picks:
+                errors.append("remove_picks has no pick. When it is not clear which pick the shopper means, do not "
+                              "call it, and ask the shopper in plain text")
         elif isinstance(call, RestorePicks):
             errors += [f"product {i} was not removed in this conversation" for i in call.product_ids
                        if i not in removed_ids]
@@ -197,22 +191,6 @@ def check_act(calls: list, cards: list[Card], removed_ids: set[int], allowed: se
                 errors.append(f"the reply says '{words}', but no tool call in this reply does it. Nothing runs "
                               "after your reply. Call the tool in this reply, or change the text")
     return errors
-
-
-def unclear_question(remove: RemovePicks, picks: list[dict], last_user: str) -> str | None:
-    """Python asks when the words fit no pick, or when they fit several picks and the shopper did not give each
-    number or say all. Models often remove all picks that fit "the red one"."""
-    if not remove.picks:
-        return "Which pick do you want to remove? Give its number."
-    if len(remove.picks) < 2:
-        return None
-    named = {int(n) for n in re.findall(r"\d+", last_user)}
-    if set(remove.picks) <= named or ALL_WORDS.search(last_user) or GROUP_WORDS.search(last_user):
-        return None
-    if CHINESE.search(last_user) and not ONE_ZH.search(last_user):
-        return None
-    options = ", ".join(f"pick {n} ({picks[n - 1]['title'][:50]})" for n in remove.picks)
-    return f"Which do you mean, all of these or only one: {options}? Say all, or give the number."
 
 
 def collect(calls: list, picks: list[dict], last_user: str = "") -> Act:
@@ -228,7 +206,6 @@ def collect(calls: list, picks: list[dict], last_user: str = "") -> Act:
             act.reply = call
     if act.remove:
         act.remove.picks = sorted(set(act.remove.picks))
-        act.question = unclear_question(act.remove, picks, last_user)
     return act
 
 

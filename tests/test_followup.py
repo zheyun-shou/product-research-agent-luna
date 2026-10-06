@@ -33,30 +33,23 @@ def test_a_clear_removal_and_a_next_step_in_one_reply():
     result, llm = run_act([[RemovePicks(picks=[3], words="the FOHERE", reason="too small"),
                             NextStep(step="show_more")]], "Drop the FOHERE and show me more")
     assert result.remove.picks == [3] and result.step == "show_more" and result.action == "more"
-    assert result.question is None and result.tools == ["remove_picks", "next_step"]
+    assert result.tools == ["remove_picks", "next_step"]
     assert "Pick 3: Fridge 3 | price=5000 SEK" in llm.requests[0][1] and "height=48.0" in llm.requests[0][1]
     assert "product 9" not in llm.requests[0][1]
 
 
-def test_several_picks_without_numbers_make_python_ask():
-    result, _ = run_act([[RemovePicks(picks=[2, 1], words="the Bomann"), Reply(text="Removed the Bomann.")]],
-                        "Remove the Bomann")
-    assert result.action == "stop"
-    assert result.question == ("Which do you mean, all of these or only one: pick 1 (Bomann KG 320), pick 2 "
-                               "(Bomann SBS 7344)? Say all, or give the number.")
-    assert run_act([[RemovePicks(picks=[1, 3], words="红色那个")]], "去掉红色那个")[0].action == "stop"
-    result, _ = run_act([[RemovePicks(picks=[], words="that one")]], "Remove that one")
-    assert result.question.startswith("Which pick do you want to remove?")
+def test_the_model_decides_which_picks_go():
+    result, _ = run_act([[RemovePicks(picks=[2, 1], words="the Bomann")]], "Remove the Bomann")
+    assert result.remove.picks == [1, 2] and result.action == "exclude"
+    result, _ = run_act([[RemovePicks(picks=[1, 2], words="超声波的")]], "超声波的不要")
+    assert result.remove.picks == [1, 2] and result.action == "exclude"
 
 
-def test_several_picks_can_go_when_the_shopper_gives_each_number_or_says_all():
-    for words, said in [("both Bomanns", "Remove both Bomanns"), ("1 and 2", "Remove 1 and 2"),
-                        ("红色的", "去掉所有红色的"), ("all", "all"), ("the red ones", "Remove the red ones"),
-                        ("超声波的", "超声波的不要，最好一次能洗15个碗及以上的")]:
-        result, _ = run_act([[RemovePicks(picks=[1, 2], words=words)]], said)
-        assert result.remove.picks == [1, 2] and result.question is None and result.action == "exclude", said
-    result, _ = run_act([[RemovePicks(picks=[1], words="the red one")]], "Remove the red one")
-    assert result.question is None and result.action == "exclude"
+def test_the_model_asks_when_the_pick_is_not_clear():
+    result, llm = run_act([[RemovePicks(picks=[], words="that one")], "Which pick do you mean, 1 or 2?"],
+                          "Remove that one")
+    assert "remove_picks has no pick" in llm.requests[1][1]
+    assert result.remove is None and result.action == "answer" and result.reply.text.startswith("Which pick")
 
 
 def test_a_reply_that_claims_a_removal_without_the_tool_goes_back():

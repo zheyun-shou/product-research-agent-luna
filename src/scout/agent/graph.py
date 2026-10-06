@@ -212,8 +212,6 @@ def build_graph(deps: Deps, checkpointer=None):
                 "You can say it in other words.")]}
         route = {"action": result.action, "tools": result.tools, "lookups": result.lookups, "pick_numbers": [],
                  "restored": []}
-        if result.question:
-            return {"route": route, "messages": [assistant(result.question)]}
         thread, messages = thread_of(config), []
         if result.remove:  # Python says what it removed, so the text is always true
             chosen = [picks[n - 1] for n in result.remove.picks]
