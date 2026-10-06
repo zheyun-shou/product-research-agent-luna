@@ -1,8 +1,12 @@
-"""Web search (phase 3 Task 9): Tavily finds pages, the worker reads them, Python checks the quotes.
+"""Web search (phase 3 Task 9): Tavily finds pages with their text, the worker judges each page, and the chat model
+reads the full text of the relevant pages.
 
 Tavily gives the text of each found page (include_raw_content), so product-scout does not fetch these pages itself.
-A basic search costs one credit; the free plan has 1,000 each month. The same question in the last 7 days uses the
-stored results and costs nothing.
+A basic search costs one credit for any number of results; the free plan has 1,000 each month. The same question in
+the last 7 days uses the stored results and costs nothing.
+
+Decided by Zheyun on 2026-10-07: the worker reads all found pages in parallel and only judges them. The chat model
+gets the page text itself, not a summary, and at least MIN_TO_CHAT pages.
 """
 import contextvars
 import hashlib
@@ -14,16 +18,16 @@ from urllib.parse import urlparse
 import httpx
 from pydantic import BaseModel, Field
 
-from scout.extract.verify import verify_raw
 from scout.llm.client import LLMOutputError, LLMUnavailable
-from scout.text.chunks import Chunk
+from scout.text.chunks import Chunk, split_text
 
 API = "https://api.tavily.com/search"
 RESULTS = 20  # pages for each search (Zheyun, 2026-10-06); one credit for any number
-PAGE_CHARS = 15_000  # of one page for the worker
 STORED_CHARS = 30_000  # of one page in the stored results
-READ_WORKERS = 4
-MAX_QUOTES = 6  # for each product on one page
+PAGE_CHARS = 15_000  # of one page for the worker and for the chat model
+READ_WORKERS = 10
+MIN_TO_CHAT = 5  # pages whose text the chat model gets, also when fewer are relevant
+MAX_TO_CHAT = 8
 WEB_KINDS = ("test", "forum")
 
 
@@ -41,6 +45,10 @@ class WebResult:
     @property
     def site(self) -> str:
         return urlparse(self.url).netloc.removeprefix("www.")
+
+    @property
+    def text(self) -> str:
+        return self.raw or self.content
 
 
 class TavilyClient:
@@ -65,28 +73,25 @@ class TavilyClient:
             :STORED_CHARS]) for r in response.json().get("results", [])]
 
 
-# ---- the worker reads one page ----
+# ---- the worker judges one page ----
 
-READ_SYSTEM = """You read one web page for a shopping research assistant. Say what kind of page it is, and copy the
-parts of the page that are about each listed product.
+JUDGE_SYSTEM = """You look at one web page for a shopping research assistant. The assistant will read the relevant
+pages itself. You only judge the page.
 
 - kind: "test" for a test or review by a magazine, a blog or a test site; "forum" for a forum or a discussion where
   users write; "shop" for a shop page that sells products; "other" for anything else.
-- For each listed product that the page is about (the same model, not only the same brand), give quotes: the
-  sentences of the page about that product, copied exactly, each at most 3 sentences. Opinions, test results,
-  measured values and problems are the most useful. At most 6 quotes for each product.
-- A page that compares many products: give only the quotes about the listed ones.
-- Leave out a product that the page does not name. Never write a quote that is not in the page."""
+- relevant: true when the page helps to answer the search question: tests, measurements, opinions of users,
+  problems, comparisons. When products are listed, the page must be about one of them or compare it. A page with
+  only a product name and a price, or no real text, is not relevant.
+- about: the ids of the listed products that the page is about (the same model, not only the same brand).
+- reason: one short sentence, why it is relevant or not."""
 
 
-class ProductQuotes(BaseModel):
-    id: int = Field(description="The product id from the list")
-    quotes: list[str] = Field(default_factory=list)
-
-
-class PageRead(BaseModel):
+class PageJudgement(BaseModel):
     kind: Literal["test", "forum", "shop", "other"]
-    products: list[ProductQuotes] = Field(default_factory=list)
+    relevant: bool
+    about: list[int] = Field(default_factory=list)
+    reason: str = ""
 
 
 @dataclass
@@ -100,53 +105,57 @@ class ProductRef:
 @dataclass
 class Finding:
     result: WebResult
-    kind: str
-    quotes: dict[int, list[str]] = field(default_factory=dict)  # listing id -> quotes that are in the page
-    dropped: int = 0  # quotes that are not in the page
+    kind: str = "other"
+    relevant: bool = False
+    about: list[int] = field(default_factory=list)
+    reason: str = ""
     error: str = ""
 
 
-def read_prompt(result: WebResult, products: list[ProductRef]) -> str:
-    lines = ["Products:"] + [f"- id {p.listing_id}: {p.title[:200]}" + (f" (model {p.model})" if p.model else "")
-                             for p in products]
-    lines += ["", f"Page: {result.title}", f"URL: {result.url}", "", (result.raw or result.content)[:PAGE_CHARS]]
+def judge_prompt(question: str, result: WebResult, products: list[ProductRef]) -> str:
+    lines = [f"Search question: {question}", "Products:"]
+    lines += [f"- id {p.listing_id}: {p.title[:200]}" + (f" (model {p.model})" if p.model else "")
+              for p in products] or ["none listed"]
+    lines += ["", f"Page: {result.title}", f"URL: {result.url}", "", result.text[:PAGE_CHARS]]
     return "\n".join(lines)
 
 
-def read_page_text(llm, result: WebResult, products: list[ProductRef]) -> Finding:
-    """One worker call. Python keeps a quote only when it is in the page text."""
-    text = result.raw or result.content
+def judge_page(llm, question: str, result: WebResult, products: list[ProductRef]) -> Finding:
+    if not result.text.strip():
+        return Finding(result, reason="the page has no text")
     try:
-        read = llm.structured("worker", READ_SYSTEM, read_prompt(result, products), PageRead)
+        judged = llm.structured("worker", JUDGE_SYSTEM, judge_prompt(question, result, products), PageJudgement)
     except LLMOutputError as exc:
-        return Finding(result, "other", error=f"the worker gave no usable reply ({exc})")
+        return Finding(result, error=f"the worker gave no usable reply ({exc})")
     known = {p.listing_id for p in products}
-    finding = Finding(result, read.kind)
-    for item in read.products:
-        if item.id not in known:
-            continue
-        for quote in item.quotes[:MAX_QUOTES]:
-            if verify_raw(quote, text):
-                finding.quotes.setdefault(item.id, []).append(quote.strip())
-            else:
-                finding.dropped += 1
-    return finding
+    return Finding(result, judged.kind, judged.relevant, [i for i in judged.about if i in known],
+                   judged.reason[:200])
 
 
-def read_pages(llm, results: list[WebResult], products: list[ProductRef]) -> tuple[list[Finding], str]:
-    """Read the pages in parallel. Returns the findings and a note when the worker stopped."""
+def judge_pages(llm, question: str, results: list[WebResult], products: list[ProductRef]
+                ) -> tuple[list[Finding], str]:
+    """Judge all pages in parallel. Returns the findings in the order of the results, and a note when the worker
+    stopped."""
     findings: list[Finding] = []
     stopped = ""
     with ThreadPoolExecutor(READ_WORKERS) as pool:
-        futures = [(r, pool.submit(contextvars.copy_context().run, read_page_text, llm, r, products))
+        futures = [(r, pool.submit(contextvars.copy_context().run, judge_page, llm, question, r, products))
                    for r in results]
         for result, future in futures:
             try:
                 findings.append(future.result())
             except LLMUnavailable as exc:
-                stopped = f"The worker model is not available ({exc}), so some pages were not read."
-                findings.append(Finding(result, "other", error="not read"))
+                stopped = f"The worker model is not available ({exc}), so some pages were not judged."
+                findings.append(Finding(result, error="not judged"))
     return findings, stopped
+
+
+def for_chat(findings: list[Finding]) -> list[Finding]:
+    """The relevant pages in the order of the search, at most MAX_TO_CHAT. When fewer than MIN_TO_CHAT are
+    relevant, the next pages with text fill up to MIN_TO_CHAT."""
+    chosen = [f for f in findings if f.relevant][:MAX_TO_CHAT]
+    rest = [f for f in findings if not f.relevant and f.result.text.strip()]
+    return chosen + rest[:max(0, MIN_TO_CHAT - len(chosen))]
 
 
 # ---- chunks and the report ----
@@ -155,13 +164,13 @@ def url_ref(url: str) -> str:
     return "web " + hashlib.sha1(url.encode()).hexdigest()[:10]
 
 
-def web_chunks(product_title: str, finding: Finding, listing_id: int) -> list[Chunk]:
-    """The quotes of one page about one product, as one chunk for each quote."""
+def web_chunks(product_title: str, finding: Finding) -> list[Chunk]:
+    """The text of one test or forum page, in chunks, for one product that it is about."""
     r = finding.result
     meta = {"url": r.url, "title": r.title[:300], "site": r.site, "type": finding.kind}
     head = f"Product: {product_title}\nWeb {finding.kind}, {r.site}: {r.title[:200]}\n"
-    return [Chunk(finding.kind, f"{url_ref(r.url)} {n}", head + quote, meta)
-            for n, quote in enumerate(finding.quotes.get(listing_id, []), 1)]
+    return [Chunk(finding.kind, f"{url_ref(r.url)} {n}", head + part, meta)
+            for n, part in enumerate(split_text(r.text[:STORED_CHARS]), 1)]
 
 
 @dataclass
@@ -175,14 +184,21 @@ class WebStore:
 @dataclass
 class WebReport:
     text: str
-    pages: int  # pages that the worker read
+    pages: int  # pages that the worker judged
     credits: int  # 0 when the stored results were used
+    to_chat: int = 0  # pages whose text is in the report
+
+
+def page_line(finding: Finding) -> str:
+    r = finding.result
+    about = f", about id {', '.join(map(str, finding.about))}" if finding.about else ""
+    return f"{r.site}, {finding.kind}{about}: {r.title[:150]} ({r.url})"
 
 
 def search_web(question: str, products: list[ProductRef], client: TavilyClient, llm, store: WebStore,
                max_pages: int = RESULTS) -> WebReport:
-    """Search, then read the found pages for the given products and store the checked quotes as chunks. Without
-    products, give only the titles, the addresses and the short parts that Tavily found."""
+    """Search, let the worker judge each found page, and give the text of the relevant pages. Test and forum pages
+    about a listed product are stored as chunks of that product."""
     results = store.stored(question)
     credits = 0
     if results is None:
@@ -192,33 +208,30 @@ def search_web(question: str, products: list[ProductRef], client: TavilyClient, 
     head = f"Web search '{question}'" + (" (stored results of the last 7 days)" if not credits else "")
     if not results:
         return WebReport(f"{head}: no pages found.", 0, credits)
-    if not products:
-        lines = [f"- {r.title[:150]} | {r.site} | {r.url}\n  {r.content[:400]}" for r in results]
-        return WebReport(f"{head}: {len(results)} pages. Give product ids to read the pages for those products.\n"
-                         + "\n".join(lines), 0, credits)
     todo = results[:max_pages]
-    findings, stopped = read_pages(llm, todo, products)
+    findings, stopped = judge_pages(llm, question, todo, products)
     titles = {p.listing_id: p.title for p in products}
-    lines = [f"{head}: read {len(todo)} pages."]
     for finding in findings:
-        r = finding.result
-        line = f"- {r.site}, {finding.kind}: {r.title[:150]} ({r.url})"
-        if finding.error:
-            lines.append(f"{line}: {finding.error}.")
-            continue
-        for listing_id in titles:
-            if finding.kind in WEB_KINDS:
-                store.save_chunks(listing_id, r.url, web_chunks(titles[listing_id], finding, listing_id))
-        if finding.kind == "shop":
-            lines.append(f"{line}: a shop page; its offers are not read yet.")
-        elif not finding.quotes:
-            lines.append(f"{line}: nothing about these products.")
-        else:
-            lines.append(line + "".join(f"\n  id {i}: " + " | ".join(q) for i, q in finding.quotes.items()))
-        if finding.dropped:
-            lines.append(f"  {finding.dropped} quotes of the worker were not in the page and were dropped.")
+        if finding.relevant and finding.kind in WEB_KINDS:
+            for listing_id in finding.about:
+                store.save_chunks(listing_id, finding.result.url, web_chunks(titles[listing_id], finding))
+    chosen = for_chat(findings)
+    relevant = sum(f.relevant for f in findings)
+    lines = [f"{head}: {len(results)} pages found, {len(todo)} judged by the worker, {relevant} relevant. "
+             f"The text of {len(chosen)} pages follows."]
+    for n, finding in enumerate(chosen, 1):
+        mark = "" if finding.relevant else " (the worker found it not relevant)"
+        text = finding.result.text
+        cut = " [cut here]" if len(text) > PAGE_CHARS else ""
+        lines += ["", f"[web page {n}] {page_line(finding)}{mark}", text[:PAGE_CHARS] + cut]
+    others = [f for f in findings if f not in chosen]
+    if others:
+        lines += ["", "The other pages:"]
+        lines += [f"- {page_line(f)}: " + (f.error or ("relevant" if f.relevant else "not relevant")
+                                            + (f", {f.reason}" if f.reason else "")) for f in others]
     if stopped:
         lines.append(stopped)
     if len(results) > len(todo):
-        lines.append(f"{len(results) - len(todo)} more pages were found and not read (page limit of this turn).")
-    return WebReport("\n".join(lines), len(todo), credits)
+        lines.append(f"{len(results) - len(todo)} more pages were found and not judged (the web pages of this turn "
+                     "are used up).")
+    return WebReport("\n".join(lines), len(todo), credits, len(chosen))

@@ -22,7 +22,7 @@ from scout.trace import NoTracer
 MAX_TOOL_CALLS = 25  # for each turn; set again from the hidden-target test (design section 10)
 MAX_PRODUCT_PAGES = 30
 MAX_REVIEW_PAGES = 30
-MAX_WEB_PAGES = 20
+MAX_WEB_PAGES = 60  # pages that the worker judges; a search gives up to 20
 MAX_WEB_SEARCHES = 10  # each new search costs one Tavily credit
 MAX_GATE_ROUNDS = 3
 MAX_REPORT_CHARS = 6_000  # of one tool report in the prompt
@@ -30,7 +30,7 @@ SEARCH_DETAILS = 8  # new product pages for each search_shop call
 MAX_READ_CHARS = 5_000  # of the text of one product in read_product
 # Three products must fit in one report: each text is cut at MAX_READ_CHARS, the title and the question at 200
 REPORT_LIMITS = {"read_product": 3 * (MAX_READ_CHARS + 300) + 500,
-                 "search_web": 30_000}  # 20 pages with their quotes
+                 "search_web": 130_000}  # the text of up to 8 pages (websearch.MAX_TO_CHAT, PAGE_CHARS)
 
 SYSTEM = """You are product-scout, a shopping research assistant. You help the shopper choose products. The shopper
 is in Sweden. You find candidates in shops, check them against the shopper's needs, read what buyers say, and give a
@@ -61,7 +61,7 @@ Rules:
 - Each number that you write is a value from a tool result, a number that the shopper wrote, or your own
   calculation. Give claims for the facts of products: the product id, the card field and the value, or the field
   "page" for a number that the stored page text of that product shows (read_product), or the field "web" for a
-  number in the web quotes about that product (search_web). Put each calculated number in derived with how you
+  number in the web pages about that product (search_web). Put each calculated number in derived with how you
   got it. Say when a number comes from a test or a forum, and name the site.
 - Before show_picks, Python checks: each pick was searched for in a shop in this conversation, its reviews were
   read (good and bad), and it had a web search for tests (in the last 7 days), unless the shopper does not want
@@ -92,10 +92,9 @@ class SearchShop(BaseModel):
 
 
 class SearchWeb(BaseModel):
-    """Search the web (Tavily) and read the found pages: tests, forums, shop pages. With product ids, the worker
-    copies what the pages say about these products, and Python keeps only the quotes that are in the pages. The
-    quotes are stored, so search_text finds them later. Without ids, gives only the titles, addresses and short
-    parts of the pages."""
+    """Search the web (Tavily). The worker judges each found page (test, forum, shop; relevant or not), and you get
+    the full text of the relevant pages, at least 5. Give the ids of the products that the search is for: the test
+    and forum pages about them are stored, so search_text finds them later."""
     question: str = Field(description="The search words, for example the model and 'test'. Any language")
     ids: list[int] = Field(default_factory=list, description="Product ids that the search is for, at most 5")
 
@@ -158,7 +157,7 @@ class RestoreProducts(BaseModel):
 class Claim(BaseModel):
     id: int = Field(description="The product id")
     field: str = Field(description="price, rating, review_count, an attribute name, page: a number that the "
-                                   "stored page text of the product shows, or web: a number in the web quotes "
+                                   "stored page text of the product shows, or web: a number in the web pages "
                                    "about the product")
     value: str
 
@@ -224,7 +223,7 @@ class LoopDeps:
     # (question, listing ids, at most this many pages) -> (report, pages read); raises WebSearchUnavailable
     search_web: Callable[[str, list[int], int], tuple[str, int]] | None = None
     web_searched: Callable[[list[int]], set[int]] = lambda ids: set()  # listings with a web search, last 7 days
-    web_texts: Callable[[list[int]], dict[int, str]] | None = None  # the stored web quotes of each product
+    web_texts: Callable[[list[int]], dict[int, str]] | None = None  # the stored web pages of each product
     say: Callable[[str], None] = print
     tracer: Any = field(default_factory=NoTracer)
 
@@ -318,7 +317,7 @@ def check_claims(claims: list[Claim], cards: dict[int, Card], pages: dict[int, s
                  web: dict[int, set[Decimal]] | None = None) -> tuple[list[str], set[Decimal]]:
     """A claim passes when the card has the value, or (not for the price, the rating, the review count and the
     stock) when the page text of the product shows its number. A claim with the field web passes when the stored
-    web quotes about the product show its numbers."""
+    web pages about the product show its numbers."""
     errors, numbers, pages, web = [], set(), pages or {}, web or {}
     for claim in claims:
         card = cards.get(claim.id)
@@ -330,7 +329,7 @@ def check_claims(claims: list[Claim], cards: dict[int, Card], pages: dict[int, s
             if shown and shown <= web.get(claim.id, set()):
                 numbers |= shown
             else:
-                errors.append(f"id {claim.id}: the web quotes about this product do not show {claim.value}")
+                errors.append(f"id {claim.id}: the web pages about this product do not show {claim.value}")
             continue
         if claim.field not in CARD_ONLY and shown and shown <= pages.get(claim.id, set()):
             numbers |= shown
@@ -519,7 +518,7 @@ class Toolbox:
         if self.used.get("web_searches", 0) >= MAX_WEB_SEARCHES:
             return "the web searches of this turn are used up."
         left = MAX_WEB_PAGES - self.used.get("web_pages", 0)
-        if call.ids and left <= 0:
+        if left <= 0:
             return "the web pages of this turn are used up."
         cards, unknown = self.cards(call.ids[:5])
         self.deps.say(f"Searching the web for '{call.question}'.")
