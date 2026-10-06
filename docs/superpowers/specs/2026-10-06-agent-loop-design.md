@@ -143,7 +143,7 @@ A problem goes back to Luna with the values from the records, up to 3 rounds.
 4. `read_reviews`, `find_missing`, `summarize_reviews` as tools, with the floors.
 5. The web page and `scout chat` on the new graph: streaming of tool reports and the login pause.
 6. eval-chat scripts for outcomes, the hidden-target test, and the comparison of section 10 (paid, with her OK). Then set the limits of section 4 from the numbers.
-7. `search_web` and `read_page` when the Tavily key is there (Task 9).
+7. `search_web` and `read_page` when the Tavily key is there (Task 9). `search_web` and its floor were built on 2026-10-06 (phase 3 plan, Task 9). `read_page` is not built yet.
 
 Each step is committed, reviewed and pushed. The tests use a fake LLM that returns planned tool calls.
 

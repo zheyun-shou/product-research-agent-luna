@@ -134,10 +134,24 @@ def live_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, k: int =
     )
 
 
-def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_embedder=BgeM3Embedder):
+def web_client():
+    """The Tavily client when TAVILY_API_KEY is set, else None (then the loop has no search_web)."""
+    import os
+
+    from scout.websearch import TavilyClient
+    key = os.environ.get("TAVILY_API_KEY")
+    return TavilyClient(key) if key else None
+
+
+def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_embedder=BgeM3Embedder,
+              web="env"):
     """The dependencies of the agent loop (agent/loop.py): the same stores, browser and checks as the pipeline.
-    make_embedder: a run with many conversations gives one that returns the same embedder, so bge-m3 loads once."""
-    from datetime import datetime, timezone
+    make_embedder: a run with many conversations gives one that returns the same embedder, so bge-m3 loads once.
+    web: a Tavily client, None for no web search, or "env" for the key in the environment."""
+    from datetime import datetime, timedelta, timezone
+
+    from scout.db.store import save_web_chunks, save_web_search, stored_web_results, web_searched, web_texts
+    from scout.websearch import ProductRef, WebResult, WebStore, search_web as run_web_search, url_ref
 
     from scout.agent.graph import crawl_text
     from scout.agent.loop import LoopDeps
@@ -242,6 +256,28 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
                                 language)
         return text or "these products have too few stored reviews to summarize."
 
+    client = web_client() if web == "env" else web
+    week = timedelta(days=7)
+
+    def stored(question):
+        rows = stored_web_results(conn, question, datetime.now(timezone.utc) - week)
+        return None if rows is None else [WebResult(**r) for r in rows]
+
+    web_store = WebStore(
+        stored=stored,
+        save_search=lambda question, ids, results: save_web_search(
+            conn, question, ids, [vars(r) for r in results]),
+        save_chunks=lambda listing_id, url, chunks: save_web_chunks(
+            conn, listing_id, url_ref(url), chunks, datetime.now(timezone.utc)),
+    )
+
+    def search_web(question, ids, max_pages):
+        cards = load_cards_by_ids(conn, ids)
+        products = [ProductRef(c.listing_id, c.title, c.model) for c in cards]
+        report = run_web_search(question, products, client, llm, web_store, max_pages)
+        conn.commit()
+        return report.text, report.pages
+
     return LoopDeps(
         llm=llm, profile_names=profile_names, load_profile=load_profile,
         cards=lambda ids: load_cards_by_ids(conn, ids),
@@ -252,5 +288,8 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
         search_shop=search_shop, check_now=check_now,
         page_texts=lambda ids: page_texts(conn, ids), search_text=search_text, read_images=image_reader(llm),
         find_missing=find_missing, read_reviews=reviews, reviews_read=reviews_read, summarize=summarize,
+        search_web=search_web if client is not None else None,
+        web_searched=lambda ids: web_searched(conn, ids, datetime.now(timezone.utc) - week),
+        web_texts=lambda ids: web_texts(conn, ids),
         say=say, tracer=tracer,
     )

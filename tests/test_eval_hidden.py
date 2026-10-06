@@ -72,9 +72,9 @@ def test_leaked_words_are_whole_words_in_any_case():
 def record(found, rank, calls, seconds, measured=True, at_limit=()):
     return {"measured": measured, "found": found, "rank": rank, "seen": True, "error": None, "leaked": [],
             "at_limit": list(at_limit),
-            "totals": {"tool_calls": calls, "product_pages": 8, "review_pages": 6, "web_pages": 0,
+            "totals": {"tool_calls": calls, "product_pages": 8, "review_pages": 6, "web_pages": 0, "web_searches": 0,
                        "model_calls": calls + 1, "cost_usd": 0.01, "seconds": seconds},
-            "turn_max": {"calls": calls, "product_pages": 8, "review_pages": 6}}
+            "turn_max": {"calls": calls, "product_pages": 8, "review_pages": 6, "web_pages": 0, "web_searches": 0}}
 
 
 def test_the_summary_gives_the_most_of_one_turn_in_the_runs_that_found_the_product():

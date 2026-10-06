@@ -22,12 +22,15 @@ from scout.trace import NoTracer
 MAX_TOOL_CALLS = 25  # for each turn; set again from the hidden-target test (design section 10)
 MAX_PRODUCT_PAGES = 30
 MAX_REVIEW_PAGES = 30
+MAX_WEB_PAGES = 20
+MAX_WEB_SEARCHES = 10  # each new search costs one Tavily credit
 MAX_GATE_ROUNDS = 3
 MAX_REPORT_CHARS = 6_000  # of one tool report in the prompt
 SEARCH_DETAILS = 8  # new product pages for each search_shop call
 MAX_READ_CHARS = 5_000  # of the text of one product in read_product
 # Three products must fit in one report: each text is cut at MAX_READ_CHARS, the title and the question at 200
-REPORT_LIMITS = {"read_product": 3 * (MAX_READ_CHARS + 300) + 500}
+REPORT_LIMITS = {"read_product": 3 * (MAX_READ_CHARS + 300) + 500,
+                 "search_web": 12_000}  # 5 pages with up to 6 quotes for each of up to 5 products
 
 SYSTEM = """You are product-scout, a shopping research assistant. You help the shopper choose products. The shopper
 is in Sweden. You find candidates in shops, check them against the shopper's needs, read what buyers say, and give a
@@ -42,6 +45,9 @@ How to work:
   pages or search with other words when the stored and the new candidates are weak or too few.
 - Look things up before you guess: read_product, search_text, read_images, find_missing.
 - Read the buyers' reviews of the products that you want to recommend (read_reviews, then summarize_reviews).
+- Search the web for tests and forum views of the products that you want to recommend (search_web with their ids
+  and their model or name, and words such as test, recension, review). Without ids, search_web finds which models
+  testers recommend; then look for them with search_shop.
 - Say clearly when data is missing, doubtful or in conflict, and what you did about it. You can leave out a
   candidate whose data cannot be right; say why.
 - show_picks gives the final picks, best first. Usually 5. Fewer when fewer fit well; then say why.
@@ -54,10 +60,12 @@ Rules:
 - Summarize reviews in qualitative words ("most buyers", "a few"), never as counts.
 - Each number that you write is a value from a tool result, a number that the shopper wrote, or your own
   calculation. Give claims for the facts of products: the product id, the card field and the value, or the field
-  "page" for a number that the stored page text of that product shows (read_product). Put each calculated number
-  in derived with how you got it.
-- Before show_picks, Python checks: each pick was searched for in a shop in this conversation, and its reviews
-  were read (good and bad). Python opens each pick again for the price and the stock now.
+  "page" for a number that the stored page text of that product shows (read_product), or the field "web" for a
+  number in the web quotes about that product (search_web). Put each calculated number in derived with how you
+  got it. Say when a number comes from a test or a forum, and name the site.
+- Before show_picks, Python checks: each pick was searched for in a shop in this conversation, its reviews were
+  read (good and bad), and it had a web search for tests (in the last 7 days), unless the shopper does not want
+  that (update_needs with web_tests false). Python opens each pick again for the price and the stock now.
 - Reply in the shopper's language."""
 
 
@@ -72,6 +80,7 @@ class UpdateNeeds(BaseModel):
     budget_note: str | None = Field(None, description="A budget in another currency: the amount, the currency, "
                                                       "the rate used")
     preferences: list[str] = Field(default_factory=list)
+    web_tests: bool = Field(True, description="False only when the shopper does not want web searches for tests")
 
 
 class SearchShop(BaseModel):
@@ -80,6 +89,15 @@ class SearchShop(BaseModel):
     words and page to read the next ones, without loading the search pages again. Takes one or two minutes."""
     words: str = Field(description="Swedish search words, one phrase")
     page: int = Field(1, description="The result page, from 1")
+
+
+class SearchWeb(BaseModel):
+    """Search the web (Tavily) and read the found pages: tests, forums, shop pages. With product ids, the worker
+    copies what the pages say about these products, and Python keeps only the quotes that are in the pages. The
+    quotes are stored, so search_text finds them later. Without ids, gives only the titles, addresses and short
+    parts of the pages."""
+    question: str = Field(description="The search words, for example the model and 'test'. Any language")
+    ids: list[int] = Field(default_factory=list, description="Product ids that the search is for, at most 5")
 
 
 class FindProducts(BaseModel):
@@ -101,7 +119,7 @@ class SearchText(BaseModel):
     """Search the stored text of many products at once and give the 10 best matching parts."""
     question: str
     ids: list[int] = Field(default_factory=list, description="Product ids, or empty for all of the category")
-    kinds: list[Literal["specs", "description", "review"]] = Field(default_factory=list)
+    kinds: list[Literal["specs", "description", "review", "test", "forum"]] = Field(default_factory=list)
 
 
 class ReadImages(BaseModel):
@@ -139,8 +157,9 @@ class RestoreProducts(BaseModel):
 
 class Claim(BaseModel):
     id: int = Field(description="The product id")
-    field: str = Field(description="price, rating, review_count, an attribute name, or page: a number that the "
-                                   "stored page text of the product shows")
+    field: str = Field(description="price, rating, review_count, an attribute name, page: a number that the "
+                                   "stored page text of the product shows, or web: a number in the web quotes "
+                                   "about the product")
     value: str
 
 
@@ -164,7 +183,7 @@ class Reply(BaseModel):
     derived: list[Derived] = Field(default_factory=list)
 
 
-WORK_TOOLS = [UpdateNeeds, SearchShop, FindProducts, ReadProduct, SearchText, ReadImages, FindMissing, ReadReviews,
+WORK_TOOLS = [UpdateNeeds, SearchShop, SearchWeb, FindProducts, ReadProduct, SearchText, ReadImages, FindMissing, ReadReviews,
               SummarizeReviews, RemoveProducts, RestoreProducts]
 FINAL_TOOLS = [ShowPicks, Reply]
 BY_NAME = {tool_name(t): t for t in WORK_TOOLS + FINAL_TOOLS}
@@ -202,6 +221,10 @@ class LoopDeps:
     read_reviews: Callable[[list[int]], tuple[str, int, list[int]]] | None = None
     reviews_read: Callable[[list[int]], set[int]] = lambda ids: set()  # listings with a recent complete read
     summarize: Callable[[CategoryProfile, list[int], str], str] | None = None
+    # (question, listing ids, at most this many pages) -> (report, pages read); raises WebSearchUnavailable
+    search_web: Callable[[str, list[int], int], tuple[str, int]] | None = None
+    web_searched: Callable[[list[int]], set[int]] = lambda ids: set()  # listings with a web search, last 7 days
+    web_texts: Callable[[list[int]], dict[int, str]] | None = None  # the stored web quotes of each product
     say: Callable[[str], None] = print
     tracer: Any = field(default_factory=NoTracer)
 
@@ -232,6 +255,9 @@ def context_text(state: dict, deps: LoopDeps, thread: str) -> str:
                                                                for r in removed) or "none"))
     lines.append("Shop searches in this conversation: " + (", ".join(f"'{w}' up to page {s['page']}"
                                                                      for w, s in searches.items()) or "none"))
+    web = state.get("web_searches") or []
+    if web:
+        lines.append("Web searches in this conversation: " + ", ".join(f"'{q}'" for q in web))
     return "\n".join(lines)
 
 
@@ -288,17 +314,24 @@ def page_numbers(row: dict | None) -> set[Decimal]:
     return numbers_in(PAGE_PRICE.sub(" ", text))
 
 
-def check_claims(claims: list[Claim], cards: dict[int, Card],
-                 pages: dict[int, set[Decimal]] | None = None) -> tuple[list[str], set[Decimal]]:
+def check_claims(claims: list[Claim], cards: dict[int, Card], pages: dict[int, set[Decimal]] | None = None,
+                 web: dict[int, set[Decimal]] | None = None) -> tuple[list[str], set[Decimal]]:
     """A claim passes when the card has the value, or (not for the price, the rating, the review count and the
-    stock) when the page text of the product shows its number."""
-    errors, numbers, pages = [], set(), pages or {}
+    stock) when the page text of the product shows its number. A claim with the field web passes when the stored
+    web quotes about the product show its numbers."""
+    errors, numbers, pages, web = [], set(), pages or {}, web or {}
     for claim in claims:
         card = cards.get(claim.id)
         if card is None:
             errors.append(f"there is no product with id {claim.id}")
             continue
         shown = numbers_in(claim.value)
+        if claim.field == "web":
+            if shown and shown <= web.get(claim.id, set()):
+                numbers |= shown
+            else:
+                errors.append(f"id {claim.id}: the web quotes about this product do not show {claim.value}")
+            continue
         if claim.field not in CARD_ONLY and shown and shown <= pages.get(claim.id, set()):
             numbers |= shown
             continue
@@ -320,6 +353,13 @@ def pages_of(deps: "LoopDeps", ids) -> dict[int, set[Decimal]]:
     return {i: page_numbers(row) for i, row in deps.page_texts(sorted(set(ids))).items()}
 
 
+def web_of(deps: "LoopDeps", claims: list[Claim]) -> dict[int, set[Decimal]]:
+    ids = sorted({c.id for c in claims if c.field == "web"})
+    if deps.web_texts is None or not ids:
+        return {}
+    return {i: numbers_in(text) for i, text in deps.web_texts(ids).items()}
+
+
 def check_text(text: str, known: set[Decimal], models: list[str | None]) -> list[str]:
     return [f"the number {raw} has no source. Give a claim with the product id and the card field (or page), put "
             "it in derived with how you calculated it, or remove it" for raw in unchecked_numbers(text, known, models)]
@@ -333,7 +373,8 @@ def check_final(call: BaseModel, state: dict, deps: LoopDeps, thread: str, used:
     if isinstance(call, Reply):
         ids = {c.id for c in call.claims} | {p["listing_id"] for p in state.get("picks", [])}
         cards = {c.listing_id: c for c in deps.cards(sorted(ids))}
-        errors, claimed = check_claims(call.claims, cards, pages_of(deps, {c.id for c in call.claims}))
+        errors, claimed = check_claims(call.claims, cards, pages_of(deps, {c.id for c in call.claims}),
+                                       web_of(deps, call.claims))
         on_cards = {v for c in cards.values() for v in card_facts(c).values() if isinstance(v, Decimal)}
         derived = set().union(set(), *(numbers_in(d.value) for d in call.derived))
         picks = {Decimal(n) for n in range(1, len(state.get("picks", [])) + 1)}
@@ -362,10 +403,14 @@ def check_final(call: BaseModel, state: dict, deps: LoopDeps, thread: str, used:
         skipped = set(used.get("reviews_skipped", []))
         errors += [f"the reviews of id {i} were not read. Call read_reviews" for i in ids
                    if i not in read and i not in skipped]
+    needs = Needs.model_validate(state.get("needs") or {})
+    if deps.search_web is not None and needs.web_tests and not used.get("web_unavailable"):
+        searched = deps.web_searched(ids)
+        errors += [f"id {i} had no web search for tests yet. Call search_web with its id and its model" for i in ids
+                   if i not in searched]
     if errors:
         return errors
     # The price and the stock now, for the picks that were not checked in this turn
-    needs = Needs.model_validate(state.get("needs") or {})
     checked = set(used.get("checked_now", []))
     problems = deps.check_now([i for i in ids if i not in checked], needs)
     errors += [f"id {i}: {problem}" for i, problem in problems.items() if problem]
@@ -376,9 +421,10 @@ def check_final(call: BaseModel, state: dict, deps: LoopDeps, thread: str, used:
     derived = set().union(set(), *(numbers_in(d.value) for d in call.derived))
     said = user_numbers(state)
     pages = pages_of(deps, ids)
+    web = web_of(deps, [c for p in call.picks for c in p.claims])
     for pick in call.picks:
         # A claim must be about this pick: a value of another candidate is not a source for it
-        claim_errors, claimed = check_claims([c for c in pick.claims if c.id == pick.id], cards, pages)
+        claim_errors, claimed = check_claims([c for c in pick.claims if c.id == pick.id], cards, pages, web)
         errors += claim_errors + [f"pick id {pick.id}: a claim names id {c.id}; give claims of this pick only"
                                   for c in pick.claims if c.id != pick.id]
         # Only the facts of this pick: its card and its page text
@@ -463,6 +509,31 @@ class Toolbox:
                                 "budget": self.needs.budget}
         self.update["searches"] = searches
         return report
+
+    def search_web(self, call: SearchWeb) -> str:
+        from scout.websearch import WebSearchUnavailable
+        if self.deps.search_web is None:
+            return "not available: no Tavily key is set."
+        if self.used.get("web_unavailable"):
+            return f"not available in this turn: {self.used['web_unavailable']}."
+        if self.used.get("web_searches", 0) >= MAX_WEB_SEARCHES:
+            return "the web searches of this turn are used up."
+        left = MAX_WEB_PAGES - self.used.get("web_pages", 0)
+        if call.ids and left <= 0:
+            return "the web pages of this turn are used up."
+        cards, unknown = self.cards(call.ids[:5])
+        self.deps.say(f"Searching the web for '{call.question}'.")
+        try:
+            report, pages = self.deps.search_web(call.question, [c.listing_id for c in cards], max(left, 0))
+        except WebSearchUnavailable as exc:
+            # The floor does not ask for web searches that cannot be made now
+            self.used["web_unavailable"] = str(exc)
+            return f"not available: {exc}. Tell the shopper that the picks have no web tests."
+        self.used["web_searches"] = self.used.get("web_searches", 0) + 1
+        self.used["web_pages"] = self.used.get("web_pages", 0) + pages
+        done = self.current("web_searches")
+        self.update["web_searches"] = done + ([call.question] if call.question not in done else [])
+        return report + "".join(f" There is no product with id {i}." for i in unknown)
 
     def find_products(self, call: FindProducts) -> str:
         profile = self.profile()

@@ -291,3 +291,51 @@ def save_vectors(conn: psycopg.Connection, rows: list[tuple[int, list[float], di
             "UPDATE chunks SET embedding = %s::vector, sparse = %s, tokens = %s, embed_model = %s WHERE id = %s",
             (str(dense), Jsonb(sparse), tokens, embed_model, chunk_id),
         )
+
+
+# ---- web search (phase 3 Task 9) ----
+
+def stored_web_results(conn: psycopg.Connection, question: str, since) -> list[dict] | None:
+    """The results of the newest search with this question since the given time, or None."""
+    row = conn.execute(
+        """SELECT results FROM web_searches WHERE lower(question) = lower(%s) AND searched_at >= %s
+           ORDER BY searched_at DESC LIMIT 1""", (question.strip(), since)).fetchone()
+    return None if row is None else row["results"]
+
+
+def save_web_search(conn: psycopg.Connection, question: str, listing_ids: list[int], results: list[dict]) -> None:
+    conn.execute("INSERT INTO web_searches (question, listing_ids, results) VALUES (%s, %s, %s)",
+                 (question.strip(), listing_ids, Jsonb(results)))
+
+
+def save_web_chunks(conn: psycopg.Connection, listing_id: int, ref_prefix: str, chunks: list[Chunk],
+                    fetched_at) -> None:
+    """Replace the chunks of one web page for one listing."""
+    conn.execute("DELETE FROM chunks WHERE listing_id = %s AND source = 'web' AND ref LIKE %s",
+                 (listing_id, ref_prefix + " %"))
+    for c in chunks:
+        conn.execute(
+            """INSERT INTO chunks (listing_id, source, kind, ref, text, meta, fetched_at)
+               VALUES (%s, 'web', %s, %s, %s, %s, %s)""",
+            (listing_id, c.kind, c.ref, c.text, Jsonb(c.meta), fetched_at),
+        )
+
+
+def web_searched(conn: psycopg.Connection, listing_ids: list[int], since) -> set[int]:
+    """The listings whose product (any of its listings) had a web search since the given time."""
+    rows = conn.execute(
+        """SELECT l.id FROM listings l
+           WHERE l.id = ANY(%s) AND EXISTS (
+               SELECT 1 FROM web_searches w JOIN listings o ON o.id = ANY(w.listing_ids)
+               WHERE o.product_id = l.product_id AND w.searched_at >= %s)""", (listing_ids, since)).fetchall()
+    return {row["id"] for row in rows}
+
+
+def web_texts(conn: psycopg.Connection, listing_ids: list[int]) -> dict[int, str]:
+    """The stored web quotes of each listing's product, joined: the numbers of a claim with the field web."""
+    rows = conn.execute(
+        """SELECT l.id, array_agg(c.text ORDER BY c.id) AS texts FROM listings l
+           JOIN listings o ON o.product_id = l.product_id JOIN chunks c ON c.listing_id = o.id AND c.source = 'web'
+           WHERE l.id = ANY(%s) GROUP BY l.id""", (listing_ids,)).fetchall()
+    # Each chunk starts with two lines that name the product and the page; only the quote is a source
+    return {row["id"]: "\n".join(t.split("\n", 2)[-1] for t in row["texts"]) for row in rows}

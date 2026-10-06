@@ -152,6 +152,17 @@ Zheyun decided the positioning on 2026-10-06 (spec section 1a). Web search finds
 - The reviews on these product pages are buyer reviews. Reviews with the same text are kept one time.
 - Tests: a fake Tavily client and saved pages; JSON-LD fixtures for the generic reader.
 
+**Part 1 built on 2026-10-06: `search_web`.** `read_page` and the generic reader of shop pages are not built yet.
+
+- `scout.websearch.TavilyClient` calls the REST API with a basic search (1 credit), 5 results and `include_raw_content`, so Tavily gives the text of each page and product-scout fetches nothing itself. A status 401, 429, 432 or 433 or no answer raises `WebSearchUnavailable`. Then the tool tells Luna, and the web floor is off for the rest of the turn.
+- The tool `search_web(question, ids)`. Without ids, it gives the titles, the addresses and the short parts of the found pages, with no model call. Luna uses this to find which models testers recommend. With ids (at most 5), the worker reads each page in parallel (4 threads). It says the kind of page (test, forum, shop, other) and copies the sentences about each product. Python keeps a quote only when it is in the page text. The quotes of tests and forums become chunks with the source `web`, the kind `test` or `forum`, and the URL, the site and the title in `meta`. Thus `search_text` finds them later. Shop pages are only named in the report.
+- The table `web_searches` keeps each question, the listings it was for, and the results with their text (cut at 30,000 characters for each page). The same question in the next 7 days uses the stored results and costs no credit.
+- The floor of the design (section 5): before `show_picks`, each pick must have a web search with its id in the last 7 days, by any listing of its product. The shopper can switch it off (`update_needs` with `web_tests` false). Without a Tavily key there is no tool and no floor.
+- A claim with the field `web` passes when the stored web quotes of the product show its numbers.
+- Limits for each turn: 20 web pages and 10 web searches. The hidden-target test counts both.
+- First real search through the client (2026-10-06, "Gorenje RK4182PS4 test recension", no products, so no model call): 5 results in 2.4 s, all with page text (117 to 25,772 characters). They were three YouTube pages, amazon.de and coolblue.de. No Swedish test site came. So the words of the question matter, and Luna chooses them.
+- Not done yet: `summarize_reviews` reads only the shop reviews, not the web quotes, and the picks do not show the source type of each statement yet.
+
 Findings from before the decision (2026-10-06): a Google search by the program is not an option (no automated searches, captchas). The YouTube Data API does not give transcripts. Brave Search needs a card.
 
 ## Additions of 2026-10-06

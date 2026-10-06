@@ -32,6 +32,7 @@ class Needs(BaseModel):
     budget_note: str | None = None  # a budget in another currency: the amount, the currency and the rate used
     preferences: list[str] = Field(default_factory=list)
     search_terms_sv: str | None = None
+    web_tests: bool = True  # False: the shopper does not want web searches for tests (the floor of the picks)
 
     def budget_sek(self) -> Decimal | None:
         return None if self.budget is None else Decimal(str(self.budget))
@@ -44,6 +45,8 @@ class Needs(BaseModel):
         if self.budget is not None:
             parts.append(f"budget {self.budget:g} SEK" + (f" ({self.budget_note})" if self.budget_note else ""))
         parts += [f"prefers {p}" for p in self.preferences]
+        if not self.web_tests:
+            parts.append("no web search for tests")
         return ", ".join(parts)
 
     def wanted(self, profile: CategoryProfile) -> str:

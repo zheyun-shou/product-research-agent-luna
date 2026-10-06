@@ -133,3 +133,14 @@ CREATE TABLE IF NOT EXISTS chunks (
 );
 CREATE INDEX IF NOT EXISTS chunks_listing ON chunks (listing_id);
 CREATE INDEX IF NOT EXISTS chunks_embedding ON chunks USING hnsw (embedding vector_cosine_ops);
+
+-- Web searches (phase 3 Task 9). results holds the found pages with their text, so the same question in the next
+-- 7 days costs no Tavily credit. listing_ids are the products that the search was for (the floor of the picks).
+CREATE TABLE IF NOT EXISTS web_searches (
+    id           bigserial PRIMARY KEY,
+    question     text NOT NULL,
+    listing_ids  bigint[] NOT NULL DEFAULT '{}',
+    results      jsonb NOT NULL DEFAULT '[]'::jsonb,
+    searched_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS web_searches_question ON web_searches (lower(question), searched_at);

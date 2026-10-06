@@ -11,12 +11,14 @@ from typing import Callable
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
-from scout.agent.loop import MAX_PRODUCT_PAGES, MAX_REVIEW_PAGES, MAX_TOOL_CALLS
+from scout.agent.loop import MAX_PRODUCT_PAGES, MAX_REVIEW_PAGES, MAX_TOOL_CALLS, MAX_WEB_PAGES, MAX_WEB_SEARCHES
 
 MAX_SHOPPER_TURNS = 4  # the shopper messages after the first one; then the run ends without picks
 # The per-turn counters of the agent loop (state "used"), and the limit of each
-LIMITS = {"calls": MAX_TOOL_CALLS, "product_pages": MAX_PRODUCT_PAGES, "review_pages": MAX_REVIEW_PAGES}
-MEASURES = ("tool_calls", "product_pages", "review_pages", "web_pages", "model_calls", "cost_usd", "seconds")
+LIMITS = {"calls": MAX_TOOL_CALLS, "product_pages": MAX_PRODUCT_PAGES, "review_pages": MAX_REVIEW_PAGES,
+          "web_pages": MAX_WEB_PAGES, "web_searches": MAX_WEB_SEARCHES}
+MEASURES = ("tool_calls", "product_pages", "review_pages", "web_pages", "web_searches", "model_calls", "cost_usd",
+            "seconds")
 
 
 class Target(BaseModel):
@@ -136,6 +138,7 @@ def run_target(target: Target, graph, llm, source_ids: Callable[[list[int]], lis
             "product_pages": sum(t["used"].get("product_pages", 0) for t in turns),
             "review_pages": sum(t["used"].get("review_pages", 0) for t in turns),
             "web_pages": sum(t["used"].get("web_pages", 0) for t in turns),
+            "web_searches": sum(t["used"].get("web_searches", 0) for t in turns),  # Tavily credits at most
             "model_calls": len(agent_calls), "model_calls_by_role": model_calls,
             "cost_usd": round(sum(c.cost or 0 for c in agent_calls), 6),
             "shopper_cost_usd": round(sum(c.cost or 0 for c in calls if c.role == "shopper"), 6),
