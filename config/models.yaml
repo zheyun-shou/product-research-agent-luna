@@ -24,10 +24,14 @@ roles:
       provider: gemini
       model: gemini-3.8-flash
       rpm: 10
-  worker:
-    provider: gemini
-    model: gemini-3.5-flash-lite
-    rpm: 15
+  worker:  # chosen on 2026-10-06 from 7 cheap models with images and tools: all titles right, image right, fastest
+    provider: openrouter
+    model: google/gemma-4-26b-a4b-it
+    rpm: 60
+    fallback:
+      provider: gemini
+      model: gemini-3.5-flash-lite
+      rpm: 15
   judge:  # the grader of eval-chat, chosen on 2026-10-05: not an OpenAI model like the chat model, and cheap
     provider: openrouter
     model: deepseek/deepseek-v4-flash

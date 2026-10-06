@@ -111,8 +111,52 @@ Findings of 2026-10-06:
 
 Proposal: a lookup tool `search_web(question)` that searches for "model number + test or review" through Tavily. The results are chunks with the source type "web" and their URL, and the picks show them as web sources, not as professional tests. Zheyun makes the Tavily account and puts the key in `.env`.
 
+## Additions of 2026-10-06
+
+Zheyun read the comparison with two open-source agents and said to do all the proposals. The two agents are Microsoft InteRecAgent (a conversational recommender: query, retrieval and ranking tools, a plan made first, a critic, a user profile, a simulated user for evaluation) and LangChain open_deep_research (a supervisor with the tools think, conduct research and research complete; researchers that call tools by their own choice; limits on loops; a cheap model for summaries). We read their papers and documents only. We do not copy their code.
+
+### Worker model (done)
+
+On 2026-10-06 Claude tried 7 cheap OpenRouter models that read images and call tools. Task 1: keep the titles of the 24 stored listings that are a fridge with a freezer part (Claude labelled 23 titles from the titles; one is unclear and not scored). Task 2: the colour and the number of doors of the FOHERE BC-90 from its 6 product images (black, one door).
+
+| Model | Titles right | Image right | Time (titles, image) | Cost of both |
+|---|---|---|---|---|
+| google/gemma-4-26b-a4b-it | 23/23 | yes | 1.3 s, 5.4 s | 0.0002 USD |
+| google/gemini-3.5-flash-lite | 23/23 | yes | 1.0 s, 2.3 s | 0.0027 USD |
+| openai/gpt-6-luna | 23/23 | yes | 5.8 s, 3.4 s | 0.0018 USD |
+| qwen/qwen3.7-flash | 23/23 | yes | 25.3 s, 12.6 s | 0.0007 USD |
+| xiaomi/mimo-v2.6-flash | 23/23 | yes | 31.3 s, 7.6 s | 0.0018 USD |
+| z-ai/glm-5.3-flash | 22/23 | not run with this question | 8.0 s | 0.0031 USD |
+| inclusionai/ling-3.0-flash-vl | 23/23 | error 400 on images | 4.2 s | |
+
+The worker is now Gemma 4 26B on OpenRouter, with the free Gemini key as the fallback. This test is small and the tasks are easy. The extraction tasks (Task 6) show more.
+
+### Task 10: think tool
+
+A tool `think(note)` that does nothing. It lets the chat model write its reasoning between lookups. It counts as a lookup in the limit. The note is in the trace, never shown to the shopper. A "research complete" tool is not necessary: a reply in text ends the turn.
+
+### Task 11: Find products by soft wishes
+
+A lookup tool `similar_products(pick=None, wish)`: products that are near a pick or a wish ("like pick 2 but quieter", "a modern look"). Each product gets one vector from its chunks (the mean). The result also gives the reason (the best matching chunk of each product).
+
+### Task 12: Rank by the shopper's wishes
+
+The preferences in the needs ("quiet", "white") change the order of the picks. For each preference, a retrieval over the chunks of each candidate gives a score. The final score adds these scores to the rating score with fixed weights. The picks say which wishes moved a product up. Price stays out of the score.
+
+### Task 13: Memory across conversations
+
+A profile of the shopper: likes, dislikes (with the reasons from removed picks) and facts (for example the size of the kitchen). It is stored in Postgres for each shopper. The clarify step reads it. The shopper can see and delete it.
+
+### Task 14: Evaluation with a simulated shopper
+
+Method of InteRecAgent: take one stored product as the hidden target. A cheap model plays a shopper whose wishes come from the attributes and reviews of that product. It talks with the agent for at most 5 turns. Metrics: hit@5 (the target is in the picks) and the mean number of turns. This measures if the agent finds a product that fits the wishes, not if the product is the best. The run uses paid models, so Zheyun says when.
+
+### Later, with Task 9
+
+One researcher for each pick searches the web at the same time, and a cheap model makes the found pages short, with their URLs. This is the "conduct research" tool of open_deep_research.
+
 ## Not in this plan
 
-- The web page for the chat (decision 5). It gets its own plan, together with FastAPI from phase 7.
+- The web page for the chat (decision 5). It gets its own plan, together with FastAPI from phase 7. It runs on Zheyun's computer (localhost) first, because the dedicated browser window for amazon.se is there.
 - PaddleOCR-VL for images (phase 4). `read_images` with the worker stays.
 - Python's fixed messages in the shopper's language.
