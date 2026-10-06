@@ -244,7 +244,9 @@ def profile_text(profile: CategoryProfile) -> str:
 def turn_prompt(state: dict, deps: LoopDeps, thread: str) -> str:
     """The first message of a turn: the context and the conversation at the start of the turn. The tool calls of the
     turn follow it as chat messages (turn_messages), so the model sees what it did and what came back."""
-    return "\n\n".join([context_text(state, deps, thread), "Conversation:\n" + history_text(state)])
+    return "\n\n".join(["The state at the start of this turn. The results of your tool calls after this message "
+                        "are newer: for example a product that you removed, or needs that you recorded.",
+                        context_text(state, deps, thread), "Conversation:\n" + history_text(state)])
 
 
 USED_UP = "The tool calls of this turn are used up. Answer now with show_picks or reply."
@@ -263,7 +265,12 @@ def result_message(call_id: str, text: str) -> dict:
 # ---- the checks of the final call (design section 8) ----
 
 def turn_numbers(state: dict) -> set[Decimal]:
-    return set().union(*(numbers_in(r) for r in state.get("turn_log") or []), set())
+    return set().union(*(numbers_in(r) for r in turn_results(state)), set())
+
+
+def turn_results(state: dict) -> list[str]:
+    """The reports of the tools in this turn."""
+    return [m["content"] for m in state.get("turn_messages") or [] if m["role"] == "tool"]
 
 
 # Prices in the page text, for example "Nu 299 kr" in a description: an old price is not a source
@@ -431,14 +438,15 @@ class Toolbox:
         if category not in names:
             return f"'{category}' is not a category. Use one of: {', '.join(names)}."
         needs = Needs(category=category, **call.model_dump(exclude={"category"}))
-        errors = check_needs(needs, self.deps.load_profile(category), user_numbers(self.state))
+        profile = self.deps.load_profile(category)
+        errors = check_needs(needs, profile, user_numbers(self.state))
         if errors:
             return "not recorded: " + "; ".join(errors)
         new_category = category != self.needs.category
         self.needs = needs
         self.update["needs"] = needs.model_dump(mode="json")
         text = f"recorded: {needs.text() or 'no conditions'} (category {category}, kind {needs.kind})."
-        return text + ("\n" + profile_text(self.deps.load_profile(category)) if new_category else "")
+        return text + ("\n" + profile_text(profile) if new_category else "")
 
     def search_shop(self, call: SearchShop) -> str:
         profile = self.profile()
@@ -575,7 +583,7 @@ def build_agent_graph(deps: LoopDeps, checkpointer=None):
     llm = deps.llm
 
     def start_node(state, config):
-        return {"turn_log": [], "turn_context": None, "turn_messages": [], "used": {}, "gate_errors": [],
+        return {"turn_context": None, "turn_messages": [], "used": {}, "gate_errors": [],
                 "gate_rounds": 0, "pending": [], "final": None}
 
     def compact_node(state, config):
@@ -621,7 +629,6 @@ def build_agent_graph(deps: LoopDeps, checkpointer=None):
 
     def tools_node(state, config):
         box = Toolbox(deps, state, thread_of(config))
-        log = list(state.get("turn_log") or [])
         history = list(state.get("turn_messages") or [])
         for item in state.get("pending") or []:
             if box.used.get("calls", 0) >= MAX_TOOL_CALLS:
@@ -631,9 +638,8 @@ def build_agent_graph(deps: LoopDeps, checkpointer=None):
                 with deps.tracer.span(item["tool"]):
                     report = box.run(from_state(item))
                 report = report[:REPORT_LIMITS.get(item["tool"], MAX_REPORT_CHARS)]
-            log.append(report)
             history.append(result_message(item["id"], report))
-        return {**box.update, "turn_log": log, "turn_messages": history, "used": box.used, "pending": []}
+        return {**box.update, "turn_messages": history, "used": box.used, "pending": []}
 
     def gate_node(state, config):
         thread = thread_of(config)

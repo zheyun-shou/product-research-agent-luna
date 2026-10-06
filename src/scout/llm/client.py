@@ -278,7 +278,9 @@ class LLM:
                 last_error = str(exc)
                 continue
             except APIStatusError as exc:
-                raise no_credits(exc, role_cfg.model) or exc
+                # Another status, for example 400 or 413 for a history that the provider rejects or that is too long
+                raise no_credits(exc, role_cfg.model) or LLMOutputError(
+                    f"{role_cfg.model} rejected the request ({exc.status_code}): {str(exc)[:300]}") from exc
             record = CallRecord(role, role_cfg.model, tokens_in, tokens_out, self._clock() - started, schema.__name__,
                                 output=text, cost=getattr(usage, "cost", None))
             self.calls.append(record)
@@ -349,7 +351,9 @@ class LLM:
                 self._sleep(15 * attempt)
                 continue
             except APIStatusError as exc:
-                raise no_credits(exc, role_cfg.model) or exc
+                # Another status, for example 400 or 413 for a history that the provider rejects or that is too long
+                raise no_credits(exc, role_cfg.model) or LLMOutputError(
+                    f"{role_cfg.model} rejected the request ({exc.status_code}): {str(exc)[:300]}") from exc
             record = CallRecord(role, role_cfg.model, tokens_in, tokens_out, self._clock() - started, name,
                                 output=json.dumps(raw or message.content or "", ensure_ascii=False),
                                 cost=getattr(usage, "cost", None))

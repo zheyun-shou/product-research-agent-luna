@@ -25,9 +25,9 @@ def test_sign_in_redirect():
     assert status.problem == "signin"
 
 
-def test_server_error_and_no_response_are_unavailable_and_too_many_requests_is_blocked():
+def test_a_server_error_is_unavailable_and_no_answer_or_too_many_requests_is_blocked():
     assert check_page(page(status=503)).problem == "unavailable"
-    assert check_page(page(status=0, html="")).problem == "unavailable"
+    assert check_page(page(status=0, html="")).problem == "blocked"
     assert check_page(page(status=429)).problem == "blocked"
 
 

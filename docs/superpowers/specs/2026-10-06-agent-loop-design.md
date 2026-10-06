@@ -201,7 +201,9 @@ Changes after this turn:
 
 - The model sees its own calls. A turn is now a chat history in the format of the API: the first message (the context and the conversation at the start of the turn), then each call of the model (role assistant) and its result (role tool). The first message stays the same in the whole turn, so the provider can cache it. The remaining limits are not in the context; a tool says when a limit is used up. The problems found by the gate come back as the result of the final call.
 - `update_needs` gives the names of the profile when the category is new.
-- A 503 or a page without an answer is fetched again without asking, after the polite gap. A 429 still asks.
+- A 503 (a server error) is fetched again without asking, after the polite gap. No answer (status 0, for example a closed browser window) and a 429 still ask the shopper.
 - The polite gap is 4.5 to 5.5 seconds (Zheyun).
 - An HTTP 402 raises `NoCredits` with a clear message. It does not move the role to its fallback. A limit on the output length is not set (Zheyun).
+- Another status error of the provider (for example 400 or 413) is an `LLMOutputError`, so the turn ends with a message and does not crash.
+- The first message says that it shows the state at the start of the turn, and that the results of the tool calls are newer.
 

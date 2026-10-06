@@ -11,10 +11,11 @@ def check_page(page: RawPage) -> SessionStatus:
         return SessionStatus(ok=False, problem="captcha", detail="amazon.se shows a captcha")
     if page.status in (404, 410):
         return SessionStatus(ok=False, problem="gone", detail=f"page not found ({page.status})")
-    if page.status == 429:
+    # No answer (for example the browser window was closed) or too many requests: the shopper must look
+    if page.status in (0, 429):
         return SessionStatus(ok=False, problem="blocked", detail=f"page did not load ({page.status})")
-    # A server error or no answer: on 2026-10-06 most 503 pages loaded on the next try
-    if page.status == 0 or page.status >= 500:
+    # A server error: on 2026-10-06 most 503 pages loaded on the next try
+    if page.status >= 500:
         return SessionStatus(ok=False, problem="unavailable", detail=f"page did not load ({page.status})")
     # Seen once in 96 fetches: a 200 page with only the navigation skeleton.
     if page_kind(page.url) == "product" and 'id="productTitle"' not in page.html:

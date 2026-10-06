@@ -16,7 +16,6 @@ class ChatState(TypedDict, total=False):
     opinions: dict     # listing_id (as text) -> the checked pros and complaints of that pick, with their sources
     route: dict        # what the follow-up tools of this turn did, and the next step
     # The agent loop (agent/loop.py). Each turn starts them again.
-    turn_log: list[str]  # the reports of the tools of this turn, for the checks
     turn_context: str | None  # the context and the conversation at the start of the turn: the first message
     turn_messages: list[dict]  # the tool calls of the model in this turn and their results, in the chat API format
     used: dict           # tool calls, product pages, review pages, checked listings of this turn

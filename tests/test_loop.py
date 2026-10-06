@@ -156,7 +156,7 @@ def test_each_turn_starts_with_an_empty_log():
     graph = build_agent_graph(shop.deps(llm), InMemorySaver())
     run(graph, "Search")
     state = run(graph, "Hi")
-    assert state["turn_log"] == [] and "Tool results in this turn" not in llm.requests[-1][1]
+    assert llm.histories[-1] == [] and len(state["turn_messages"]) == 1  # only the reply of this turn
 
 
 def test_the_last_search_gets_only_the_pages_that_are_left():

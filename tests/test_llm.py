@@ -307,3 +307,11 @@ def test_too_little_credit_raises_no_credits_and_keeps_the_main_model():
     with pytest.raises(NoCredits):
         llm.structured("chat", "sys", "user", Answer)
     assert "chat" not in llm.fallbacks and backup.chat.completions.requests == []
+
+
+def test_a_rejected_request_is_an_output_error_that_the_agent_handles():
+    from openai import APIStatusError
+    response = httpx2.Response(413, request=httpx2.Request("POST", "https://example.test/"))
+    llm, _, _ = make([APIStatusError("too long", response=response, body=None)])
+    with pytest.raises(LLMOutputError, match="413"):
+        llm.structured("chat", "sys", "user", Answer)
