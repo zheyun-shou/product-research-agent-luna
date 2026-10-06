@@ -2,7 +2,8 @@
 from scout.agent.graph import Deps
 from scout.agent.lookup import image_reader
 from scout.crawl import crawl as run_crawl
-from scout.db.store import (add_eliminations, attribute_searches, eliminated_products, listing_source_ids,
+from scout.db.store import (add_eliminations, attribute_searches, complete_review_reads, eliminated_products,
+                            listing_source_ids,
                             mark_attribute_search, page_texts, product_listing_ids, restore_products,
                             save_attribute)
 from scout.extract.ondemand import KINDS, Store, fill_missing
@@ -12,7 +13,7 @@ from scout.picks.pipeline import make_picks, refetcher, shortlist
 from scout.picks.opinions import pick_opinions
 from scout.picks.rank import load_cards_by_ids
 from scout.profiles import load_profile, profile_names, save_draft
-from scout.reviews import read_reviews
+from scout.reviews import FRESH, read_reviews
 from scout.sources.amazon_se.adapter import AmazonSeAdapter
 from scout.sources.amazon_se.urls import SOURCE
 from scout.sources.browser import BrowserSession
@@ -129,4 +130,89 @@ def live_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, k: int =
         restore=lambda thread, ids: restore_products(conn, thread, ids),
         say=say,
         tracer=tracer,
+    )
+
+
+def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer):
+    """The dependencies of the agent loop (agent/loop.py): the same stores, browser and checks as the pipeline."""
+    from datetime import datetime, timezone
+
+    from scout.agent.graph import crawl_text
+    from scout.agent.loop import LoopDeps
+    from scout.extract.ondemand import fill_missing as fill
+    from scout.picks.rank import Condition
+
+    screened: dict[tuple[str, int], bool] = {}
+    search_text = hybrid_search(conn, BgeM3Embedder)
+    store = Store(
+        retrieve=lambda product_id, query, n: search_text(
+            query, Scope(listing_ids=product_listing_ids(conn, product_id), kinds=KINDS), n),
+        save=lambda product_id, name, entry: save_attribute(conn, product_id, name, entry),
+        searched=lambda ids: attribute_searches(conn, ids),
+        mark=lambda product_id, name, found: mark_attribute_search(conn, product_id, name, found),
+    )
+
+    def search_shop(profile, needs, words, page):
+        report = run_crawl(conn, browser.adapter(), profile.category, words, on_problem=on_problem, first_page=page,
+                           max_pages=1, max_details=20, budget=needs.budget_sek(), skip_known=True,
+                           enrich=lambda rec: enrich_record(rec, profile, llm),
+                           screen=lambda cands: screen_titles(cands, profile, llm, needs.wanted(profile)))
+        return crawl_text(report, words, page), report.detail_pages
+
+    def check_now(ids, needs):
+        problems = {}
+        budget = needs.budget_sek()
+        for card in load_cards_by_ids(conn, ids):
+            category = conn.execute("SELECT category FROM products WHERE id = %s", (card.product_id,)).fetchone()
+            rec = refetcher(browser.adapter(), conn, category["category"], on_problem)(card)
+            if rec is None:
+                problems[card.listing_id] = "the page did not load now, so the price and the stock are not known"
+            elif rec.in_stock is False:
+                problems[card.listing_id] = "sold out now"
+            elif budget is not None and rec.price is None:
+                problems[card.listing_id] = "shows no price now, so the budget cannot be checked"
+            elif budget is not None and rec.price > budget:
+                problems[card.listing_id] = f"costs {rec.price} {rec.currency} now, over the budget"
+            else:
+                problems[card.listing_id] = ""
+        return problems
+
+    def find_missing(cards, attributes, profile):
+        notes = fill(cards, [Condition(a, "<=", 0) for a in attributes], profile, llm, store, max_cards=len(cards))
+        lines = [f"id {c.listing_id}: " + ", ".join(
+            f"{a}={c.attributes[a]['value']} {c.attributes[a].get('unit') or ''} (raw '{c.attributes[a].get('raw')}')"
+            if (c.attributes.get(a) or {}).get("value") is not None else f"{a} not found" for a in attributes)
+            for c in cards]
+        return "\n".join([*notes, *lines])
+
+    def reviews(ids):
+        asins = listing_source_ids(conn, SOURCE, ids)
+        report = read_reviews(conn, browser.adapter, [(i, asins[i]) for i in ids if i in asins], on_problem, say=say)
+        return report.text(), report.pages
+
+    def reviews_read(ids):
+        now = datetime.now(timezone.utc)
+        return {i for i, at in complete_review_reads(conn, ids).items() if now - at < FRESH}
+
+    def summarize(profile, ids, language):
+        cards = load_cards_by_ids(conn, ids)
+
+        def search_for(card):
+            scope = Scope(listing_ids=product_listing_ids(conn, card.product_id), kinds=["review"])
+            return lambda query, n: search_text(query, scope, n)
+        text, _ = pick_opinions(llm, [(c.listing_id, c) for c in cards], profile.complaint_types, search_for,
+                                language)
+        return text or "these products have too few stored reviews to summarize."
+
+    return LoopDeps(
+        llm=llm, profile_names=profile_names, load_profile=load_profile,
+        cards=lambda ids: load_cards_by_ids(conn, ids),
+        find=lambda profile, needs, excluded: shortlist(conn, profile, needs, llm, excluded, screened).ranked,
+        eliminate=lambda thread, ids, reason: add_eliminations(conn, thread, ids, reason),
+        eliminated=lambda thread: eliminated_products(conn, thread),
+        restore=lambda thread, ids: restore_products(conn, thread, ids),
+        search_shop=search_shop, check_now=check_now,
+        page_texts=lambda ids: page_texts(conn, ids), search_text=search_text, read_images=image_reader(llm),
+        find_missing=find_missing, read_reviews=reviews, reviews_read=reviews_read, summarize=summarize,
+        say=say, tracer=tracer,
     )

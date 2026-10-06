@@ -31,6 +31,7 @@ class ChatService:
         self._jobs: queue.Queue = queue.Queue()
         threading.Thread(target=self._worker, daemon=True).start()
         self.graph, self.deps = build(self._say, self._on_problem)
+        self._last_node = "gate" if "gate" in self.graph.nodes else "reviews"
 
     def _worker(self) -> None:
         while True:
@@ -126,7 +127,7 @@ class ChatService:
                             if message.get("role") == "assistant":
                                 replies.append(message["content"])
                                 send({"type": "reply", "text": message["content"]})
-                        if node == "recommend" and "picks" in change:
+                        if node in ("recommend", "gate", "tools") and "picks" in change:
                             send({"type": "picks", "picks": self.pick_views(change["picks"]),
                                   "removed": [{"product_id": r["product_id"], "title": r["title"]} for r in removed]})
                 span.update(output="\n\n".join(replies))
@@ -134,7 +135,7 @@ class ChatService:
             message = f"Something went wrong ({type(exc).__name__}: {exc}). You can try again."
             with contextlib.suppress(Exception):  # the thread gets the message, and the failed turn ends
                 self._end()
-                self.graph.update_state(config, {"messages": [assistant(message)]}, as_node="reviews")
+                self.graph.update_state(config, {"messages": [assistant(message)]}, as_node=self._last_node)
             send({"type": "error", "text": message})
         try:
             self._end()
@@ -162,7 +163,7 @@ class ChatService:
             message = f"Removed: {gone['title'][:60]}. It stays out for the rest of this conversation."
             self.graph.update_state(self._config(thread), {
                 "picks": [p for p in picks if p is not gone], "removed": removed,
-                "messages": [assistant(message)]}, as_node="reviews")
+                "messages": [assistant(message)]}, as_node=self._last_node)
             self._end()
             return {"message": message, **self._picks(thread)}
 

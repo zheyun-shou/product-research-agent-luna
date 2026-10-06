@@ -16,7 +16,8 @@ from pydantic import BaseModel
 
 from scout.agent.graph import build_graph
 from scout.agent.history import assistant
-from scout.agent.live import LazyBrowser, live_deps
+from scout.agent.live import LazyBrowser, live_deps, loop_deps
+from scout.agent.loop import build_agent_graph
 from scout.config import ROOT, load_settings
 from scout.crawl import crawl as run_crawl
 from scout.crawl import fetch_checked
@@ -189,6 +190,11 @@ def parse_reviews_cmd(path: Path) -> None:
     for r in reviews:
         typer.echo(json.dumps(r, ensure_ascii=False))
     typer.echo(f"{len(reviews)} reviews on the page, {matching} match the filter")
+
+
+def last_node(graph) -> str:
+    """The node after which a turn ends: update_state writes as this node, so the next turn starts fresh."""
+    return "gate" if "gate" in graph.nodes else "reviews"
 
 
 def ask_user(status: SessionStatus, url: str) -> bool:
@@ -384,7 +390,7 @@ def trace_ping() -> None:
 
 @app.command()
 def chat(thread: Optional[str] = typer.Option(None, help="the ID of a conversation to continue"),
-         k: int = 5) -> None:
+         k: int = 5, pipeline: bool = typer.Option(False, help="the fixed pipeline of before the agent loop")) -> None:
     """Talk with the agent. It clarifies your needs, searches amazon.se and answers follow-up questions."""
     settings = load_settings()
     tracer = tracer_from_env()
@@ -395,7 +401,10 @@ def chat(thread: Optional[str] = typer.Option(None, help="the ID of a conversati
     with connect(settings.database_url) as conn, connect_checkpoints(settings.database_url) as cp_conn:
         saver = PostgresSaver(cp_conn)
         saver.setup()
-        graph = build_graph(live_deps(conn, llm, browser, ask_user, typer.echo, tracer, k), saver)
+        if pipeline:
+            graph = build_graph(live_deps(conn, llm, browser, ask_user, typer.echo, tracer, k), saver)
+        else:
+            graph = build_agent_graph(loop_deps(conn, llm, browser, ask_user, typer.echo, tracer), saver)
         messages = graph.get_state(config).values.get("messages", [])
         if messages:
             typer.echo(f"Continuing conversation {thread_id}. The last reply was:\n\n{messages[-1]['content']}")
@@ -423,7 +432,7 @@ def chat(thread: Optional[str] = typer.Option(None, help="the ID of a conversati
                     message = f"Something went wrong ({type(exc).__name__}: {exc}). You can try again."
                     end_transaction(conn)
                     with contextlib.suppress(Exception):  # the thread gets the message, and the failed turn ends
-                        graph.update_state(config, {"messages": [assistant(message)]}, as_node="reviews")
+                        graph.update_state(config, {"messages": [assistant(message)]}, as_node=last_node(graph))
                     typer.echo(f"\n{message}")
                 end_transaction(conn)
         finally:
@@ -433,7 +442,8 @@ def chat(thread: Optional[str] = typer.Option(None, help="the ID of a conversati
 
 
 @app.command()
-def web(port: int = 8000, k: int = 5) -> None:
+def web(port: int = 8000, k: int = 5,
+        pipeline: bool = typer.Option(False, help="the fixed pipeline of before the agent loop")) -> None:
     """Open the chat page at http://127.0.0.1:PORT. It uses the same threads as scout chat."""
     import uvicorn
 
@@ -449,8 +459,11 @@ def web(port: int = 8000, k: int = 5) -> None:
         saver.setup()
 
         def build(say, on_problem):
-            deps = live_deps(conn, llm, browser, on_problem, say, tracer, k)
-            return build_graph(deps, saver), deps
+            if pipeline:
+                deps = live_deps(conn, llm, browser, on_problem, say, tracer, k)
+                return build_graph(deps, saver), deps
+            deps = loop_deps(conn, llm, browser, on_problem, say, tracer)
+            return build_agent_graph(deps, saver), deps
 
         service = ChatService(build, lambda: end_transaction(conn))
         typer.echo(f"Open http://127.0.0.1:{port} in your browser. Press Ctrl+C to stop.")

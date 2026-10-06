@@ -128,3 +128,24 @@ def test_the_picks_show_before_the_reviews_are_read():
     review = next(i for i, e in enumerate(events) if e.get("text") == "Read the shop reviews of 2 picks.")
     assert first_picks < review
     assert kinds[-2:] == ["picks", "done"]
+
+
+def test_the_agent_loop_on_the_web_page():
+    from scout.agent.loop import build_agent_graph
+    from tests.test_loop import NEEDS, PICKS, Shop
+    from scout.agent.loop import ReadReviews, SearchShop
+    shop = Shop()
+    llm = FakeLLM([[NEEDS, SearchShop(words="kylskåp"), ReadReviews(ids=[1, 2])], [PICKS]])
+
+    def build(say, on_problem):
+        deps = shop.deps(llm)
+        deps.say = say
+        deps.page_texts = lambda ids: {}
+        return build_agent_graph(deps, InMemorySaver()), deps
+    chat = ChatService(build)
+    events = list(chat.turn("t1", "A fridge at most 180 cm"))
+    kinds = [e["type"] for e in events]
+    assert kinds[0] == "status" and "picks" in kinds and kinds[-1] == "done"
+    picks = next(e for e in events if e["type"] == "picks")["picks"]
+    assert [p["listing_id"] for p in picks] == [2, 1]
+    assert chat.remove("t1", 2)["picks"][0]["listing_id"] == 1
