@@ -18,6 +18,7 @@ class ModelConfig(BaseModel):
     provider: str
     model: str
     rpm: int = Field(gt=0)
+    deadline: float | None = Field(None, gt=0)  # seconds for one call in all; None: the default of the role
 
 
 class RoleConfig(ModelConfig):

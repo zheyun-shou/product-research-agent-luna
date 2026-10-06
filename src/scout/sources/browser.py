@@ -11,9 +11,9 @@ from scout.sources.base import RawPage
 
 
 class PoliteTimer:
-    """Keeps a random gap of min_delay to max_delay seconds between page loads."""
+    """Keeps a random gap of min_delay to max_delay seconds between page loads. About 3 seconds since 2026-10-06."""
 
-    def __init__(self, min_delay=4.0, max_delay=9.0, rng=random.random, sleep=time.sleep, clock=time.monotonic):
+    def __init__(self, min_delay=2.5, max_delay=3.5, rng=random.random, sleep=time.sleep, clock=time.monotonic):
         self.min_delay = min_delay
         self.max_delay = max_delay
         self._rng = rng

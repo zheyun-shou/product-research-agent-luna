@@ -1,5 +1,6 @@
 """One crawl: search pages, then detail pages, each checked, parsed and stored."""
 from collections import Counter
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Callable
@@ -7,13 +8,14 @@ from typing import Callable
 import psycopg
 
 from scout.db.store import known_source_ids, log_fetch, refresh_listings, save_record, stored_attributes
-from scout.llm.client import LLMOutputError, LLMUnavailable
+from scout.llm.client import LLMOutputError, LLMTimeout, LLMUnavailable
 from scout.sources.base import Candidate, ProductRecord, RawPage, SessionStatus
 
 OnProblem = Callable[[SessionStatus, str], bool]
 Enricher = Callable[[ProductRecord], "tuple[ProductRecord, bool]"]
 Screener = Callable[[list[Candidate]], list[Candidate]]
 MAX_ATTEMPTS = 3
+EXTRACT_WORKERS = 4  # LLM extractions that run while the browser loads the next pages
 
 
 @dataclass
@@ -30,6 +32,7 @@ class CrawlReport:
     skipped: list[str] = field(default_factory=list)
     missing: Counter = field(default_factory=Counter)
     notes: list[str] = field(default_factory=list)
+    unread: list[Candidate] = field(default_factory=list)  # kept candidates past max_details, in order
 
 
 def fetch_checked(
@@ -58,6 +61,18 @@ def fetch_checked(
     return None
 
 
+def interleave(orders: list[list[Candidate]]) -> list[Candidate]:
+    """One list from the result lists of the sort orders: the first of each order, then the second of each, and so
+    on, without repeats. So the best rated and the best selling results are in the first detail pages too."""
+    merged, seen = [], set()
+    for rank in range(max((len(o) for o in orders), default=0)):
+        for order in orders:
+            if rank < len(order) and order[rank].source_id not in seen:
+                seen.add(order[rank].source_id)
+                merged.append(order[rank])
+    return merged
+
+
 def crawl(
     conn: psycopg.Connection,
     adapter,
@@ -75,11 +90,12 @@ def crawl(
     sorts: tuple[str, ...] = (),
 ) -> CrawlReport:
     """sorts: also read the first result page of these sort orders of the site, for example ("rating", "sales").
-    Their candidates join the others; the detail pages keep the limit max_details."""
+    The orders take turns in the list of candidates; the detail pages keep the limit max_details. The kept
+    candidates past the limit are in report.unread, for read_details later."""
     if not getattr(adapter, "terms_check", ""):
         raise RuntimeError(f"Adapter {adapter.name} has no terms check recorded, so it stays disabled.")
     report = CrawlReport()
-    candidates, seen = [], set()
+    default: list[Candidate] = []
     for number in range(first_page, first_page + max_pages):
         url = adapter.search_url(query, number)
         page = fetch_checked(adapter, conn, url, on_problem, report.notes)
@@ -88,12 +104,10 @@ def crawl(
             break
         report.search_pages += 1
         found, has_next = adapter.parse_search(page)
-        for cand in found:
-            if cand.source_id not in seen:
-                seen.add(cand.source_id)
-                candidates.append(cand)
+        default += found
         if not has_next:
             break
+    orders = [default]
     for sort in sorts:
         url = adapter.search_url(query, 1, sort)
         page = fetch_checked(adapter, conn, url, on_problem, report.notes)
@@ -101,11 +115,8 @@ def crawl(
             report.notes.append(f"the {sort} order did not load: {url}")
             continue
         report.search_pages += 1
-        found, _ = adapter.parse_search(page)
-        for cand in found:
-            if cand.source_id not in seen:
-                seen.add(cand.source_id)
-                candidates.append(cand)
+        orders.append(adapter.parse_search(page)[0])
+    candidates = interleave(orders)
     report.candidates = len(candidates)
     if budget is not None:
         within = [c for c in candidates if c.price is None or c.price <= budget]
@@ -124,30 +135,61 @@ def crawl(
         report.known = len(known)
         refresh_listings(conn, [c for c in candidates if c.source_id in known])
         candidates = [c for c in candidates if c.source_id not in known]
-    for cand in candidates[:max_details]:
-        page = fetch_checked(adapter, conn, cand.url, on_problem, report.notes)
-        if page is None:
-            report.skipped.append(cand.url)
-            continue
-        report.detail_pages += 1
-        try:
-            rec = adapter.parse(page)
-        except ValueError as exc:
-            report.skipped.append(cand.url)
-            report.notes.append(str(exc))
-            continue
-        if enrich is not None:
-            stored = stored_attributes(conn, rec.source, rec.source_id)
-            rec = rec.model_copy(update={"attributes": {**stored, **rec.attributes}})
+    read_details(conn, adapter, category, candidates[:max_details], report, on_problem=on_problem, enrich=enrich)
+    report.unread = candidates[max_details:]
+    return report
+
+
+def read_details(conn: psycopg.Connection, adapter, category: str, candidates: list[Candidate], report: CrawlReport,
+                 *, on_problem: OnProblem, enrich: Enricher | None = None) -> CrawlReport:
+    """Fetch, parse and store the detail pages of candidates. The browser loads one page at a time; the LLM
+    extraction of a page runs in a worker thread while the browser loads the next pages. The database is used only
+    in this thread."""
+    pending: list[tuple[Future, object, str]] = []
+    state = {"enrich": enrich}
+
+    def store(rec, url: str, future: Future | None) -> None:
+        if future is not None:
             try:
-                rec, called = enrich(rec)
+                rec, called = future.result()
                 report.llm_pages += int(called)
+            except LLMTimeout as exc:  # a slow call on one page: the next pages still use the LLM
+                report.notes.append(f"{url}: {exc}. Stored without LLM extraction.")
             except LLMUnavailable as exc:
-                report.notes.append(f"{exc} The remaining pages are stored without LLM extraction.")
-                enrich = None
+                if state["enrich"] is not None:
+                    report.notes.append(f"{exc} The remaining pages are stored without LLM extraction.")
+                state["enrich"] = None
             except LLMOutputError as exc:
-                report.notes.append(f"{cand.url}: {exc}. Stored without LLM extraction.")
+                report.notes.append(f"{url}: {exc}. Stored without LLM extraction.")
         save_record(conn, rec, category)
         report.saved += 1
         report.missing.update(rec.missing_core())
+
+    def store_done(wait: bool) -> None:
+        while pending and (wait or pending[0][0].done()):
+            future, rec, url = pending.pop(0)
+            store(rec, url, future)
+
+    with ThreadPoolExecutor(EXTRACT_WORKERS) as pool:
+        for cand in candidates:
+            page = fetch_checked(adapter, conn, cand.url, on_problem, report.notes)
+            if page is None:
+                report.skipped.append(cand.url)
+                store_done(wait=False)
+                continue
+            report.detail_pages += 1
+            try:
+                rec = adapter.parse(page)
+            except ValueError as exc:
+                report.skipped.append(cand.url)
+                report.notes.append(str(exc))
+                continue
+            if state["enrich"] is None:
+                store(rec, cand.url, None)
+            else:
+                stored = stored_attributes(conn, rec.source, rec.source_id)
+                rec = rec.model_copy(update={"attributes": {**stored, **rec.attributes}})
+                pending.append((pool.submit(state["enrich"], rec), rec, cand.url))
+            store_done(wait=False)
+        store_done(wait=True)
     return report

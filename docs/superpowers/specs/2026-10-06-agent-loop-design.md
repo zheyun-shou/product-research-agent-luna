@@ -94,7 +94,7 @@ Most tools exist already as code. The table gives what changes.
 | Tool | What it does | Python inside | Exists as |
 |---|---|---|---|
 | `update_needs(needs)` | Records the needs: kind, conditions, budget, preferences | Each number is one that the shopper wrote (`check_needs`) | the clarify step |
-| `search_shop(site, words, page, sort)` | Searches a shop, drops titles off the topic (worker), opens up to 20 new product pages, stores them | Polite fetching, the floors of section 5, the raw-text check, the login pause | `crawl` |
+| `search_shop(site, words, page, sort)` | Searches a shop, drops titles off the topic (worker), opens up to 8 new product pages, stores them. The kept results past the 8 stay in memory; the next call with the same words reads them without the search pages | Polite fetching, the floors of section 5, the raw-text check, the login pause | `crawl` |
 | `search_web(question)` | Tavily search, reads the found pages in parallel | Stores test and forum text as chunks; shop pages go through the generic reader | Task 9 |
 | `read_page(url)` | Reads one product page of any shop | schema.org JSON-LD first, then the worker with the raw-text check | new (generic reader of section 1a of the main design) |
 | `query_products(conditions)` | Lists stored candidates that meet conditions, with their cards | SQL and Python filter; candidates over the budget are not given; the result is a list for Luna, not a decision | `query_products`, `shortlist` |
@@ -112,7 +112,7 @@ Most tools exist already as code. The table gives what changes.
 
 Zheyun decided on 2026-10-06 to keep only three checks at this gate. The budget and the live check of the price moved into the tools (`query_products`, `check_now`, `show_picks`).
 
-1. **Numbers have a source.** Each number in a reply or in the picks is a value of a record, a number that the shopper wrote, a number in a cited review, or a calculation that the reply states. The claims cite the card field, as now.
+1. **Numbers have a source.** Each number in a reply or in the picks is a value of a record, a number that the shopper wrote, a number in a cited review, or a calculation that the reply states. The claims cite the card field, or the stored page text of the product (specifications, bullets, description; not the reviews on the page). The page text was added after the first real turn (section 14).
 2. **Citations exist.** Each cited listing, review or chunk exists and belongs to the product that it is cited for.
 3. **The floors of section 5** are met before `show_picks`.
 
@@ -163,3 +163,28 @@ Each step is committed, reviewed and pushed. The tests use a fake LLM that retur
 3. The limits for each turn: start with the values of section 4, then set them from the hidden-target test.
 4. Luna can show fewer than 5 picks when fewer fit well, and says why.
 5. The gate before a reply keeps only three checks: numbers have a source, citations exist, the floors.
+
+## 14. The first real turn (2026-10-06)
+
+One real conversation: "a fridge with a freezer, at most 180 cm high, budget 6000 SEK". Results:
+
+- The first turn took 5353 seconds and gave no picks. It used all 25 tool calls and all 30 product pages. The gate sent the picks back three times.
+- Luna worked well in parts. When a search gave no results, she used other Swedish words (6 searches). She looked for missing values, read the good and the bad reviews, and wrote qualitative summaries. The floor sent back a pick whose reviews were not read, and she read them.
+- The fetch log shows 77 pages in 199 seconds of loading. 14 pages gave HTTP 503 and loaded again on a retry. No captcha came.
+- Two gaps without a fetch took 35 and 41 minutes. Both were inside one search, between two product pages, where the worker model extracts the page. The HTTP timeout of 120 seconds counts only the time without data. The probable cause is a provider that keeps the request open with keep-alive bytes. This is not proven.
+- The gate rejected numbers that Luna read in the page text (for example a height of 142.5 cm), because the claims could cite only card fields. Two errors were real: a price with wrong decimals and a rounded review count.
+- Luna read the same products again and again. The cause: a tool report was cut at 6000 characters, and the text of three products is longer. So she did not see the second and the third product.
+
+Changes after this turn:
+
+- Each model call has a deadline in all: 180 seconds for chat, 60 for worker, 120 for judge (`deadline` in models.yaml can change it). A late call raises `LLMTimeout`. It does not move the role to its fallback, and the crawl stores that page without extraction.
+- The crawl extracts pages in 4 worker threads while the browser loads the next pages.
+- `search_shop` opens up to 8 new product pages. The sort orders take turns in the list, so the best rated and the best selling results are in the first 8. The rest stay for the next call with the same words.
+- The polite gap between pages is now 2.5 to 3.5 seconds (Zheyun, 2026-10-06), not 4 to 9.
+- A claim can cite the page text of its product (field `page`), and a number of the page text is a source for the text of that pick.
+- `read_product` cuts each product at 5000 characters, and its report keeps all three. A product read in this turn is not given again.
+- The system prompt tells Luna to look at the stored products first.
+- The limit of 30 product pages for each turn stays.
+
+Goal from Zheyun: 3 to 4 minutes for a turn. A new category needs about 20 pages (3 search pages, 8 product pages, 9 review pages), so it is not sure that this goal can be met there. The next real turn measures it.
+

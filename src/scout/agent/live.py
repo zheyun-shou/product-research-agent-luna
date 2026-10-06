@@ -1,9 +1,10 @@
 """The real dependencies of the chat graph: Postgres, the amazon.se browser and the LLM."""
 from scout.agent.graph import Deps
 from scout.agent.lookup import image_reader
+from scout.crawl import CrawlReport, read_details
 from scout.crawl import crawl as run_crawl
 from scout.db.store import (add_eliminations, attribute_searches, complete_review_reads, eliminated_products,
-                            listing_source_ids,
+                            known_source_ids, listing_source_ids,
                             mark_attribute_search, page_texts, product_listing_ids, restore_products,
                             save_attribute)
 from scout.extract.ondemand import KINDS, Store, fill_missing
@@ -152,13 +153,35 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer):
         mark=lambda product_id, name, found: mark_attribute_search(conn, product_id, name, found),
     )
 
+    # The kept results that a search did not read yet, by (category, words, page, budget, wanted): the next call
+    # with the same words reads them without loading the search pages again
+    unread: dict[tuple, list] = {}
+
     def search_shop(profile, needs, words, page, max_details):
         adapter = browser.adapter()
-        report = run_crawl(conn, adapter, profile.category, words, on_problem=on_problem, first_page=page,
-                           max_pages=1, max_details=max_details, sorts=adapter.sorts if page == 1 else (), budget=needs.budget_sek(), skip_known=True,
-                           enrich=lambda rec: enrich_record(rec, profile, llm),
-                           screen=lambda cands: screen_titles(cands, profile, llm, needs.wanted(profile)))
-        return crawl_text(report, words, page), report.detail_pages
+        enrich = lambda rec: enrich_record(rec, profile, llm)  # noqa: E731
+        budget = needs.budget_sek()
+        key = (profile.category, words, page, budget, repr(needs.wanted(profile)))
+        if unread.get(key):
+            known = known_source_ids(conn, SOURCE, [c.source_id for c in unread[key]])
+            todo = [c for c in unread[key] if c.source_id not in known]
+            report = read_details(conn, adapter, profile.category, todo[:max_details], CrawlReport(),
+                                  on_problem=on_problem, enrich=enrich)
+            unread[key] = todo[max_details:]
+            text = (f"Read the next results of '{words}' (result page {page}) without loading the search pages "
+                    f"again: {report.saved} new products saved.")
+            text = "\n".join([text, *report.notes])
+        else:
+            report = run_crawl(conn, adapter, profile.category, words, on_problem=on_problem, first_page=page,
+                               max_pages=1, max_details=max_details, sorts=adapter.sorts if page == 1 else (),
+                               budget=budget, skip_known=True, enrich=enrich,
+                               screen=lambda cands: screen_titles(cands, profile, llm, needs.wanted(profile)))
+            unread[key] = report.unread
+            text = crawl_text(report, words, page)
+        if unread[key]:
+            text += (f"\n{len(unread[key])} more results fit and are not read yet. Call search_shop with the same "
+                     "words and page to read the next ones.")
+        return text, report.detail_pages
 
     def check_now(ids, needs):
         problems = {}

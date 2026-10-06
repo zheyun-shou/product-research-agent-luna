@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from scout.crawl import crawl
-from scout.llm.client import LLMOutputError, QuotaExhausted
+from scout.crawl import crawl, interleave, read_details, CrawlReport
+from scout.llm.client import LLMOutputError, LLMTimeout, QuotaExhausted
 from scout.sources.amazon_se.adapter import AmazonSeAdapter
 from scout.sources.amazon_se.urls import product_url, search_url
 from tests.fakes import FakeBrowser
@@ -130,8 +130,8 @@ def test_quota_running_out_keeps_storing_without_the_llm(db, tmp_path):
     report = crawl(db, AmazonSeAdapter(site(), tmp_path), "fridge", "kylskåp",
                    on_problem=never_called, enrich=enrich)
     assert report.saved == 3
-    assert len(calls) == 1
-    assert any("quota" in note for note in report.notes)
+    assert 1 <= len(calls) <= 3  # extractions run in parallel, so one more can start before the first fails
+    assert sum("quota" in note for note in report.notes) == 1
 
 
 def test_bad_llm_output_on_one_page_does_not_stop_the_crawl(db, tmp_path):
@@ -218,3 +218,31 @@ def test_the_sorted_first_pages_add_their_candidates(db, tmp_path):
     assert report.search_pages == 2 and report.candidates == 3  # the same 3 cards, no repeats
     assert search_url("kylskåp", 1, "rating").endswith("&s=review-rank")
     assert any("the sales order did not load" in n for n in report.notes)
+
+
+def test_a_slow_extraction_on_one_page_does_not_stop_the_others(db, tmp_path):
+    def enrich(rec):
+        if rec.source_id == "B0AAAAAAA1":
+            raise LLMTimeout("the call did not end within 60 seconds")
+        return rec, True
+
+    report = crawl(db, AmazonSeAdapter(site(), tmp_path), "fridge", "kylskåp", on_problem=never_called, enrich=enrich)
+    assert (report.saved, report.llm_pages) == (3, 2)
+    assert any("B0AAAAAAA1" in n and "60 seconds" in n for n in report.notes)
+
+
+def test_the_sort_orders_take_turns():
+    from scout.sources.base import Candidate
+
+    def cands(*ids):
+        return [Candidate(source="amazon_se", source_id=i, url=f"u/{i}", title=i) for i in ids]
+    merged = interleave([cands("a", "b", "c"), cands("x", "a"), cands("y", "z")])
+    assert [c.source_id for c in merged] == ["a", "x", "y", "b", "z", "c"]
+
+
+def test_candidates_past_the_limit_are_kept_and_can_be_read_later(db, tmp_path):
+    adapter = AmazonSeAdapter(site(), tmp_path)
+    report = crawl(db, adapter, "fridge", "kylskåp", on_problem=never_called, max_details=1)
+    assert report.saved == 1 and len(report.unread) == 2
+    later = read_details(db, adapter, "fridge", report.unread, CrawlReport(), on_problem=never_called)
+    assert later.saved == 2 and count(db, "listings") == 3

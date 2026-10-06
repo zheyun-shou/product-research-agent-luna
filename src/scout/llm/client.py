@@ -2,6 +2,7 @@
 import json
 import os
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Literal, TypeVar
@@ -25,8 +26,33 @@ class QuotaExhausted(LLMUnavailable):
     """The provider's daily free quota is used up."""
 
 
+class LLMTimeout(LLMUnavailable):
+    """One call did not end within its deadline. The next call can work again."""
+
+
 class LLMOutputError(RuntimeError):
     """The model did not return output that matches the schema."""
+
+
+def within(seconds: float, fn):
+    """Run fn and give its result, or raise LLMTimeout after seconds. The timeout of the HTTP client counts the
+    time without data, and a provider that sends keep-alive bytes can hold a request open for a long time
+    (35 and 41 minutes in the real run of 2026-10-06). The thread of a late call is left to end by itself."""
+    box: dict = {}
+
+    def run():
+        try:
+            box["value"] = fn()
+        except BaseException as exc:  # given to the caller
+            box["error"] = exc
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(seconds)
+    if worker.is_alive():
+        raise LLMTimeout(f"the call did not end within {seconds:.0f} seconds")
+    if "error" in box:
+        raise box["error"]
+    return box["value"]
 
 
 @dataclass
@@ -104,7 +130,9 @@ def strip_fences(text: str) -> str:
 
 class LLM:
     MAX_ATTEMPTS = 3
-    TIMEOUT = 120  # seconds for one request
+    TIMEOUT = 120  # seconds without data for one request
+    # Seconds for one call in all, by role. The chat model reads a long context and can think first.
+    DEADLINES = {"chat": 180.0, "worker": 60.0, "judge": 120.0}
 
     def __init__(self, config: LLMConfig, clients: dict[str, Any] | None = None, sleep=time.sleep,
                  clock=time.monotonic, tracer=None):
@@ -130,6 +158,9 @@ class LLM:
     def _extra(self, role_cfg: ModelConfig) -> dict:
         """OpenRouter reports the cost of each call when the request asks for it."""
         return {"extra_body": {"usage": {"include": True}}} if role_cfg.provider == "openrouter" else {}
+
+    def _deadline(self, role: Role, role_cfg: ModelConfig) -> float:
+        return role_cfg.deadline or self.DEADLINES.get(role, 120.0)
 
     def model_for(self, role: Role) -> str:
         return self._target(role).model
@@ -162,6 +193,8 @@ class LLM:
         if role not in self.fallbacks:
             try:
                 return call(self.config.roles[role])
+            except LLMTimeout:  # one slow call: the next call uses the main model again
+                raise
             except LLMUnavailable as exc:
                 if fallback is None:
                     raise
@@ -189,15 +222,19 @@ class LLM:
                     f"{role} {schema.__name__}", role_cfg.model, input=messages,
                     metadata={"provider": role_cfg.provider, "attempt": attempt},
                 ) as gen:
-                    response = client.chat.completions.create(
+                    response = within(self._deadline(role, role_cfg), lambda: client.chat.completions.create(
                         model=role_cfg.model, messages=messages, response_format=response_format,
                         **self._extra(role_cfg)
-                    )
+                    ))
                     text = response.choices[0].message.content or ""
                     usage = getattr(response, "usage", None)
                     tokens_in = getattr(usage, "prompt_tokens", 0) or 0
                     tokens_out = getattr(usage, "completion_tokens", 0) or 0
                     gen.update(output=text, usage_details={"input": tokens_in, "output": tokens_out})
+            except LLMTimeout:
+                self.calls.append(CallRecord(role, role_cfg.model, 0, 0, self._clock() - started, schema.__name__,
+                                             valid=False, output="timed out"))
+                raise
             except RateLimitError as exc:
                 # Gemini says PerDay, Groq says "per day".
                 if "perday" in str(exc).lower().replace(" ", ""):
@@ -258,11 +295,11 @@ class LLM:
                     f"{role} {name}", role_cfg.model, input=messages,
                     metadata={"provider": role_cfg.provider, "attempt": attempt},
                 ) as gen:
-                    response = client.chat.completions.create(
+                    response = within(self._deadline(role, role_cfg), lambda: client.chat.completions.create(
                         model=role_cfg.model, messages=messages, tools=specs,
                         tool_choice="auto" if text_reply else "required",
                         **self._extra(role_cfg)
-                    )
+                    ))
                     message = response.choices[0].message
                     raw = [(call.function.name, call.function.arguments) for call in (message.tool_calls or [])]
                     raw = raw or text_tool_calls(message.content or "")
@@ -270,6 +307,10 @@ class LLM:
                     tokens_in = getattr(usage, "prompt_tokens", 0) or 0
                     tokens_out = getattr(usage, "completion_tokens", 0) or 0
                     gen.update(output=raw or message.content, usage_details={"input": tokens_in, "output": tokens_out})
+            except LLMTimeout:
+                self.calls.append(CallRecord(role, role_cfg.model, 0, 0, self._clock() - started, name,
+                                             valid=False, output="timed out"))
+                raise
             except RateLimitError as exc:
                 if "perday" in str(exc).lower().replace(" ", ""):
                     raise QuotaExhausted(

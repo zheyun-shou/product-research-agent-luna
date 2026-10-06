@@ -256,3 +256,37 @@ def test_fallback_provider_must_exist():
             "chat": {"provider": "gemini", "model": "m", "rpm": 1,
                      "fallback": {"provider": "groq", "model": "b", "rpm": 1}},
             "worker": {"provider": "gemini", "model": "m", "rpm": 1}}})
+
+
+def test_a_call_past_its_deadline_raises_a_timeout_and_keeps_the_main_model():
+    import time as real_time
+
+    from scout.llm.client import LLMTimeout
+
+    class Slow(FakeCompletions):
+        def create(self, **kwargs):
+            if not self.requests:
+                self.requests.append(kwargs)
+                real_time.sleep(1.0)  # longer than the deadline below
+            return super().create(**kwargs)
+
+    config = FALLBACK_CONFIG.model_copy(deep=True)
+    config.roles["chat"].deadline = 0.1
+    main = FakeOpenAI(['{"answer": "late"}', '{"answer": "ok"}'])
+    main.chat.completions = Slow(['{"answer": "late"}', '{"answer": "ok"}'])
+    backup = FakeOpenAI([])
+    clock = FakeClock()
+    llm = LLM(config, clients={"gemini": main, "groq": backup}, sleep=clock.sleep, clock=clock.clock)
+    with pytest.raises(LLMTimeout):
+        llm.structured("chat", "sys", "user", Answer)
+    assert llm.calls[-1].output == "timed out" and not llm.calls[-1].valid
+    assert "chat" not in llm.fallbacks  # one slow call does not move the role
+    real_time.sleep(1.0)  # the late call ends and takes its reply
+    assert llm.structured("chat", "sys", "user", Answer).answer == "ok"
+    assert backup.chat.completions.requests == []
+
+
+def test_each_role_has_a_deadline():
+    llm, _, _ = make([])
+    assert llm._deadline("chat", CONFIG.roles["chat"]) == 180
+    assert llm._deadline("worker", CONFIG.roles["worker"]) == 60

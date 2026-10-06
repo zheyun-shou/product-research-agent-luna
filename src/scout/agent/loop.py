@@ -22,6 +22,9 @@ MAX_PRODUCT_PAGES = 30
 MAX_REVIEW_PAGES = 30
 MAX_GATE_ROUNDS = 3
 MAX_REPORT_CHARS = 6_000  # of one tool report in the prompt
+SEARCH_DETAILS = 8  # new product pages for each search_shop call
+MAX_READ_CHARS = 5_000  # of the text of one product in read_product
+REPORT_LIMITS = {"read_product": 3 * MAX_READ_CHARS + 1_000}  # three products must fit in one report
 
 SYSTEM = """You are product-scout, a shopping research assistant. You help the shopper choose products. The shopper
 is in Sweden. You find candidates in shops, check them against the shopper's needs, read what buyers say, and give a
@@ -30,9 +33,10 @@ few picks with the reasons. You work with tools. Python runs them and gives you 
 How to work:
 - First understand the needs. Ask the shopper when they are not clear enough to search. Record the needs with
   update_needs, with only numbers that the shopper wrote.
-- Search before you recommend. search_shop reads amazon.se. Use Swedish search words. Read more pages or search
-  with other words when the results are weak.
-- find_products lists the stored candidates that meet conditions. It does not choose for you.
+- find_products lists the stored candidates that meet conditions. It does not choose for you. Look there first:
+  products from earlier searches are stored, and reading them costs no shop pages.
+- Search before you recommend. search_shop reads amazon.se. Use Swedish search words. Read more results, more
+  pages or search with other words when the stored and the new candidates are weak or too few.
 - Look things up before you guess: read_product, search_text, read_images, find_missing.
 - Read the buyers' reviews of the products that you want to recommend (read_reviews, then summarize_reviews).
 - Say clearly when data is missing, doubtful or in conflict, and what you did about it. You can leave out a
@@ -46,8 +50,9 @@ Rules:
 - Never add shipping, duty or moms that the shopper did not give. For a currency conversion, state the rate.
 - Summarize reviews in qualitative words ("most buyers", "a few"), never as counts.
 - Each number that you write is a value from a tool result, a number that the shopper wrote, or your own
-  calculation. Give claims (the product id, the card field and the value) for the facts of products, and put each
-  calculated number in derived with how you got it.
+  calculation. Give claims for the facts of products: the product id, the card field and the value, or the field
+  "page" for a number that the stored page text of that product shows (read_product). Put each calculated number
+  in derived with how you got it.
 - Before show_picks, Python checks: each pick was searched for in a shop in this conversation, and its reviews
   were read (good and bad). Python opens each pick again for the price and the stock now.
 - Reply in the shopper's language."""
@@ -67,8 +72,9 @@ class UpdateNeeds(BaseModel):
 
 
 class SearchShop(BaseModel):
-    """Search amazon.se and store the new products (up to 20 product pages). Page 1 also reads the first pages
-    sorted by customer rating and by sales. Takes some minutes."""
+    """Search amazon.se and store the new products (up to 8 product pages). Page 1 also reads the first pages
+    sorted by customer rating and by sales. When more results fit, the result says so: call again with the same
+    words and page to read the next ones, without loading the search pages again. Takes one or two minutes."""
     words: str = Field(description="Swedish search words, one phrase")
     page: int = Field(1, description="The result page, from 1")
 
@@ -82,7 +88,8 @@ class FindProducts(BaseModel):
 
 
 class ReadProduct(BaseModel):
-    """Read the full stored text of products: specifications, description, reviews on the product page."""
+    """Read the full stored text of products: specifications, description, reviews on the product page. A product
+    that was read in this turn is not given again; its text is in the earlier result."""
     ids: list[int] = Field(description="Product ids, at most 3")
     question: str
 
@@ -129,7 +136,8 @@ class RestoreProducts(BaseModel):
 
 class Claim(BaseModel):
     id: int = Field(description="The product id")
-    field: str = Field(description="price, rating, review_count, or an attribute name")
+    field: str = Field(description="price, rating, review_count, an attribute name, or page: a number that the "
+                                   "stored page text of the product shows")
     value: str
 
 
@@ -251,24 +259,49 @@ def turn_numbers(state: dict) -> set[Decimal]:
     return set().union(*(numbers_in(r) for r in state.get("turn_log") or []), set())
 
 
-def check_claims(claims: list[Claim], cards: dict[int, Card]) -> tuple[list[str], set[Decimal]]:
-    errors, numbers = [], set()
+def page_numbers(row: dict | None) -> set[Decimal]:
+    """The numbers of the stored page text of one product: specifications, bullets and description. Not the reviews,
+    because a buyer's number is not a fact of the product."""
+    if not row:
+        return set()
+    text = "\n".join([*(f"{k}: {v}" for k, v in (row.get("specs") or {}).items()), *(row.get("bullets") or []),
+                      row.get("description") or ""])
+    return numbers_in(text)
+
+
+def check_claims(claims: list[Claim], cards: dict[int, Card],
+                 pages: dict[int, set[Decimal]] | None = None) -> tuple[list[str], set[Decimal]]:
+    """A claim passes when the card has the value, or when the page text of the product shows its number."""
+    errors, numbers, pages = [], set(), pages or {}
     for claim in claims:
         card = cards.get(claim.id)
         if card is None:
             errors.append(f"there is no product with id {claim.id}")
             continue
+        shown = numbers_in(claim.value)
+        if shown and shown <= pages.get(claim.id, set()):
+            numbers |= shown
+            continue
+        if claim.field == "page":
+            errors.append(f"id {claim.id}: the page text does not show {claim.value}")
+            continue
         error, number = check_claim(card_facts(card), claim.field, claim.value)
         if error:
-            errors.append(f"id {claim.id}: {error}")
+            errors.append(f"id {claim.id}: {error}, and the page text does not show it")
         elif number is not None:
             numbers.add(number)
     return errors, numbers
 
 
+def pages_of(deps: "LoopDeps", ids) -> dict[int, set[Decimal]]:
+    if deps.page_texts is None or not ids:
+        return {}
+    return {i: page_numbers(row) for i, row in deps.page_texts(sorted(set(ids))).items()}
+
+
 def check_text(text: str, known: set[Decimal], models: list[str | None]) -> list[str]:
-    return [f"the number {raw} has no source. Give a claim with the product id and the card field, put it in "
-            "derived with how you calculated it, or remove it" for raw in unchecked_numbers(text, known, models)]
+    return [f"the number {raw} has no source. Give a claim with the product id and the card field (or page), put "
+            "it in derived with how you calculated it, or remove it" for raw in unchecked_numbers(text, known, models)]
 
 
 def check_final(call: BaseModel, state: dict, deps: LoopDeps, thread: str, used: dict | None = None) -> list[str]:
@@ -279,7 +312,7 @@ def check_final(call: BaseModel, state: dict, deps: LoopDeps, thread: str, used:
     if isinstance(call, Reply):
         ids = {c.id for c in call.claims} | {p["listing_id"] for p in state.get("picks", [])}
         cards = {c.listing_id: c for c in deps.cards(sorted(ids))}
-        errors, claimed = check_claims(call.claims, cards)
+        errors, claimed = check_claims(call.claims, cards, pages_of(deps, {c.id for c in call.claims}))
         on_cards = {v for c in cards.values() for v in card_facts(c).values() if isinstance(v, Decimal)}
         derived = set().union(set(), *(numbers_in(d.value) for d in call.derived))
         picks = {Decimal(n) for n in range(1, len(state.get("picks", [])) + 1)}
@@ -321,11 +354,14 @@ def check_final(call: BaseModel, state: dict, deps: LoopDeps, thread: str, used:
     cards = {c.listing_id: c for c in deps.cards(ids)}  # with the prices that were just checked
     derived = set().union(set(), *(numbers_in(d.value) for d in call.derived))
     said = user_numbers(state)
+    pages = pages_of(deps, ids)
     for pick in call.picks:
-        claim_errors, claimed = check_claims(pick.claims, cards)
-        errors += claim_errors
-        # Only the facts of this pick: a price of another candidate in the tool results is not a source
-        own = {v for v in card_facts(cards[pick.id]).values() if isinstance(v, Decimal)}
+        # A claim must be about this pick: a value of another candidate is not a source for it
+        claim_errors, claimed = check_claims([c for c in pick.claims if c.id == pick.id], cards, pages)
+        errors += claim_errors + [f"pick id {pick.id}: a claim names id {c.id}; give claims of this pick only"
+                                  for c in pick.claims if c.id != pick.id]
+        # Only the facts of this pick: its card and its page text
+        own = {v for v in card_facts(cards[pick.id]).values() if isinstance(v, Decimal)} | pages.get(pick.id, set())
         errors += [f"pick id {pick.id}: {e}" for e in check_text(pick.text, claimed | own | said | derived,
                                                                 [cards[pick.id].model])]
     errors += check_text(call.note, said | derived | {Decimal(len(ids))}, [])
@@ -396,7 +432,7 @@ class Toolbox:
         if left <= 0:
             return "the product pages of this turn are used up."
         self.deps.say(f"Searching amazon.se for '{call.words}', result page {call.page}. This can take a few minutes.")
-        report, pages = self.deps.search_shop(profile, self.needs, call.words, call.page, min(20, left))
+        report, pages = self.deps.search_shop(profile, self.needs, call.words, call.page, min(SEARCH_DETAILS, left))
         self.used["product_pages"] = self.used.get("product_pages", 0) + pages
         searches = dict(self.update["searches"] if "searches" in self.update else self.state.get("searches") or {})
         searches[call.words] = {"page": max(call.page, (searches.get(call.words) or {}).get("page", 0)),
@@ -420,10 +456,18 @@ class Toolbox:
         if self.deps.page_texts is None:
             return "not available."
         cards, unknown = self.cards(call.ids[:3])
-        texts = self.deps.page_texts([c.listing_id for c in cards])
+        read = set(self.used.get("read", []))
+        again = [c for c in cards if c.listing_id in read]
+        cards = [c for c in cards if c.listing_id not in read]
+        texts = self.deps.page_texts([c.listing_id for c in cards]) if cards else {}
         parts = [f"there is no product with id {i}." for i in unknown]
-        parts += [f"id {c.listing_id}: {c.title}\n" + (product_text(texts[c.listing_id]) if c.listing_id in texts
-                                                       else "no page text is stored.") for c in cards]
+        parts += [f"id {c.listing_id} was read earlier in this turn; its text is in that result." for c in again]
+        for c in cards:
+            text = product_text(texts[c.listing_id]) if c.listing_id in texts else "no page text is stored."
+            if len(text) > MAX_READ_CHARS:
+                text = text[:MAX_READ_CHARS] + " [cut here; search_text finds a detail in the rest]"
+            parts.append(f"id {c.listing_id}: {c.title}\n{text}")
+        self.used["read"] = sorted(read | {c.listing_id for c in cards})
         return f"({call.question})\n\n" + "\n\n".join(parts)
 
     def search_text(self, call: SearchText) -> str:
@@ -553,7 +597,7 @@ def build_agent_graph(deps: LoopDeps, checkpointer=None):
             box.used["calls"] = box.used.get("calls", 0) + 1
             with deps.tracer.span(item["tool"]):
                 report = box.run(from_state(item))
-            log.append(report[:MAX_REPORT_CHARS])
+            log.append(report[:REPORT_LIMITS.get(item["tool"], MAX_REPORT_CHARS)])
         return {**box.update, "turn_log": log, "used": box.used, "pending": []}
 
     def gate_node(state, config):

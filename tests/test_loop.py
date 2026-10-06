@@ -203,3 +203,62 @@ def test_remove_then_remove_again_in_one_round():
     run(graph, "A fridge at most 180 cm")
     state = run(graph, "None of these, and not fridge 3")
     assert state["picks"] == [] and [r["listing_id"] for r in state["removed"]] == [1, 2, 3]
+
+
+def page_shop():
+    shop = Shop()
+    shop.reviewed = {1, 2}
+    rows = {1: {"specs": {"Mått": "55D x 49,5B x 142,5H centimeter"}, "bullets": [], "description": "",
+                "reviews": [{"rating": 5, "text": "It is 99 cm wide"}]},
+            2: {"specs": {"Höjd": "152 cm"}, "bullets": ["Long text " * 900], "description": ""}}
+    shop.page_rows = rows
+    return shop
+
+
+def deps_with_pages(shop, llm):
+    deps = shop.deps(llm)
+    deps.page_texts = lambda ids: {i: shop.page_rows[i] for i in ids if i in shop.page_rows}
+    shop.page_calls = []
+    inner = deps.page_texts
+
+    def counted(ids):
+        shop.page_calls.append(list(ids))
+        return inner(ids)
+    deps.page_texts = counted
+    return deps
+
+
+def test_a_number_of_the_page_text_is_a_source():
+    shop = page_shop()
+    picks = ShowPicks(picks=[Pick(id=1, text="142.5 cm high and 49.5 cm wide.",
+                                  claims=[Claim(id=1, field="height", value="142.5"),
+                                          Claim(id=1, field="page", value="49.5")])])
+    llm = FakeLLM([[NEEDS, SearchShop(words="kylskåp")], [picks]])
+    state = run(build_agent_graph(deps_with_pages(shop, llm), InMemorySaver()), "A fridge at most 180 cm")
+    assert [p["listing_id"] for p in state["picks"]] == [1]
+
+
+def test_a_number_of_a_review_on_the_page_is_not_a_source():
+    shop = page_shop()
+    wrong = ShowPicks(picks=[Pick(id=1, text="99 cm wide.", claims=[Claim(id=1, field="page", value="99")])])
+    llm = FakeLLM([[NEEDS, SearchShop(words="kylskåp")], [wrong], [ShowPicks(picks=[Pick(id=1, text="Fits.")])]])
+    run(build_agent_graph(deps_with_pages(shop, llm), InMemorySaver()), "A fridge at most 180 cm")
+    assert "id 1: the page text does not show 99" in llm.requests[2][1]
+
+
+def test_a_product_read_in_this_turn_is_not_given_again_and_long_texts_are_cut():
+    from scout.agent.loop import MAX_READ_CHARS, ReadProduct
+    shop = page_shop()
+    llm = FakeLLM([[ReadProduct(ids=[1, 2], question="size")], [ReadProduct(ids=[2, 1], question="size")], "Ok."])
+    run(build_agent_graph(deps_with_pages(shop, llm), InMemorySaver()), "How big are they?")
+    assert shop.page_calls == [[1, 2]]
+    first, second = llm.requests[1][1], llm.requests[2][1]
+    assert "142,5H" in first and "[cut here" in first and len(first) < 4 * MAX_READ_CHARS
+    assert "id 2 was read earlier in this turn" in second and "id 1 was read earlier in this turn" in second
+
+
+def test_a_search_reads_at_most_8_product_pages():
+    shop = Shop()
+    llm = FakeLLM([[NEEDS, SearchShop(words="kylskåp")], "Ok."])
+    run(build_agent_graph(shop.deps(llm), InMemorySaver()), "A fridge at most 180 cm")
+    assert shop.max_details == 8
