@@ -69,7 +69,7 @@ Luna can always do more. It cannot do less than this. Each floor is kept inside 
 | Floor | How Python keeps it |
 |---|---|
 | At least one result page for each search | `search_shop` always reads page 1 |
-| When the site has a sort by rating or by sales, use it too | `search_shop` also reads page 1 of each such sort order. Which sort orders amazon.se has must be checked first (open item since phase 1) |
+| When the site has a sort by rating or by sales, use it too | `search_shop` page 1 also reads page 1 sorted by rating (`s=review-rank`) and by sales (`s=exact-aware-popularity-rank`). The sort menu of amazon.se, read on 2026-10-06: Featured, price up, price down, average customer review, newest arrivals, best sellers |
 | Search the web for tests by default | Before `show_picks`: each pick must have a web search for its model, in this conversation or stored from the last 7 days. The shopper can switch this off in the conversation |
 | Read good and bad reviews | `read_reviews` always reads the positive and the critical pages (as in Task 5) |
 
@@ -128,7 +128,7 @@ A problem goes back to Luna with the values from the records, up to 3 rounds.
 
 ## 10. Evaluation
 
-- **Hidden-target test** (asked by Zheyun on 2026-10-06). Claude selects real products that are on amazon.se, for example 20 across the categories. For each, Claude writes the needs of a shopper from the facts of the product, without its name, brand or model. A simulated shopper (the planned Task 14) knows the hidden product and answers Luna's questions only from its facts. We measure: is the hidden product in the picks, at which place, how many tool calls, product pages, review pages and web pages, how many model calls, the cost and the time. The limits of section 4 are set from these numbers (for example from the run that needed the most, plus a margin). The Princeton WebShop benchmark uses a similar idea. Zheyun mentioned a Microsoft study of this kind; its link is not in this document yet.
+- **Hidden-target test** (asked by Zheyun on 2026-10-06). Claude selects real products that are on amazon.se, for example 20 across the categories. For each, Claude writes the needs of a shopper from the facts of the product, without its name, brand or model. A simulated shopper (the planned Task 14) knows the hidden product and answers Luna's questions only from its facts. We measure: is the hidden product in the picks, at which place, how many tool calls, product pages, review pages and web pages, how many model calls, the cost and the time. The limits of section 4 are set from these numbers (for example from the run that needed the most, plus a margin). This is the idea of the Princeton WebShop benchmark (Yao et al., 2022), which Zheyun had in mind.
 - `scout eval-chat` scripts check routes today (for example "remove pick 2"). In the loop there are no fixed routes. The scripts change to check outcomes: which picks are removed, which tools were called, what the reply must or must not say, and that the checks pass.
 - Compare the fixed pipeline (the code now, kept on a branch) with the loop on the same scripts: the share of turns that pass the checks in the first round, facts correct (grader), floors met, number of model calls, cost and time for each turn.
 - Later the baseline of the main design: Claude with web search on the same needs.

@@ -72,7 +72,10 @@ def crawl(
     screen: Screener | None = None,
     first_page: int = 1,
     skip_known: bool = False,
+    sorts: tuple[str, ...] = (),
 ) -> CrawlReport:
+    """sorts: also read the first result page of these sort orders of the site, for example ("rating", "sales").
+    Their candidates join the others; the detail pages keep the limit max_details."""
     if not getattr(adapter, "terms_check", ""):
         raise RuntimeError(f"Adapter {adapter.name} has no terms check recorded, so it stays disabled.")
     report = CrawlReport()
@@ -91,6 +94,18 @@ def crawl(
                 candidates.append(cand)
         if not has_next:
             break
+    for sort in sorts:
+        url = adapter.search_url(query, 1, sort)
+        page = fetch_checked(adapter, conn, url, on_problem, report.notes)
+        if page is None:
+            report.notes.append(f"the {sort} order did not load: {url}")
+            continue
+        report.search_pages += 1
+        found, _ = adapter.parse_search(page)
+        for cand in found:
+            if cand.source_id not in seen:
+                seen.add(cand.source_id)
+                candidates.append(cand)
     report.candidates = len(candidates)
     if budget is not None:
         within = [c for c in candidates if c.price is None or c.price <= budget]

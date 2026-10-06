@@ -152,9 +152,10 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer):
         mark=lambda product_id, name, found: mark_attribute_search(conn, product_id, name, found),
     )
 
-    def search_shop(profile, needs, words, page):
-        report = run_crawl(conn, browser.adapter(), profile.category, words, on_problem=on_problem, first_page=page,
-                           max_pages=1, max_details=20, budget=needs.budget_sek(), skip_known=True,
+    def search_shop(profile, needs, words, page, max_details):
+        adapter = browser.adapter()
+        report = run_crawl(conn, adapter, profile.category, words, on_problem=on_problem, first_page=page,
+                           max_pages=1, max_details=max_details, sorts=adapter.sorts if page == 1 else (), budget=needs.budget_sek(), skip_known=True,
                            enrich=lambda rec: enrich_record(rec, profile, llm),
                            screen=lambda cands: screen_titles(cands, profile, llm, needs.wanted(profile)))
         return crawl_text(report, words, page), report.detail_pages
@@ -162,9 +163,16 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer):
     def check_now(ids, needs):
         problems = {}
         budget = needs.budget_sek()
-        for card in load_cards_by_ids(conn, ids):
-            category = conn.execute("SELECT category FROM products WHERE id = %s", (card.product_id,)).fetchone()
-            rec = refetcher(browser.adapter(), conn, category["category"], on_problem)(card)
+        cards = load_cards_by_ids(conn, ids)
+        rows = conn.execute("SELECT id, category FROM products WHERE id = ANY(%s)",
+                            ([c.product_id for c in cards],)).fetchall()
+        category = {row["id"]: row["category"] for row in rows}
+        refetch = {}
+        for card in cards:
+            cat = category[card.product_id]
+            if cat not in refetch:
+                refetch[cat] = refetcher(browser.adapter(), conn, cat, on_problem)
+            rec = refetch[cat](card)
             if rec is None:
                 problems[card.listing_id] = "the page did not load now, so the price and the stock are not known"
             elif rec.in_stock is False:
@@ -187,8 +195,11 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer):
 
     def reviews(ids):
         asins = listing_source_ids(conn, SOURCE, ids)
+        missing = [i for i in ids if i not in asins]
         report = read_reviews(conn, browser.adapter, [(i, asins[i]) for i in ids if i in asins], on_problem, say=say)
-        return report.text(), report.pages
+        text = report.text() + "".join(f" Id {i} is not an amazon.se product, so its reviews cannot be read."
+                                       for i in missing)
+        return text.strip(), report.pages, missing + ([i for i in ids if i in asins] if report.skipped else [])
 
     def reviews_read(ids):
         now = datetime.now(timezone.utc)

@@ -23,6 +23,7 @@ class ReviewReport:
     reviews: Counter = field(default_factory=Counter)  # filter -> reviews found
     new: int = 0
     stopped: str = ""  # why the step stopped before the end
+    skipped: bool = False  # the shopper skipped a login or a captcha
     notes: list[str] = field(default_factory=list)
 
     def text(self) -> str:
@@ -92,6 +93,7 @@ def read_reviews(conn: psycopg.Connection, adapter: Callable[[], object], target
             page = fetch_checked(source, conn, source.reviews_url(asin, star, sort), asked, report.notes)
             if page is None:
                 if skipped:
+                    report.skipped = True
                     report.stopped = "You skipped the login, so the other review pages were not read."
                     break
                 continue  # the page is gone, or it did not load after the retries: it is not tried again this week

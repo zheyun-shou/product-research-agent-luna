@@ -207,3 +207,14 @@ def test_stored_listings_get_the_rating_of_the_result_card(db, tmp_path):
           first_page=2, skip_known=True)
     row = db.execute("SELECT rating, review_count FROM listings WHERE source_id = 'B0AAAAAAA1'").fetchone()
     assert (row["rating"], row["review_count"]) == (Decimal("4.5"), 1234)
+
+
+def test_the_sorted_first_pages_add_their_candidates(db, tmp_path):
+    browser = site()
+    browser.pages[search_url("kylskåp", 1, "rating")] = [html("search_basic.html")]
+    browser.pages[search_url("kylskåp", 1, "sales")] = [CAPTCHA, CAPTCHA, CAPTCHA]
+    report = crawl(db, AmazonSeAdapter(browser, tmp_path), "fridge", "kylskåp", on_problem=lambda s, u: True,
+                   sorts=("rating", "sales"))
+    assert report.search_pages == 2 and report.candidates == 3  # the same 3 cards, no repeats
+    assert search_url("kylskåp", 1, "rating").endswith("&s=review-rank")
+    assert any("the sales order did not load" in n for n in report.notes)

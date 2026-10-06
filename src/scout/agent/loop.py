@@ -67,7 +67,8 @@ class UpdateNeeds(BaseModel):
 
 
 class SearchShop(BaseModel):
-    """Search amazon.se and store the new products (up to 20 product pages). Takes some minutes."""
+    """Search amazon.se and store the new products (up to 20 product pages). Page 1 also reads the first pages
+    sorted by customer rating and by sales. Takes some minutes."""
     words: str = Field(description="Swedish search words, one phrase")
     page: int = Field(1, description="The result page, from 1")
 
@@ -178,15 +179,16 @@ class LoopDeps:
     eliminate: Callable[[str, list[int], str], None]  # thread, product ids, reason
     eliminated: Callable[[str], set[int]]
     restore: Callable[[str, list[int]], None]
-    # (profile, needs, words, page) -> (report text, product pages fetched)
-    search_shop: Callable[[CategoryProfile, Needs, str, int], tuple[str, int]]
+    # (profile, needs, words, page, at most this many product pages) -> (report text, product pages fetched)
+    search_shop: Callable[[CategoryProfile, Needs, str, int, int], tuple[str, int]]
     # listing ids -> {listing_id: problem or ""}; opens each page again and stores it
     check_now: Callable[[list[int], Needs], dict[int, str]]
     page_texts: Callable[[list[int]], dict[int, dict]] | None = None
     search_text: Callable[..., list] | None = None
     read_images: Callable[[list[str], str], Any] | None = None
     find_missing: Callable[[list[Card], list[str], CategoryProfile], str] | None = None
-    read_reviews: Callable[[list[int]], tuple[str, int]] | None = None  # -> (report, review pages)
+    # -> (report, review pages, ids whose reviews cannot be read: not on amazon.se, or the shopper skipped the login)
+    read_reviews: Callable[[list[int]], tuple[str, int, list[int]]] | None = None
     reviews_read: Callable[[list[int]], set[int]] = lambda ids: set()  # listings with a recent complete read
     summarize: Callable[[CategoryProfile, list[int], str], str] | None = None
     say: Callable[[str], None] = print
@@ -269,8 +271,10 @@ def check_text(text: str, known: set[Decimal], models: list[str | None]) -> list
             "derived with how you calculated it, or remove it" for raw in unchecked_numbers(text, known, models)]
 
 
-def check_final(call: BaseModel, state: dict, deps: LoopDeps, thread: str) -> list[str]:
-    """Numbers have a source, citations exist, the floors are met. The live check of the picks runs here too."""
+def check_final(call: BaseModel, state: dict, deps: LoopDeps, thread: str, used: dict | None = None) -> list[str]:
+    """Numbers have a source, citations exist, the floors are met. The live check of the picks runs here too, and
+    the picks that pass it are added to used["checked_now"]."""
+    used = used if used is not None else dict(state.get("used") or {})
     allowed = user_numbers(state) | turn_numbers(state)
     if isinstance(call, Reply):
         ids = {c.id for c in call.claims} | {p["listing_id"] for p in state.get("picks", [])}
@@ -301,26 +305,30 @@ def check_final(call: BaseModel, state: dict, deps: LoopDeps, thread: str) -> li
         errors.append("no shop search in this conversation yet. Call search_shop first")
     if deps.read_reviews is not None:
         read = deps.reviews_read(ids)
-        skipped = set((state.get("used") or {}).get("reviews_skipped", []))
+        skipped = set(used.get("reviews_skipped", []))
         errors += [f"the reviews of id {i} were not read. Call read_reviews" for i in ids
                    if i not in read and i not in skipped]
     if errors:
         return errors
     # The price and the stock now, for the picks that were not checked in this turn
     needs = Needs.model_validate(state.get("needs") or {})
-    checked = set((state.get("used") or {}).get("checked_now", []))
+    checked = set(used.get("checked_now", []))
     problems = deps.check_now([i for i in ids if i not in checked], needs)
     errors += [f"id {i}: {problem}" for i, problem in problems.items() if problem]
+    used["checked_now"] = sorted(checked | {i for i, problem in problems.items() if not problem})
     if errors:
         return errors
     cards = {c.listing_id: c for c in deps.cards(ids)}  # with the prices that were just checked
     derived = set().union(set(), *(numbers_in(d.value) for d in call.derived))
+    said = user_numbers(state)
     for pick in call.picks:
         claim_errors, claimed = check_claims(pick.claims, cards)
         errors += claim_errors
-        errors += [f"pick id {pick.id}: {e}" for e in check_text(pick.text, claimed | allowed | derived,
+        # Only the facts of this pick: a price of another candidate in the tool results is not a source
+        own = {v for v in card_facts(cards[pick.id]).values() if isinstance(v, Decimal)}
+        errors += [f"pick id {pick.id}: {e}" for e in check_text(pick.text, claimed | own | said | derived,
                                                                 [cards[pick.id].model])]
-    errors += check_text(call.note, allowed | derived | {Decimal(len(ids))}, [])
+    errors += check_text(call.note, said | derived | {Decimal(len(ids))}, [])
     return errors
 
 
@@ -345,6 +353,10 @@ class Toolbox:
         self.needs = Needs.model_validate(state.get("needs") or {})
         self.used = dict(state.get("used") or {})
         self.update: dict = {}
+
+    def current(self, key: str) -> list:
+        """The value after the earlier calls of this round."""
+        return list(self.update[key] if key in self.update else self.state.get(key) or [])
 
     def profile(self) -> CategoryProfile | None:
         return self.deps.load_profile(self.needs.category) if self.needs.category else None
@@ -380,12 +392,13 @@ class Toolbox:
         profile = self.profile()
         if profile is None:
             return "record the category with update_needs first."
-        if self.used.get("product_pages", 0) >= MAX_PRODUCT_PAGES:
+        left = MAX_PRODUCT_PAGES - self.used.get("product_pages", 0)
+        if left <= 0:
             return "the product pages of this turn are used up."
         self.deps.say(f"Searching amazon.se for '{call.words}', result page {call.page}. This can take a few minutes.")
-        report, pages = self.deps.search_shop(profile, self.needs, call.words, call.page)
+        report, pages = self.deps.search_shop(profile, self.needs, call.words, call.page, min(20, left))
         self.used["product_pages"] = self.used.get("product_pages", 0) + pages
-        searches = dict(self.update.get("searches") or self.state.get("searches") or {})
+        searches = dict(self.update["searches"] if "searches" in self.update else self.state.get("searches") or {})
         searches[call.words] = {"page": max(call.page, (searches.get(call.words) or {}).get("page", 0)),
                                 "budget": self.needs.budget}
         self.update["searches"] = searches
@@ -447,10 +460,10 @@ class Toolbox:
             return "not available."
         if self.used.get("review_pages", 0) >= MAX_REVIEW_PAGES:
             return "the review pages of this turn are used up."
-        report, pages = self.deps.read_reviews(call.ids)
+        report, pages, unreadable = self.deps.read_reviews(call.ids)
         self.used["review_pages"] = self.used.get("review_pages", 0) + pages
-        if "skipped the login" in report:  # the shopper chose to go on without the reviews
-            self.used["reviews_skipped"] = sorted(set(self.used.get("reviews_skipped", [])) | set(call.ids))
+        if unreadable:  # the floor does not ask again for reviews that cannot be read
+            self.used["reviews_skipped"] = sorted(set(self.used.get("reviews_skipped", [])) | set(unreadable))
         return report or "the reviews of these products were read in the last 7 days."
 
     def summarize_reviews(self, call: SummarizeReviews) -> str:
@@ -463,17 +476,16 @@ class Toolbox:
         cards, unknown = self.cards(call.ids)
         if cards:
             self.deps.eliminate(self.thread, [c.product_id for c in cards], call.reason)
-            removed = list(self.update.get("removed") or self.state.get("removed") or [])
+            removed = self.current("removed")
             removed += [{"product_id": c.product_id, "listing_id": c.listing_id, "title": c.title} for c in cards]
             self.update["removed"] = removed
             gone = {c.listing_id for c in cards}
-            self.update["picks"] = [p for p in (self.update.get("picks") or self.state.get("picks") or [])
-                                    if p["listing_id"] not in gone]
+            self.update["picks"] = [p for p in self.current("picks") if p["listing_id"] not in gone]
         return (f"removed {', '.join(str(c.listing_id) for c in cards) or 'nothing'}."
                 + "".join(f" There is no product with id {i}." for i in unknown))
 
     def restore_products(self, call: RestoreProducts) -> str:
-        removed = list(self.update.get("removed") or self.state.get("removed") or [])
+        removed = self.current("removed")
         back = [r for r in removed if r["listing_id"] in set(call.ids)]
         not_removed = [i for i in call.ids if i not in {r["listing_id"] for r in back}]
         if back:
@@ -489,6 +501,11 @@ def last_language(state: dict) -> str:
 
 
 # ---- the graph ----
+
+def last_node(graph) -> str:
+    """The node after which a turn ends. update_state writes as this node, so the next turn starts fresh."""
+    return "gate" if "gate" in graph.nodes else "reviews"
+
 
 def thread_of(config) -> str:
     return config["configurable"]["thread_id"]
@@ -513,9 +530,10 @@ def build_agent_graph(deps: LoopDeps, checkpointer=None):
                 calls = llm.tools("chat", SYSTEM, turn_prompt(state, deps, thread), WORK_TOOLS + FINAL_TOOLS,
                                   name="Agent", text_reply=Reply)
             except LLMUnavailable as exc:
-                return {"final": None, "pending": [], "messages": [assistant(f"I cannot work on this now. {exc}")]}
+                return {"final": None, "pending": [], "gate_errors": [],
+                        "messages": [assistant(f"I cannot work on this now. {exc}")]}
             except LLMOutputError as exc:
-                return {"final": None, "pending": [], "messages": [assistant(
+                return {"final": None, "pending": [], "gate_errors": [], "messages": [assistant(
                     f"The model did not give a usable reply ({exc}). You can say it in other words.")]}
         final = next((c for c in calls if isinstance(c, tuple(FINAL_TOOLS))), None)
         work = [c for c in calls if not isinstance(c, tuple(FINAL_TOOLS))]
@@ -542,9 +560,7 @@ def build_agent_graph(deps: LoopDeps, checkpointer=None):
         thread = thread_of(config)
         call = from_state(state["final"])
         used = dict(state.get("used") or {})
-        errors = check_final(call, state, deps, thread)
-        if isinstance(call, ShowPicks):
-            used["checked_now"] = sorted(set(used.get("checked_now", [])) | {p.id for p in call.picks})
+        errors = check_final(call, state, deps, thread, used)
         if errors and state.get("gate_rounds", 0) + 1 < MAX_GATE_ROUNDS:
             llm.mark_checked(False, errors)
             return {"gate_errors": errors, "gate_rounds": state.get("gate_rounds", 0) + 1, "final": None,

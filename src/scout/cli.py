@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from scout.agent.graph import build_graph
 from scout.agent.history import assistant
 from scout.agent.live import LazyBrowser, live_deps, loop_deps
-from scout.agent.loop import build_agent_graph
+from scout.agent.loop import build_agent_graph, last_node
 from scout.config import ROOT, load_settings
 from scout.crawl import crawl as run_crawl
 from scout.crawl import fetch_checked
@@ -190,11 +190,6 @@ def parse_reviews_cmd(path: Path) -> None:
     for r in reviews:
         typer.echo(json.dumps(r, ensure_ascii=False))
     typer.echo(f"{len(reviews)} reviews on the page, {matching} match the filter")
-
-
-def last_node(graph) -> str:
-    """The node after which a turn ends: update_state writes as this node, so the next turn starts fresh."""
-    return "gate" if "gate" in graph.nodes else "reviews"
 
 
 def ask_user(status: SessionStatus, url: str) -> bool:

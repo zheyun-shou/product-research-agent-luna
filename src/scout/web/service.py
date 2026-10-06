@@ -6,6 +6,7 @@ from typing import Any, Callable, Iterator
 
 from scout.agent.graph import Deps
 from scout.agent.history import assistant
+from scout.agent.loop import last_node
 from scout.picks.write import attribute_text
 
 PROBLEM_WAIT = 15 * 60  # seconds a turn waits for Done or Skip, then it skips
@@ -31,7 +32,7 @@ class ChatService:
         self._jobs: queue.Queue = queue.Queue()
         threading.Thread(target=self._worker, daemon=True).start()
         self.graph, self.deps = build(self._say, self._on_problem)
-        self._last_node = "gate" if "gate" in self.graph.nodes else "reviews"
+        self._last_node = last_node(self.graph)
 
     def _worker(self) -> None:
         while True:

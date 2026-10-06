@@ -12,10 +12,16 @@ REVIEW_FILTERS = ("positive", "critical")  # the star filters of the review page
 REVIEW_SORTS = ("top", "recent")
 
 
-def search_url(query: str, page: int = 1) -> str:
+# The sort orders of the search, read from the sort menu on 2026-10-06. The default order has no parameter.
+SEARCH_SORTS = {"rating": "review-rank", "sales": "exact-aware-popularity-rank"}
+
+
+def search_url(query: str, page: int = 1, sort: str | None = None) -> str:
     params = {"k": query}
     if page > 1:
         params["page"] = str(page)
+    if sort:
+        params["s"] = SEARCH_SORTS[sort]
     return f"{BASE_URL}/s?{urlencode(params)}"
 
 
@@ -62,4 +68,5 @@ def snapshot_key(url: str) -> str:
     asin = asin_from_url(url)
     if asin:
         return asin
-    return f"{query.get('k', ['home'])[0]}-p{query.get('page', ['1'])[0]}"
+    sort = f"-{query['s'][0]}" if "s" in query else ""
+    return f"{query.get('k', ['home'])[0]}-p{query.get('page', ['1'])[0]}{sort}"

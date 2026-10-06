@@ -43,3 +43,9 @@ def test_reviews_url_needs_a_known_filter():
         reviews_url("B0AAAAAAA1", "three_star")
     with pytest.raises(ValueError):
         reviews_url("B0AAAAAAA1", "critical", "helpful")
+
+
+def test_search_url_with_a_sort():
+    url = search_url("kylskåp", 1, "sales")
+    assert url == "https://www.amazon.se/s?k=kylsk%C3%A5p&s=exact-aware-popularity-rank"
+    assert snapshot_key(url) == "kylskåp-p1-exact-aware-popularity-rank"

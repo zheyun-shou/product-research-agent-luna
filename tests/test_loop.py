@@ -19,6 +19,7 @@ class Shop:
         self.searched, self.checked, self.reviewed, self.removed, self.said = [], [], set(), set(), []
         self.problems = {}
         self.pages = 4  # product pages of each search
+        self.unreadable = set()
 
     def deps(self, llm):
         return LoopDeps(
@@ -31,8 +32,9 @@ class Shop:
             search_shop=self.search, check_now=self.check, read_reviews=self.read,
             reviews_read=lambda ids: {i for i in ids if i in self.reviewed}, say=self.said.append)
 
-    def search(self, profile, needs, words, page):
+    def search(self, profile, needs, words, page, max_details=20):
         self.searched.append((words, page))
+        self.max_details = max_details
         return f"'{words}' page {page}: 48 results, 4 stored.", self.pages
 
     def check(self, ids, needs):
@@ -41,7 +43,7 @@ class Shop:
 
     def read(self, ids):
         self.reviewed |= set(ids)
-        return f"read the reviews of {len(ids)} products: 6 review pages.", 6
+        return f"read the reviews of {len(ids)} products: 6 review pages.", 6, list(self.unreadable & set(ids))
 
 
 def run(graph, text, thread="t1"):
@@ -155,3 +157,49 @@ def test_each_turn_starts_with_an_empty_log():
     run(graph, "Search")
     state = run(graph, "Hi")
     assert state["turn_log"] == [] and "Tool results in this turn" not in llm.requests[-1][1]
+
+
+def test_the_last_search_gets_only_the_pages_that_are_left():
+    shop = Shop()
+    shop.pages = 12
+    llm = FakeLLM([[NEEDS], [SearchShop(words="a")], [SearchShop(words="b")], [SearchShop(words="c")], "Ok."])
+    run(build_agent_graph(shop.deps(llm), InMemorySaver()), "A fridge up to 180 cm")
+    assert shop.max_details == 6  # 30 - 12 - 12
+
+
+def test_reviews_that_cannot_be_read_do_not_block_the_picks():
+    shop = Shop()
+    shop.unreadable = {1}
+    llm = FakeLLM([[NEEDS, SearchShop(words="kylskåp"), ReadReviews(ids=[2, 1])], [PICKS]])
+    state = run(build_agent_graph(shop.deps(llm), InMemorySaver()), "A fridge at most 180 cm")
+    assert [p["listing_id"] for p in state["picks"]] == [2, 1]
+
+
+def test_a_pick_is_marked_checked_only_after_its_live_check_passed():
+    shop = Shop()
+    shop.reviewed = {1, 2}
+    shop.problems = {2: "sold out now"}
+    llm = FakeLLM([[NEEDS, SearchShop(words="kylskåp")], [PICKS], [PICKS], [PICKS]])
+    state = run(build_agent_graph(shop.deps(llm), InMemorySaver()), "A fridge at most 180 cm")
+    assert shop.checked == [[2, 1], [2], [2]]  # pick 2 is checked again each round; pick 1 passed the first time
+    assert "could not write an answer" in state["messages"][-1]["content"]
+
+
+def test_a_price_of_another_candidate_is_not_a_source_for_a_pick():
+    shop = Shop()
+    shop.reviewed = {1, 2}
+    wrong = ShowPicks(picks=[Pick(id=2, text="Costs 5000 SEK and is 151 cm high."), Pick(id=1, text="Fits.")])
+    llm = FakeLLM([[NEEDS, SearchShop(words="kylskåp"), FindProducts()], [wrong], [PICKS]])
+    run(build_agent_graph(shop.deps(llm), InMemorySaver()), "A fridge at most 180 cm")
+    assert "pick id 2: the number 151 has no source" in llm.requests[2][1]  # 151 cm is the height of id 1
+
+
+def test_remove_then_remove_again_in_one_round():
+    shop = Shop()
+    shop.reviewed = {1, 2}
+    llm = FakeLLM([[NEEDS, SearchShop(words="kylskåp")], [PICKS],
+                   [RemoveProducts(ids=[1, 2]), RemoveProducts(ids=[3])], "Removed."])
+    graph = build_agent_graph(shop.deps(llm), InMemorySaver())
+    run(graph, "A fridge at most 180 cm")
+    state = run(graph, "None of these, and not fridge 3")
+    assert state["picks"] == [] and [r["listing_id"] for r in state["removed"]] == [1, 2, 3]
