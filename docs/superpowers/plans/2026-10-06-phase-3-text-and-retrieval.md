@@ -108,7 +108,7 @@ Plan as written before the build:
 
 - For each pick, one retrieval for each complaint type of the profile, over its review chunks.
 - The chat model writes one or two pros and complaints for each pick. Each one cites chunk ids. Python checks that the ids exist and belong to that pick.
-- The picks show the source type (buyer review in v1) and how many reviews say it, when the model counts them.
+- The statements are qualitative, without counts (decided 2026-10-06), for example "a small part of the buyers say that it is noisy, most say that it is quiet". The picks show the source type of each statement (buyer review or test).
 
 ### Task 8: Retrieval evaluation
 
@@ -117,16 +117,18 @@ Plan as written before the build:
 - With Zheyun's permission: the chat model answers each question with the top 10 chunks of each method and with long context. The DeepSeek grader marks each answer. The report gives accuracy, tokens, cost and latency for each method.
 - The results go into this plan, with the size of the corpus. If the corpus is too small to show a difference, the plan says so.
 
-### Task 9: Reviews from the web (needs a decision)
+### Task 9: Web search (decided 2026-10-06)
 
-Findings of 2026-10-06:
+Zheyun decided the positioning on 2026-10-06 (spec section 1a). Web search finds models, tests, forum views and product pages of other shops. amazon.se stays the deep source. Her terms decision covers the pages that web search finds.
 
-- A Google search by the program is not an option. Google does not allow automated searches, and it shows captchas. The program never bypasses captchas.
-- YouTube: the official YouTube Data API is free (a daily quota), but it does not give the transcripts of other people's videos. Tools that read transcripts use pages that are not an official API.
-- A search API made for agents fits best. Tavily has a free plan of 1,000 searches each month, with no credit card. It also gives the text of the found pages. Brave Search now needs a credit card, so it is not an option (never enable billing).
-- Swedish sites such as test.se and testexperterna.se collect tests for many categories. Many such sites are lists for affiliate links, so their quality varies.
+- Tavily through its official API (free plan, 1,000 searches each month, no card). Zheyun makes the account and puts `TAVILY_API_KEY` in `.env`.
+- Lookup tool `search_web(question)`. The searches use the model numbers of the picks and the needs of the shopper.
+- The agent reads the found pages in parallel with several worker calls. Pages of one shop are still one at a time.
+- Test articles and forum pages become chunks with the source `web`, the URL and the type (test or forum). Product pages of shops go through a generic reader: the schema.org `Product` JSON-LD first, then the worker with the raw-text check. They become listings, matched by GTIN when the page has one.
+- The reviews on these product pages are buyer reviews. Reviews with the same text are kept one time.
+- Tests: a fake Tavily client and saved pages; JSON-LD fixtures for the generic reader.
 
-Proposal: a lookup tool `search_web(question)` that searches for "model number + test or review" through Tavily. The results are chunks with the source type "web" and their URL, and the picks show them as web sources, not as professional tests. Zheyun makes the Tavily account and puts the key in `.env`.
+Findings from before the decision (2026-10-06): a Google search by the program is not an option (no automated searches, captchas). The YouTube Data API does not give transcripts. Brave Search needs a card.
 
 ## Additions of 2026-10-06
 

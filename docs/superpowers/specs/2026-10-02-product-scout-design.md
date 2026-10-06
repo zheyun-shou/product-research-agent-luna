@@ -1,6 +1,6 @@
 # product-scout design
 
-Date: 2026-10-02. Revised 2026-10-03 (v1 is amazon.se only). Language revised 2026-10-03 to about 80% ASD-STE100.
+Date: 2026-10-02. Revised 2026-10-03 (v1 is amazon.se only). Language revised 2026-10-03 to about 80% ASD-STE100. Revised 2026-10-06 (positioning and source roles, section 1a).
 Status: awaiting review
 
 Flowcharts: https://claude.ai/artifact/4jJqCkVudUFU24kTyXsiqZ
@@ -15,6 +15,33 @@ The project has two purposes. They are equally important.
 
 The system makes the list of candidates smaller. The user makes the final selection.
 
+## 1a. Positioning and sources (decided 2026-10-06)
+
+product-scout is a shopping research agent. The user gives the needs and the conditions. The agent finds candidates in more than one source, checks each candidate against the conditions, and shows a few picks. Each claim in the picks names its source, and Python checks it.
+
+**How it differs from a general assistant with web search.** A model with web search reads about 5 to 10 pages and answers from them. It does not know the products on the pages that it did not read, and nobody checks its numbers. It cannot read pages behind a login. product-scout has the same breadth through web search. It adds depth and checked facts:
+
+- It reads shop pages behind the login of the user (review pages, Taobao).
+- It stores each product as structured data and merges the listings of one product across shops.
+- Python checks each condition on each stored candidate (for example "height up to 180 cm"). The model does not judge this from memory.
+- Retrieval finds the relevant parts of hundreds of reviews.
+- Each number in the picks is checked against the source page. The data, the price history and the preferences of the user stay for the next search.
+
+**Three source roles**
+
+| Role | Sources | Question that it answers |
+|---|---|---|
+| Find | Web search (Tavily): test articles, forums, and product pages of shops such as Elgiganten | Which models are worth a look, and what do testers and users say |
+| Depth | amazon.se, later Taobao | Which models exist, what are the specifications, the price and the stock now, what do many buyers say |
+| Offers | PriceRunner, only for the final picks | Where in Sweden can the user buy this model, at which price, in stock or not |
+
+- **Web search results.** The agent reads the found pages in parallel with several worker calls. Pages of one shop are still fetched one at a time, at low volume. A product page of a shop (for example Elgiganten or NetOnNet) is read with a generic reader: first the schema.org `Product` data in the page (JSON-LD), then the worker with the raw-text check of 4.4. The product goes into the database like an amazon.se product. A GTIN or EAN code, when the page gives one, matches the same product across shops.
+- **Offers.** Only large known shops and the official shop of the brand count. The list of allowed shops is a configuration file that the user can edit. Offers from other shops are not shown. The picks say only that N other shops are cheaper and were not used. If PriceRunner does not list the brand shop, web search finds the Swedish site of the brand.
+- **Evidence types.** Buyer reviews (amazon.se, Taobao, other shops) and tests (articles by media or blogs) are two types. The picks keep them apart and name the source of each.
+- **Reviews of other shops.** The agent reads only the reviews that the product page shows (from the JSON-LD, or from the page text through the worker). Brands copy the same reviews to several shops, so the agent removes reviews with the same text.
+
+**Summaries of reviews and tests are qualitative.** The agent writes statements such as "a small part of the buyers say that it is noisy, most say that it is quiet". It does not count reviews. Each statement cites the reviews or tests that it uses, and Python checks that these exist and belong to the product. Python does not check the proportion words. The model judges them (see the rule that the model judges the words).
+
 ## 2. Scope
 
 ### In v1
@@ -24,12 +51,13 @@ The system makes the list of candidates smaller. The user makes the final select
 - Source: amazon.se only, for products and for their shop reviews. Search terms are in Swedish. Prices are in SEK.
 - The budget is optional. If the user gives a budget, it is a hard condition. Price is not a ranking factor. The agent sorts by price only when the user asks. Then it uses the sort function of the site.
 - Text retrieval is hybrid. It uses vector search and BM25.
-- Professional reviews, simple version (decided 2026-10-03). After the shop reviews in build phase 3, the agent searches one or two public professional review sites (for example Råd & Rön) by the model numbers of the candidates. The review text uses the same chunks and retrieval as the shop reviews. The picks show the source type of each claim.
+- Web search (revised 2026-10-06, replaces the simple version of professional reviews of 2026-10-03). In build phase 3 the agent searches the web through Tavily, by the model numbers of the candidates and by the needs. Test articles and forum pages go into the same chunks and retrieval as the shop reviews. Product pages of other shops go into the database through the generic reader (1a). The picks show the source type of each claim.
 
 ### Not in v1
 
 - Taobao. Taobao is the first source after v1. It adds login checks, JSON capture, Taobao shop reviews, the match of one product across Amazon and Taobao, and budgets in a second currency.
-- Other product sources: JD and Swedish shops (Prisjakt, Elgiganten, Tradera, EPREL and others). The adapter interface is ready for them.
+- Offers from PriceRunner with the list of allowed shops (1a). The order of this work and Taobao is not decided.
+- Other product sources: JD, Tradera, EPREL and others. Swedish shops such as Elgiganten come in through web search and the generic reader (1a), not through one adapter for each shop.
 - Other review sources: community sites (Zhihu, Reddit, Flashback) and more professional review sites (Rtings, SweClockers and others). These sources also bring the category-level review search (phase 2b below).
 - Xiaohongshu. The posts contain too many advertisements. We cannot trust them as reviews.
 - Video reviews (YouTube, Bilibili). These come later. The difficult part is to get the transcripts. Cost is not the problem.
@@ -214,7 +242,7 @@ Product text chunks and review chunks use one retrieval path.
 
 1. The needs of the user and the category profile that the agent used
 2. Comparison table: price, key specifications and rating of the top picks (default 5). Each cell has a link to its source.
-3. Pros and complaints for each product, with the source type (professional test, buyer review, community user)
+3. Pros and complaints for each product, with the source type (test, buyer review, community user). They are qualitative statements without counts (1a), and each cites its sources
 4. Missing data and data that is not certain
 5. Fetch time and availability
 6. How the agent made the rank
@@ -335,13 +363,16 @@ Make a labelled set of about 50 amazon.se product pages across the four categori
 | Search efficiency | How many fewer pages the Threshold Algorithm stop rule fetches, compared with all pages |
 | Run metrics | Cost and latency of each search (Langfuse) |
 
-"Did it pick the right product" has no ground truth and is not a metric.
+| Baseline: a general assistant with web search | Give the same needs to Claude with web search and to product-scout. For each pick, check by hand or with Python against the shop page: does it meet the conditions, is the price correct now, can the user buy it in Sweden. This costs money or manual work, so it waits for the decision of Zheyun |
+
+"Did it pick the right product" has no ground truth and is not a metric. The baseline above measures only facts that we can check.
 
 ## 8. Terms and data
 
 - Check the terms of each source before you enable it. Record the result in the adapter. Use official APIs when possible.
 - Fetches are for personal use only, at low volume and with rate limits. The user does the logins and the captchas.
 - The terms of Amazon restrict automated access. On 2026-10-03 Zheyun decided that personal, low-volume fetches of amazon.se in her own browser profile are acceptable to her. The Amazon adapter records this decision and its date. The terms of Taobao also restrict it. She decides before we build the Taobao adapter after v1.
+- On 2026-10-06 Zheyun decided the same for the other sources of 1a: personal, low-volume access to PriceRunner, to the allowed shops, to the official sites of brands and to the pages that web search finds is acceptable to her. Each adapter or reader records this decision and its date. Tavily is used through its official API.
 - The free Gemini tier can use requests to improve the products of Google. The requests contain public product pages and the shopping needs of the user.
 - Fetched pages, reviews, snapshots and the browser profile stay out of the public Git repository (they are already in `.gitignore`). The public repository contains only code and evaluation numbers.
 - Numbers in the CV must come from evaluations that we really did, and Zheyun must confirm them.
@@ -352,7 +383,7 @@ The project is too large for one implementation plan. Thus each phase has its ow
 
 1. **Skeleton.** Project structure, Postgres + pgvector, tables, the fridge preset profile, the LLM layer with the `chat` and `worker` roles on a free Gemini key, the dedicated browser profile, the amazon.se adapter with selectors and the captcha check, structured extraction, command-line picks, and the labelled set and evaluation for price extraction on amazon.se.
 2. **Conversation.** The LangGraph conversation loop, checkpoints, clarifying questions, follow-up tools, calculations, Langfuse.
-3. **Text and retrieval.** Chunks, bge-m3 embeddings, BM25, RRF, amazon.se shop reviews with the login check, on-demand extraction, pros and complaints in the picks. At the end, professional reviews by model number from one or two public review sites (simple version).
+3. **Text and retrieval.** Chunks, bge-m3 embeddings, BM25, RRF, amazon.se shop reviews with the login check, on-demand extraction, qualitative pros and complaints in the picks, web search through Tavily with parallel reading and the generic reader for shop pages.
 4. **Images and more categories.** Image reading with PaddleOCR-VL and the worker as the fallback, the other three preset categories, profile generation for new categories.
 5. **Search strategy.** Predicate pushdown, Threshold Algorithm, multi-stage ranking, page limits.
 6. **Full evaluation.** All metrics, the retrieval comparison, the model comparison.
@@ -364,7 +395,8 @@ Shop reviews (phase 2d in section 3) come in build phase 3. Taobao, external sou
 
 - The exact Gemini models and quotas. We check them when we make the key.
 - Which sort orders amazon.se has (build phase 5).
-- Which professional review sites to use, and their terms checks. Decide before build phase 3.
+- The order of the offers work (PriceRunner) and Taobao after v1.
+- Which large shops go on the first list of allowed shops. Zheyun edits the list.
 - Keep the filter fields twice in `chunks`, or join with `reviews` and `products` during the query.
 - Langfuse cloud, or Langfuse in Docker on our computer.
 - The CV line from before mentions "the Claude API". Change it when we select the model.
