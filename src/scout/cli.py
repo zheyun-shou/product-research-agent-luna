@@ -33,9 +33,11 @@ from scout.needs import ConditionSpec, Needs, check_needs
 from scout.picks.pipeline import make_picks, refetcher, shortlist
 from scout.picks.rank import parse_condition
 from scout.profiles import load_profile
+from scout.reviews import read_reviews
 from scout.sources.amazon_se.adapter import AmazonSeAdapter
 from scout.sources.amazon_se.check import check_page
 from scout.sources.amazon_se.product import parse_product_page
+from scout.sources.amazon_se.reviews import parse_review_page
 from scout.sources.amazon_se.search import has_next_page, parse_search_page
 from scout.sources.amazon_se.urls import BASE_URL, SOURCE, page_kind, product_url, snapshot_key
 from scout.sources.base import SessionStatus
@@ -180,6 +182,15 @@ def parse_product_cmd(path: Path) -> None:
     typer.echo(f"missing: {rec.missing_core()}")
 
 
+@app.command("parse-reviews")
+def parse_reviews_cmd(path: Path) -> None:
+    """Print what the parser reads from a saved review page."""
+    reviews, matching = parse_review_page(path.read_text(encoding="utf-8"))
+    for r in reviews:
+        typer.echo(json.dumps(r, ensure_ascii=False))
+    typer.echo(f"{len(reviews)} reviews on the page, {matching} match the filter")
+
+
 def ask_user(status: SessionStatus, url: str) -> bool:
     """Pause until the user has dealt with a captcha or sign-in in the browser window."""
     typer.echo(f"\n{status.detail} at {url}")
@@ -266,6 +277,26 @@ def picks(
     typer.echo(result.render())
     if llm is not None:
         report_llm_use(llm)
+
+
+@app.command()
+def reviews(asins: List[str], max_pages: int = 30) -> None:
+    """Read the positive and the critical review pages of stored amazon.se products. Needs the login."""
+    settings = load_settings()
+    with connect(settings.database_url) as conn:
+        rows = conn.execute("SELECT id, source_id FROM listings WHERE source = %s AND source_id = ANY(%s)",
+                            (SOURCE, list(asins))).fetchall()
+        found = {row["source_id"]: row["id"] for row in rows}
+        for asin in asins:
+            if asin not in found:
+                typer.echo(f"{asin} is not stored. Crawl it first.")
+        browser = LazyBrowser(settings)
+        try:
+            report = read_reviews(conn, browser.adapter, [(found[a], a) for a in asins if a in found], ask_user,
+                                  max_pages=max_pages, say=typer.echo)
+        finally:
+            browser.close()
+    typer.echo(report.text() or "Nothing to read: the reviews of these products are less than 7 days old.")
 
 
 @app.command("eval-template")
@@ -386,7 +417,7 @@ def chat(thread: Optional[str] = typer.Option(None, help="the ID of a conversati
                     replies = [f"Something went wrong ({type(exc).__name__}: {exc}). You can try again."]
                     end_transaction(conn)
                     with contextlib.suppress(Exception):  # the thread gets the message, and the failed turn ends
-                        graph.update_state(config, {"messages": [assistant(replies[0])]}, as_node="recommend")
+                        graph.update_state(config, {"messages": [assistant(replies[0])]}, as_node="reviews")
                 end_transaction(conn)
                 for reply in replies:
                     typer.echo(f"\n{reply}")

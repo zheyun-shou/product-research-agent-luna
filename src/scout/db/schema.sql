@@ -79,6 +79,22 @@ CREATE TABLE IF NOT EXISTS page_texts (
     images       jsonb NOT NULL DEFAULT '[]'::jsonb
 );
 
+-- Reviews from the review pages of a listing (phase 3 Task 5), one row for each review. filter is the star filter
+-- that found it: positive (4 and 5 stars) or critical (1 to 3 stars). The author is never stored.
+CREATE TABLE IF NOT EXISTS shop_reviews (
+    listing_id   bigint NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
+    review_id    text NOT NULL,
+    filter       text NOT NULL CHECK (filter IN ('positive', 'critical')),
+    title        text NOT NULL DEFAULT '',
+    rating       numeric(2, 1),
+    date         text NOT NULL DEFAULT '',
+    verified     boolean NOT NULL DEFAULT false,
+    variant      text NOT NULL DEFAULT '',
+    text         text NOT NULL,
+    fetched_at   timestamptz NOT NULL,
+    PRIMARY KEY (listing_id, review_id)
+);
+
 -- Parts of the page texts for retrieval (spec 4.4 and 4.6). source is the page kind that the text came from.
 CREATE TABLE IF NOT EXISTS chunks (
     id           bigserial PRIMARY KEY,

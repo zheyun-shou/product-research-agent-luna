@@ -1,5 +1,5 @@
 from scout.sources.amazon_se.urls import (
-    asin_from_url, page_kind, product_url, search_url, snapshot_key,
+    asin_from_reviews_url, asin_from_url, page_kind, product_url, reviews_url, search_url, snapshot_key,
 )
 
 
@@ -24,3 +24,22 @@ def test_page_kind():
     assert page_kind(search_url("kylskåp")) == "search"
     assert page_kind(product_url("B0AAAAAAA1")) == "product"
     assert page_kind("https://www.amazon.se/") == "other"
+
+
+def test_reviews_url():
+    assert reviews_url("B0AAAAAAA1", "positive") == ("https://www.amazon.se/product-reviews/B0AAAAAAA1/"
+                                                      "?filterByStar=positive&reviewerType=all_reviews&pageNumber=1")
+    url = reviews_url("B0AAAAAAA1", "critical", "recent")
+    assert url.endswith("?filterByStar=critical&reviewerType=all_reviews&pageNumber=1&sortBy=recent")
+    assert asin_from_reviews_url(url) == "B0AAAAAAA1"
+    assert asin_from_url(url) is None
+    assert page_kind(url) == "reviews"
+    assert snapshot_key(url) == "B0AAAAAAA1-critical-recent"
+
+
+def test_reviews_url_needs_a_known_filter():
+    import pytest
+    with pytest.raises(ValueError):
+        reviews_url("B0AAAAAAA1", "three_star")
+    with pytest.raises(ValueError):
+        reviews_url("B0AAAAAAA1", "critical", "helpful")

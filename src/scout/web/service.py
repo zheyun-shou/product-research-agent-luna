@@ -113,18 +113,28 @@ class ChatService:
     def _run(self, thread: str, text: str, send: Callable[[dict], None]) -> None:
         config = self._config(thread)
         try:
-            before = len(self._values(thread).get("messages", []))
+            removed = self._values(thread).get("removed", [])
+            replies = []
             with self.deps.tracer.turn(thread, text) as span:
-                state = self.graph.invoke({"messages": [{"role": "user", "content": text}]}, config)
-                replies = [m["content"] for m in state["messages"][before + 1:]]
+                # Each step sends its replies when it ends, so the picks show before the reviews are read
+                for update in self.graph.stream({"messages": [{"role": "user", "content": text}]}, config,
+                                                stream_mode="updates"):
+                    for node, change in update.items():
+                        change = change or {}
+                        removed = change.get("removed", removed)
+                        for message in change.get("messages", []):
+                            if message.get("role") == "assistant":
+                                replies.append(message["content"])
+                                send({"type": "reply", "text": message["content"]})
+                        if node == "recommend" and "picks" in change:
+                            send({"type": "picks", "picks": self.pick_views(change["picks"]),
+                                  "removed": [{"product_id": r["product_id"], "title": r["title"]} for r in removed]})
                 span.update(output="\n\n".join(replies))
-            for reply in replies:
-                send({"type": "reply", "text": reply})
         except Exception as exc:  # the nodes catch most problems; this keeps the conversation open
             message = f"Something went wrong ({type(exc).__name__}: {exc}). You can try again."
             with contextlib.suppress(Exception):  # the thread gets the message, and the failed turn ends
                 self._end()
-                self.graph.update_state(config, {"messages": [assistant(message)]}, as_node="recommend")
+                self.graph.update_state(config, {"messages": [assistant(message)]}, as_node="reviews")
             send({"type": "error", "text": message})
         try:
             self._end()
@@ -152,7 +162,7 @@ class ChatService:
             message = f"Removed: {gone['title'][:60]}. It stays out for the rest of this conversation."
             self.graph.update_state(self._config(thread), {
                 "picks": [p for p in picks if p is not gone], "removed": removed,
-                "messages": [assistant(message)]}, as_node="recommend")
+                "messages": [assistant(message)]}, as_node="reviews")
             self._end()
             return {"message": message, **self._picks(thread)}
 

@@ -4,13 +4,17 @@ from typing import Protocol
 
 from scout.sources.amazon_se.check import check_page
 from scout.sources.amazon_se.product import parse_product_page
+from scout.sources.amazon_se.reviews import parse_review_page
 from scout.sources.amazon_se.search import has_next_page, parse_search_page
-from scout.sources.amazon_se.urls import BASE_URL, SOURCE, page_kind, search_url, snapshot_key
+from scout.sources.amazon_se.urls import BASE_URL, SOURCE, page_kind, reviews_url, search_url, snapshot_key
 from scout.sources.base import Candidate, ProductRecord, RawPage, SessionStatus
 from scout.sources.snapshots import save_html
 
 
 class Browser(Protocol):
+    def reviews_url(self, asin: str, star: str, sort: str = "top") -> str:
+        return reviews_url(asin, star, sort)
+
     def fetch(self, url: str) -> RawPage: ...
     def screenshot(self, path: Path) -> Path: ...
 
@@ -32,6 +36,9 @@ class AmazonSeAdapter:
     def search_url(self, query: str, page: int = 1) -> str:
         return search_url(query, page)
 
+    def reviews_url(self, asin: str, star: str, sort: str = "top") -> str:
+        return reviews_url(asin, star, sort)
+
     def fetch(self, url: str) -> RawPage:
         page = self.browser.fetch(url)
         kind = page_kind(url)
@@ -51,3 +58,6 @@ class AmazonSeAdapter:
 
     def parse(self, page: RawPage) -> ProductRecord:
         return parse_product_page(page.html, page.url, page.fetched_at)
+
+    def parse_reviews(self, page: RawPage) -> tuple[list[dict], int | None]:
+        return parse_review_page(page.html)

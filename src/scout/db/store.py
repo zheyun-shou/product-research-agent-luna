@@ -5,7 +5,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from scout.sources.base import Candidate, ProductRecord
-from scout.text.chunks import Chunk, page_chunks
+from scout.text.chunks import Chunk, page_chunks, review_chunks
 
 
 @dataclass(frozen=True)
@@ -93,6 +93,50 @@ def save_chunks(conn: psycopg.Connection, listing_id: int, chunks: list[Chunk], 
                VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (listing_id, source, c.kind, c.ref, c.text, Jsonb(c.meta), fetched_at),
         )
+
+
+def save_shop_reviews(conn: psycopg.Connection, listing_id: int, reviews: list[dict], fetched_at) -> int:
+    """Store the reviews of the review pages of one listing, and make their chunks again. A review that the
+    product page shows too gets no second chunk. Returns the number of new reviews."""
+    try:
+        new = 0
+        for r in reviews:
+            row = conn.execute(
+                """INSERT INTO shop_reviews (listing_id, review_id, filter, title, rating, date, verified, variant,
+                                             text, fetched_at)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (listing_id, review_id) DO UPDATE SET filter = EXCLUDED.filter,
+                       title = EXCLUDED.title, rating = EXCLUDED.rating, date = EXCLUDED.date,
+                       verified = EXCLUDED.verified, variant = EXCLUDED.variant, text = EXCLUDED.text,
+                       fetched_at = EXCLUDED.fetched_at
+                   RETURNING (xmax = 0) AS inserted""",
+                (listing_id, r["review_id"], r["filter"], r.get("title") or "", r.get("rating"), r.get("date") or "",
+                 bool(r.get("verified")), r.get("variant") or "", r["text"], fetched_at),
+            ).fetchone()
+            new += int(row["inserted"])
+        stored = conn.execute("SELECT * FROM shop_reviews WHERE listing_id = %s ORDER BY review_id",
+                              (listing_id,)).fetchall()
+        page = conn.execute(
+            """SELECT l.title, p.reviews FROM listings l LEFT JOIN page_texts p ON p.listing_id = l.id
+               WHERE l.id = %s""", (listing_id,)).fetchone()
+        on_page = {" ".join((r.get("text") or "").split()) for r in (page["reviews"] or [])}
+        kept = [dict(r, rating=str(r["rating"]) if r["rating"] is not None else None) for r in stored
+                if " ".join(r["text"].split()) not in on_page]
+        chunks = review_chunks(page["title"] or "", kept, [f"shop review {r['review_id']}" for r in kept])
+        save_chunks(conn, listing_id, chunks, fetched_at, source="review_page")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    return new
+
+
+def shop_reviews_fetched(conn: psycopg.Connection, listing_ids: list[int]) -> dict[int, object]:
+    """The time of the newest stored shop review of each listing that has one."""
+    rows = conn.execute(
+        """SELECT listing_id, max(fetched_at) AS at FROM shop_reviews WHERE listing_id = ANY(%s)
+           GROUP BY listing_id""", (listing_ids,)).fetchall()
+    return {row["listing_id"]: row["at"] for row in rows}
 
 
 def page_texts(conn: psycopg.Connection, listing_ids: list[int]) -> dict[int, dict]:

@@ -234,3 +234,23 @@ def test_a_product_without_a_category_gets_a_draft_profile():
     assert saved[0].draft and state["needs"]["category"] == "headphones"
     assert world.said[0].startswith("New category drafted: headphones. Kinds: Over-ear headphones.")
     assert [m["content"] for m in state["messages"][1:]] == ["Over-ear or in-ear?"]
+
+
+def test_reviews_are_read_after_the_picks():
+    world = World(stored=3)
+    asked = []
+    deps = world.deps(FakeLLM([CategoryChoice(category="fridge"), ready()]))
+    deps.read_reviews = lambda picks: asked.append([p["listing_id"] for p in picks]) or "Read the shop reviews."
+    state = run(build_graph(deps, InMemorySaver()), "t1", "A fridge with a freezer")
+    assert asked == [[1, 2]]
+    assert state["messages"][-1]["content"] == "Read the shop reviews."
+    assert [p["listing_id"] for p in state["picks"]] == [1, 2]
+
+
+def test_no_review_message_when_nothing_was_read():
+    world = World(stored=3)
+    deps = world.deps(FakeLLM([CategoryChoice(category="fridge"), ready()]))
+    deps.read_reviews = lambda picks: ""
+    state = run(build_graph(deps, InMemorySaver()), "t1", "A fridge with a freezer")
+    assert state["messages"][-1]["content"] != ""
+    assert len([m for m in state["messages"] if m["role"] == "assistant"]) == 2

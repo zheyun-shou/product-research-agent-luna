@@ -45,6 +45,8 @@ class Deps:
     read_images: Callable[[list[str], str], Any] | None = None
     search_text: Callable[..., list] | None = None  # (question, scope, k) -> hits
     save_draft: Callable[[CategoryProfile], Any] | None = None  # without it, no new category is drafted
+    # Reads the shop reviews of the picks after they are shown (phase 3 Task 5). Gives the report text, or "".
+    read_reviews: Callable[[list[dict]], str] | None = None
 
 
 def crawl_text(report: CrawlReport, terms: str, page: int) -> str:
@@ -194,6 +196,12 @@ def build_graph(deps: Deps, checkpointer=None):
         return {"picks": picks, "seen": sorted(set(seen)), "phase": "picks", "route": {},
                 "messages": [assistant(text)]}
 
+    def reviews_node(state, config):
+        if deps.read_reviews is None or not state.get("picks"):
+            return {}
+        text = deps.read_reviews(state["picks"])
+        return {"messages": [assistant(text)]} if text else {}
+
     def act_node(state, config):
         picks, removed = state.get("picks", []), list(state.get("removed", []))
         needs = needs_of(state)
@@ -239,7 +247,7 @@ def build_graph(deps: Deps, checkpointer=None):
     graph = StateGraph(ChatState)
     graph.add_node("compact", compact_node)
     for name, fn in [("clarify", clarify_node), ("search", search_node), ("recommend", recommend_node),
-                     ("act", act_node), ("reset", reset_node)]:
+                     ("act", act_node), ("reset", reset_node), ("reviews", reviews_node)]:
         graph.add_node(name, guarded(name, fn))
     graph.add_edge(START, "compact")
     graph.add_conditional_edges("compact", lambda s: "act" if s.get("phase") == "picks" else "clarify",
@@ -247,7 +255,8 @@ def build_graph(deps: Deps, checkpointer=None):
     graph.add_conditional_edges("clarify", lambda s: "search" if s.get("phase") == "search" else END,
                                 ["search", END])
     graph.add_conditional_edges("search", unless_stopped, ["recommend", END])
-    graph.add_edge("recommend", END)
+    graph.add_edge("recommend", "reviews")
+    graph.add_edge("reviews", END)
     graph.add_conditional_edges("act", lambda s: s["route"]["action"], AFTER_ACT)
     graph.add_edge("reset", "clarify")
     return graph.compile(checkpointer=checkpointer)

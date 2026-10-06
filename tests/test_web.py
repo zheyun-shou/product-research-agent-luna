@@ -113,3 +113,18 @@ def test_a_failed_picks_load_does_not_stop_the_worker():
     assert events[-1] == {"type": "done"} and events[-2]["type"] == "error"
     chat.deps.cards = cards
     assert chat.history("t1")["picks"] and chat.in_worker(lambda: "alive") == "alive"
+
+
+def test_the_picks_show_before_the_reviews_are_read():
+    world = World(stored=3)
+
+    def build(say, on_problem):
+        deps = dataclasses.replace(world.deps(FakeLLM([CategoryChoice(category="fridge"), ready()])), say=say,
+                                   read_reviews=lambda picks: "Read the shop reviews of 2 picks.")
+        return build_graph(deps, InMemorySaver()), deps
+    events = list(ChatService(build).turn("t1", "A fridge with a freezer"))
+    kinds = [e["type"] for e in events]
+    first_picks = kinds.index("picks")
+    review = next(i for i, e in enumerate(events) if e.get("text") == "Read the shop reviews of 2 picks.")
+    assert first_picks < review
+    assert kinds[-2:] == ["picks", "done"]

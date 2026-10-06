@@ -74,7 +74,24 @@ The bge-m3 model loads at the first `search_text` call in `scout chat`, and new 
 - `read_product` stays. The model chooses: `search_text` for a question across many products or many reviews, `read_product` for one product.
 - Numbers in the chunks can be used in the reply, as with the other lookups.
 
-### Task 5: Shop reviews behind the login
+### Task 5: Shop reviews behind the login (done)
+
+On 2026-10-06 Zheyun logged in, and Claude saved real review pages of the Bomann KG 320 outside Git. Findings:
+
+- The review pages show the reviews of all Amazon shops of the EU. "From Sweden" had 0 reviews for this fridge. The other reviews are in German, Spanish, French, Dutch and Italian. bge-m3 is multilingual, so this is not a problem for the search.
+- amazon.se ignores `pageNumber` in the URL. Page 2 gave the same 10 reviews as page 1. The "Show 10 more reviews" button loads more with a script. So the third page of a pick is the critical reviews sorted by `recent`. On the Bomann it gave 4 new reviews of 10.
+- Each review has a stable id (for example `R2GOTWYJOAXP42`). The parser reads only the title, the rating, the date, the verified badge, the variant and the original text. It never reads the reviewer block or the hidden translation.
+
+What was built:
+
+- New table `shop_reviews`: one row for each review, with the filter that found it. Its chunks have the source `review_page` and the ref `shop review <id>`. A review that the product page shows too gets no second chunk.
+- `scout.reviews.read_reviews`: for each pick, the top positive page, the top critical page, then the newest critical reviews when the filter has more than 10. Limits: 10 picks, 3 pages for each pick, 30 pages for each search. Reviews younger than 7 days are not read again. When the shopper skips a login or a captcha, the step stops.
+- The graph has a new step `reviews` after `recommend`. It reads the reviews of the picks that are shown (default 5), not of the top 10 candidates, because the state keeps only the picks. The web page now sends the replies of each step when the step ends, so the picks show before the reviews are read.
+- `scout reviews ASIN...` and `scout parse-reviews PATH`.
+
+First real run (2026-10-06, 3 fridges): 9 review pages, 75 reviews (30 positive, 45 critical), 67 new chunks. `scout embed` gave them vectors in 7.3 s. A Chinese question about noise ("冰箱噪音大吗") found two German reviews about a loud fridge in its top 2.
+
+Plan as written before the build:
 
 - Parser for the review pages of amazon.se: title, rating, date, verified purchase, variant, text. No author.
 - Login check on each review page, from the page that was just fetched (no extra request). When the login is gone or a captcha shows, the agent tells the shopper to log in or solve it in the dedicated browser window, and waits. It never types a password.

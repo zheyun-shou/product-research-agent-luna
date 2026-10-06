@@ -65,6 +65,8 @@ def review_text(review: dict) -> str:
         head.append("verified purchase")
     if review.get("date"):
         head.append(review["date"])
+    if review.get("variant"):
+        head.append(review["variant"])
     title = (review.get("title") or "").strip()
     body = (review.get("text") or "").strip()
     return f"Review ({', '.join(head)}): " + ". ".join(t for t in (title, body) if t)
@@ -82,10 +84,19 @@ def page_chunks(title: str, page: dict, count: Callable[[str], int] = approx_tok
         chunks.append(Chunk("specs", f"specs {i}", prefix + part))
     for i, part in enumerate(split_text(page.get("description") or "", count, max_tokens), 1):
         chunks.append(Chunk("description", f"description {i}", prefix + part))
-    for n, review in enumerate(page.get("reviews") or [], 1):
-        meta = {k: review[k] for k in ("rating", "date", "verified", "title", "filter") if review.get(k) is not None}
+    refs = [f"review {n}" for n in range(1, len(page.get("reviews") or []) + 1)]
+    return chunks + review_chunks(title, page.get("reviews") or [], refs, count, max_tokens)
+
+
+def review_chunks(title: str, reviews: list[dict], refs: list[str], count: Callable[[str], int] = approx_tokens,
+                  max_tokens: int = MAX_TOKENS) -> list[Chunk]:
+    """One chunk for each review, unless it is very long. refs[i] names reviews[i]. No author is kept."""
+    prefix = f"Product: {title}\n"
+    chunks = []
+    for ref, review in zip(refs, reviews):
+        meta = {k: review[k] for k in ("rating", "date", "verified", "title", "filter", "variant")
+                if review.get(k) not in (None, "")}
         parts = split_text(review_text(review), count, max_tokens)
         for i, part in enumerate(parts, 1):
-            ref = f"review {n}" if len(parts) == 1 else f"review {n} part {i}"
-            chunks.append(Chunk("review", ref, prefix + part, meta))
+            chunks.append(Chunk("review", ref if len(parts) == 1 else f"{ref} part {i}", prefix + part, meta))
     return chunks
