@@ -127,7 +127,7 @@ def enrich_record(rec: ProductRecord, profile: CategoryProfile, llm) -> tuple[Pr
         elif item.name in wanted:
             attr = wanted[item.name]
             value = convert(attr, item.value)
-            if value is None or not shows_value(attr, value, item.raw) or not attr.is_plausible(value):
+            if value is None or not shows_value(attr, value, item.raw):
                 continue
             attributes[attr.name] = {"value": value, "unit": attr.unit, "raw": item.raw, "source_url": rec.url}
     return rec.model_copy(update={**updates, "attributes": attributes, "llm_fields": llm_fields}), True

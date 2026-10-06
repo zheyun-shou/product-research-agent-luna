@@ -18,22 +18,12 @@ class ProfileAttribute(BaseModel):
     kind: Literal["hard", "soft"]
     unit: str | None = None
     values: list[str] | None = None
-    # [min, max] that a real product of the category can have. Sellers sometimes give "10H millimeter" for a fridge;
-    # the raw-text check cannot catch that, because the page really says it.
-    plausible: list[float] | None = None
 
     @model_validator(mode="after")
     def _enum_values(self) -> "ProfileAttribute":
         if self.type == "enum" and not self.values:
             raise ValueError(f"enum attribute '{self.name}' needs values")
-        if self.plausible is not None and (len(self.plausible) != 2 or self.plausible[0] >= self.plausible[1]):
-            raise ValueError(f"plausible of '{self.name}' must be [min, max] with min below max")
         return self
-
-    def is_plausible(self, value) -> bool:
-        if self.plausible is None or not isinstance(value, (int, float)):
-            return True
-        return self.plausible[0] <= value <= self.plausible[1]
 
 
 class ProductKind(BaseModel):

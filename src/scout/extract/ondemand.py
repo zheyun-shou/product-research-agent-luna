@@ -80,7 +80,6 @@ def fill_missing(cards: list[Card], conditions: list[Condition], profile: Catego
         if attrs:
             work.append((card, attrs))
     found_count, tried, stopped = 0, 0, ""
-    implausible: list[str] = []
     for card, attrs in work[:max_cards]:
         hits = store.retrieve(card.product_id, "; ".join(query_for(a) for a in attrs),
                               min(MAX_CHUNKS, CHUNKS * len(attrs)))
@@ -108,9 +107,6 @@ def fill_missing(cards: list[Card], conditions: list[Condition], profile: Catego
             value = convert(attr, item.value)
             if value is None or not verify_raw(item.raw, hit.text) or not shows_value(attr, value, item.raw):
                 continue
-            if not attr.is_plausible(value):
-                implausible.append(f"{card.title[:60]}: {attr.label.lower()} {value:g} {attr.unit or ''}".rstrip())
-                continue
             # Chunk ids change when a newer page is stored, so the listing and the ref name the place too
             entry = {"value": value, "unit": attr.unit, "raw": item.raw, "source_chunk_id": item.chunk_id,
                      "source_listing_id": hit.listing_id, "source_ref": hit.ref, "source_url": card.url}
@@ -122,8 +118,5 @@ def fill_missing(cards: list[Card], conditions: list[Condition], profile: Catego
             store.mark(card.product_id, attr.name, attr.name in kept)
     if not tried and not stopped:
         return []
-    notes = [f"Looked for missing values of your conditions in the text of {tried} products: found {found_count}."
-             + stopped]
-    if implausible:
-        notes.append("Left out because a real product cannot have them: " + "; ".join(dict.fromkeys(implausible)) + ".")
-    return notes
+    return [f"Looked for missing values of your conditions in the text of {tried} products: found {found_count}."
+            + stopped]

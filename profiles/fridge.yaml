@@ -22,37 +22,31 @@ attributes:
     label: Height
     type: number
     unit: cm
-    plausible: [15, 250]
     kind: hard
   - name: width
     label: Width
     type: number
     unit: cm
-    plausible: [15, 120]
     kind: hard
   - name: depth
     label: Depth
     type: number
     unit: cm
-    plausible: [15, 120]
     kind: hard
   - name: total_volume
     label: Total volume
     type: number
     unit: l
-    plausible: [2, 1000]
     kind: soft
   - name: freezer_volume
     label: Freezer volume
     type: number
     unit: l
-    plausible: [0, 600]
     kind: soft
   - name: noise
     label: Noise
     type: number
     unit: dB
-    plausible: [15, 70]
     kind: soft
   - name: energy_class
     label: Energy class
