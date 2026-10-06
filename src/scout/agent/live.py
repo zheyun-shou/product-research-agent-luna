@@ -2,7 +2,9 @@
 from scout.agent.graph import Deps
 from scout.agent.lookup import image_reader
 from scout.crawl import crawl as run_crawl
-from scout.db.store import add_eliminations, eliminated_products, listing_source_ids, page_texts, restore_products
+from scout.db.store import (add_eliminations, attribute_searches, eliminated_products, listing_source_ids,
+                            mark_attribute_search, page_texts, restore_products, save_attribute)
+from scout.extract.ondemand import KINDS, Store, fill_missing
 from scout.extract.page import enrich_record
 from scout.extract.screen import screen_titles
 from scout.picks.pipeline import make_picks, refetcher, shortlist
@@ -13,7 +15,7 @@ from scout.sources.amazon_se.adapter import AmazonSeAdapter
 from scout.sources.amazon_se.urls import SOURCE
 from scout.sources.browser import BrowserSession
 from scout.text.embed import BgeM3Embedder
-from scout.text.retrieve import hybrid_search
+from scout.text.retrieve import Scope, hybrid_search
 
 
 class LazyBrowser:
@@ -34,18 +36,32 @@ class LazyBrowser:
             self._session, self._adapter = None, None
 
 
-def shared_deps(conn, llm, crawl, refetch, k: int = 5, size_check: bool = True, **rest) -> Deps:
+def shared_deps(conn, llm, crawl, refetch, k: int = 5, size_check: bool = True, find_missing: bool = True,
+                **rest) -> Deps:
     """The parts of the dependencies that scout chat and scout eval-chat share, so both run the same picks.
 
     `refetch(profile)` gives the function that rechecks one card. `rest` holds the elimination store, say and tracer.
+    Without `find_missing`, the picks do not look for missing condition values in the stored text.
     """
     screened: dict[tuple[str, int], bool] = {}  # a title is screened one time in a session
+    search_text = hybrid_search(conn, BgeM3Embedder)  # one instance, so bge-m3 loads one time
+    store = Store(
+        retrieve=lambda listing_id, query, n: search_text(query, Scope(listing_ids=[listing_id], kinds=KINDS), n),
+        save=lambda product_id, name, entry: save_attribute(conn, product_id, name, entry),
+        searched=lambda ids: attribute_searches(conn, ids),
+        mark=lambda product_id, name, found: mark_attribute_search(conn, product_id, name, found),
+    )
 
     def count(profile, needs, excluded):
         return len(shortlist(conn, profile, needs, llm, excluded, screened).ranked)
 
     def picks(profile, needs, excluded, kept, first, language="English"):
-        short = shortlist(conn, profile, needs, llm, set(excluded) | {c.product_id for c in [*kept, *first]}, screened)
+        fill = None
+        if find_missing and llm is not None:
+            def fill(cards, conditions):
+                return fill_missing(cards, conditions, profile, llm, store)
+        short = shortlist(conn, profile, needs, llm, set(excluded) | {c.product_id for c in [*kept, *first]}, screened,
+                          fill)
         return make_picks(short, needs, k, refetch(profile), llm, language, kept=kept, first=first,
                           size_check=size_check)
 
@@ -61,7 +77,7 @@ def shared_deps(conn, llm, crawl, refetch, k: int = 5, size_check: bool = True, 
         page_texts=lambda ids: page_texts(conn, ids),
         query=lambda profile, needs: shortlist(conn, profile, needs, llm, (), screened).ranked,
         read_images=image_reader(llm),
-        search_text=hybrid_search(conn, BgeM3Embedder),
+        search_text=search_text,
         **rest,
     )
 

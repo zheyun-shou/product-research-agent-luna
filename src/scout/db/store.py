@@ -152,6 +152,31 @@ def listing_source_ids(conn: psycopg.Connection, source: str, listing_ids: list[
     return {row["id"]: row["source_id"] for row in rows}
 
 
+def save_attribute(conn: psycopg.Connection, product_id: int, name: str, entry: dict) -> None:
+    conn.execute("UPDATE products SET attributes = attributes || jsonb_build_object(%s::text, %s::jsonb) WHERE id = %s",
+                 (name, Jsonb(entry), product_id))
+    conn.commit()
+
+
+def mark_attribute_search(conn: psycopg.Connection, product_id: int, name: str, found: bool) -> None:
+    conn.execute(
+        """INSERT INTO attribute_searches (product_id, attribute, searched_at, found) VALUES (%s, %s, now(), %s)
+           ON CONFLICT (product_id, attribute) DO UPDATE SET searched_at = now(), found = EXCLUDED.found""",
+        (product_id, name, found))
+    conn.commit()
+
+
+def attribute_searches(conn: psycopg.Connection, product_ids: list[int]) -> set[tuple[int, str]]:
+    """The (product, attribute) pairs that were looked for after the newest text of the product was stored."""
+    rows = conn.execute(
+        """SELECT a.product_id, a.attribute FROM attribute_searches a
+           WHERE a.product_id = ANY(%s)
+             AND a.searched_at >= COALESCE((SELECT max(c.fetched_at) FROM chunks c JOIN listings l ON l.id = c.listing_id
+                                            WHERE l.product_id = a.product_id), '-infinity'::timestamptz)""",
+        (product_ids,)).fetchall()
+    return {(row["product_id"], row["attribute"]) for row in rows}
+
+
 def page_texts(conn: psycopg.Connection, listing_ids: list[int]) -> dict[int, dict]:
     rows = conn.execute("SELECT * FROM page_texts WHERE listing_id = ANY(%s)", (listing_ids,)).fetchall()
     return {row["listing_id"]: dict(row) for row in rows}

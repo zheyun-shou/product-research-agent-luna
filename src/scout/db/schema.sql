@@ -103,6 +103,16 @@ CREATE TABLE IF NOT EXISTS review_reads (
     complete     boolean NOT NULL
 );
 
+-- On-demand extraction (spec 4.4): which missing attributes of a product were looked for in its text, and when.
+-- A newer page of the product makes a new search possible.
+CREATE TABLE IF NOT EXISTS attribute_searches (
+    product_id   bigint NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    attribute    text NOT NULL,
+    searched_at  timestamptz NOT NULL,
+    found        boolean NOT NULL,
+    PRIMARY KEY (product_id, attribute)
+);
+
 -- Parts of the page texts for retrieval (spec 4.4 and 4.6). source is the page kind that the text came from.
 CREATE TABLE IF NOT EXISTS chunks (
     id           bigserial PRIMARY KEY,

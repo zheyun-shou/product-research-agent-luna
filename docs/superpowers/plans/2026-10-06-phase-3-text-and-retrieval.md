@@ -98,7 +98,17 @@ Plan as written before the build:
 - After the picks, the agent reads the positive and the critical review pages of the top 10, within the page limits. The reviews go into `page_texts` and into chunks. Each review keeps which filter found it.
 - Step that needs Zheyun: she logs in, and Claude saves one review page as a test fixture outside Git. The parser is written against that page.
 
-### Task 6: On-demand attribute extraction
+### Task 6: On-demand attribute extraction (built, real run waits)
+
+Built on 2026-10-06. On that day the stored fridges had few values for the conditions: height, width and depth on 7 of 22, total volume on 4, freezer volume on 2, noise on 3.
+
+- `scout.extract.ondemand.fill_missing` runs in the picks after the title screening. It takes the first 15 candidates that miss a value of a condition. For each candidate it retrieves 5 chunks for each missing attribute, from its own specs, description and image text (not the reviews). One worker call reads all the missing values of the candidate, each with `raw` and `chunk_id`.
+- Python keeps a value only when the chunk id was given, the raw text is in that chunk, and the raw text shows the value with a unit word (the same check as the page extraction). The value goes into `products.attributes` with `source_chunk_id`. Then the size plausibility check, the conditions and the rank run again, so a found value can remove a candidate.
+- The table `attribute_searches` records each search, also when it found nothing. The same text is not searched again. A newer page of the product makes a new search possible.
+- `scout eval-chat` does not use it (`find_missing=False`), so its runs stay comparable with the earlier runs.
+- Open: a real run on the stored fridges (at most 15 worker calls). It waits for the OK of Zheyun.
+
+Plan as written before the build:
 
 - When the shopper sets a condition on an attribute that a candidate does not have (for example "not taller than 180 cm"), the agent retrieves the chunks about that attribute for that candidate.
 - The worker extracts the value with `raw` and `source_chunk_id`. Python checks that `raw` is in that chunk. If not, the value is missing and the picks say so.

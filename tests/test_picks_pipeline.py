@@ -90,3 +90,26 @@ def test_without_the_page_text_there_is_no_size_check(db):
     result = make_picks(shortlist(db, FRIDGE, needs, None), needs, 2, refetch, llm, size_check=False)
     assert [role for role, _ in llm.requests] == ["chat"]
     assert "Size check skipped: the pages were not fetched again." in result.notes
+
+
+def test_found_values_are_checked_against_the_conditions(db):
+    stock(db)
+    needs = Needs(category="fridge", conditions=[{"attribute": "noise", "op": "<=", "value": 38}])
+    before = shortlist(db, FRIDGE, needs, None)
+    assert all(c.missing == ["noise"] for c in before.ranked)
+    loud = before.ranked[0].listing_id
+
+    def fill(cards, conditions):
+        for c in cards:
+            c.attributes = {**c.attributes, "noise": {"value": 45.0 if c.listing_id == loud else 36.0}}
+        return ["looked"]
+    after = shortlist(db, FRIDGE, needs, None, fill=fill)
+    assert [c.listing_id for c in after.ranked] == [c.listing_id for c in before.ranked if c.listing_id != loud]
+    assert after.ranked[0].missing == [] and after.dropped == before.dropped + 1 and "looked" in after.notes
+
+
+def test_no_fill_without_missing_values(db):
+    stock(db)
+    called = []
+    shortlist(db, FRIDGE, Needs(category="fridge"), None, fill=lambda cards, conds: called.append(1) or [])
+    assert called == []

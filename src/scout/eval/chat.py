@@ -80,7 +80,7 @@ def offline_deps(conn, llm, k: int = 5) -> tuple[Deps, list]:
         return CrawlReport(notes=["Evaluation run: no search on amazon.se, only the stored products."])
 
     deps = shared_deps(
-        conn, llm, crawl, lambda profile: stored_record, k, size_check=False,
+        conn, llm, crawl, lambda profile: stored_record, k, size_check=False, find_missing=False,
         eliminate=lambda thread, ids, reason: removed.setdefault(thread, set()).update(ids),
         eliminated=lambda thread: set(removed.get(thread, set())),
         restore=lambda thread, ids: removed.setdefault(thread, set()).difference_update(ids),

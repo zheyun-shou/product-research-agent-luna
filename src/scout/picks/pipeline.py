@@ -42,10 +42,13 @@ class PicksResult:
 
 
 def shortlist(conn: psycopg.Connection, profile: CategoryProfile, needs: Needs, llm,
-              excluded: Collection[int] = (), screened: dict[tuple[str, int], bool] | None = None) -> Shortlist:
-    """SQL filter, implausible sizes, the user's conditions, the rank, and the title screening.
+              excluded: Collection[int] = (), screened: dict[tuple[str, int], bool] | None = None,
+              fill: Callable[[list[Card], list], list[str]] | None = None) -> Shortlist:
+    """SQL filter, implausible sizes, the user's conditions, the rank, the title screening, and the on-demand
+    extraction of missing condition values.
 
     `screened` keeps the screening results (wanted kind, listing_id) -> keep, so a title is screened one time.
+    `fill(cards, conditions)` looks for missing values in the text of the cards and gives notes.
     """
     cards = [c for c in load_cards(conn, profile.category, needs.budget_sek()) if c.product_id not in excluded]
     size_notes = drop_implausible_sizes(cards)
@@ -69,6 +72,16 @@ def shortlist(conn: psycopg.Connection, profile: CategoryProfile, needs: Needs, 
             ranked = on_topic
         except (LLMUnavailable, LLMOutputError) as exc:
             notes.append(f"Title screening skipped: {exc}")
+    conditions = needs.rank_conditions()
+    if fill is not None and conditions and any(c.missing for c in ranked):
+        try:
+            notes += fill(ranked, conditions)
+        except (LLMUnavailable, LLMOutputError) as exc:
+            notes.append(f"Missing values were not looked for: {exc}")
+        size_notes.update(drop_implausible_sizes(ranked))  # found sizes get the same check
+        ranked, more = apply_conditions(ranked, conditions)  # a found value can fail the condition
+        dropped += more
+        ranked = rank(ranked)
     return Shortlist(ranked, dropped, notes, size_notes)
 
 
