@@ -9,6 +9,7 @@ from scout.extract.ondemand import KINDS, Store, fill_missing
 from scout.extract.page import enrich_record
 from scout.extract.screen import screen_titles
 from scout.picks.pipeline import make_picks, refetcher, shortlist
+from scout.picks.opinions import pick_opinions
 from scout.picks.rank import load_cards_by_ids
 from scout.profiles import load_profile, profile_names, save_draft
 from scout.reviews import read_reviews
@@ -38,11 +39,12 @@ class LazyBrowser:
 
 
 def shared_deps(conn, llm, crawl, refetch, k: int = 5, size_check: bool = True, find_missing: bool = True,
-                **rest) -> Deps:
+                write_opinions: bool = True, **rest) -> Deps:
     """The parts of the dependencies that scout chat and scout eval-chat share, so both run the same picks.
 
     `refetch(profile)` gives the function that rechecks one card. `rest` holds the elimination store, say and tracer.
-    Without `find_missing`, the picks do not look for missing condition values in the stored text.
+    Without `find_missing`, the picks do not look for missing condition values in the stored text. Without
+    `write_opinions`, no pros and complaints are written after the picks.
     """
     screened: dict[tuple[str, int], bool] = {}  # a title is screened one time in a session
     search_text = hybrid_search(conn, BgeM3Embedder)  # one instance, so bge-m3 loads one time
@@ -53,6 +55,14 @@ def shared_deps(conn, llm, crawl, refetch, k: int = 5, size_check: bool = True, 
         searched=lambda ids: attribute_searches(conn, ids),
         mark=lambda product_id, name, found: mark_attribute_search(conn, product_id, name, found),
     )
+
+    def opinions(category, picks, language):
+        cards = load_cards_by_ids(conn, [p["listing_id"] for p in picks])
+
+        def search_for(card):
+            scope = Scope(listing_ids=product_listing_ids(conn, card.product_id), kinds=["review"])
+            return lambda query, n: search_text(query, scope, n)
+        return pick_opinions(llm, cards, load_profile(category).complaint_types, search_for, language)
 
     def count(profile, needs, excluded):
         return len(shortlist(conn, profile, needs, llm, excluded, screened).ranked)
@@ -80,6 +90,7 @@ def shared_deps(conn, llm, crawl, refetch, k: int = 5, size_check: bool = True, 
         query=lambda profile, needs: shortlist(conn, profile, needs, llm, (), screened).ranked,
         read_images=image_reader(llm),
         search_text=search_text,
+        opinions=opinions if write_opinions and llm is not None else None,
         **rest,
     )
 

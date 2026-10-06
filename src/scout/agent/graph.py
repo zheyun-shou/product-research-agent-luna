@@ -47,6 +47,9 @@ class Deps:
     save_draft: Callable[[CategoryProfile], Any] | None = None  # without it, no new category is drafted
     # Reads the shop reviews of the picks after they are shown (phase 3 Task 5). Gives the report text, or "".
     read_reviews: Callable[[list[dict]], str] | None = None
+    # The pros and complaints of the picks from their reviews (phase 3 Task 7): (category, picks, language) ->
+    # (text, {listing_id: checked pros and complaints with their sources})
+    opinions: Callable[[str, list[dict], str], tuple[str, dict]] | None = None
 
 
 def crawl_text(report: CrawlReport, terms: str, page: int) -> str:
@@ -75,6 +78,10 @@ def thread_of(config) -> str:
 
 def action_of(state) -> str | None:
     return (state.get("route") or {}).get("action")
+
+
+def language_of(state) -> str:
+    return f"the language of this message from the shopper: {last_user_text(state)[:200]!r}"
 
 
 def build_graph(deps: Deps, checkpointer=None):
@@ -178,8 +185,8 @@ def build_graph(deps: Deps, checkpointer=None):
             first = deps.cards((state.get("route") or {}).get("restored", []))
         elif action == "recheck":
             first = marked_cards(shown)
-        language = f"the language of this message from the shopper: {last_user_text(state)[:200]!r}"
-        result = deps.picks(deps.load_profile(needs.category), needs, excluded, marked_cards(kept), first, language)
+        result = deps.picks(deps.load_profile(needs.category), needs, excluded, marked_cards(kept), first,
+                            language_of(state))
         if kept:  # the kept picks were not fetched again, so their notes come from the state
             result.card_notes = {**{p["listing_id"]: p["note"] for p in kept if p.get("note")}, **result.card_notes}
             result.notes += [p["note"] for p in kept if p.get("note")]
@@ -198,10 +205,21 @@ def build_graph(deps: Deps, checkpointer=None):
 
     def reviews_node(state, config):
         # Only after the picks of this turn: a failed step or "no other product" keeps the old picks
-        if deps.read_reviews is None or not (state.get("route") or {}).get("new_picks"):
+        if not (state.get("route") or {}).get("new_picks"):
             return {}
-        text = deps.read_reviews(state["picks"])
-        return {"messages": [assistant(text)]} if text else {}
+        messages, update = [], {}
+        if deps.read_reviews is not None:
+            text = deps.read_reviews(state["picks"])
+            if text:
+                messages.append(assistant(text))
+        if deps.opinions is not None:
+            try:
+                text, found = deps.opinions(needs_of(state).category, state["picks"], language_of(state))
+                messages.append(assistant(text))
+                update["picks"] = [{**p, "opinions": found.get(p["listing_id"])} for p in state["picks"]]
+            except LLMUnavailable as exc:
+                messages.append(assistant(f"No summary of the reviews now. {exc}"))
+        return {**update, "messages": messages} if messages else update
 
     def act_node(state, config):
         picks, removed = state.get("picks", []), list(state.get("removed", []))

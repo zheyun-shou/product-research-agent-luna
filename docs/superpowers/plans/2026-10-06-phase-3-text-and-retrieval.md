@@ -114,7 +114,19 @@ Plan as written before the build:
 - The worker extracts the value with `raw` and `source_chunk_id`. Python checks that `raw` is in that chunk. If not, the value is missing and the picks say so.
 - The value goes into `attributes` in the spec format.
 
-### Task 7: Pros and complaints in the picks
+### Task 7: Pros and complaints in the picks (built, real run waits)
+
+Built on 2026-10-06.
+
+- The step runs after the shop reviews of new picks are read, so the new reviews count. For each pick: one retrieval for each complaint type of the profile and one for the praise, 3 review chunks each, over all listings of the product.
+- One chat call for each pick writes one to three pros and complaints. They are qualitative ("most buyers", "a few"), never counts. Each cites the ids of its review chunks. Python checks that each statement cites at least one review, that the ids are reviews of this product, and that each number in the text is in a cited review. Up to 3 rounds with the problems.
+- The review pages over-represent critical reviews (one positive page, two critical pages). The prompt gives the overall rating and the number of ratings, and tells the model to judge with them in mind.
+- A pick with fewer than 3 review chunks gets "Too few reviews to summarize". The checked statements and their sources are kept with the picks in the state. An LLM outage keeps the picks and says that no summary was made.
+- `scout eval-chat` does not use it (`write_opinions=False`).
+- Open: a real run on picks with reviews (one chat call for each pick). It waits for the OK of Zheyun.
+
+Plan as written before the build:
+
 
 - For each pick, one retrieval for each complaint type of the profile, over its review chunks.
 - The chat model writes one or two pros and complaints for each pick. Each one cites chunk ids. Python checks that the ids exist and belong to that pick.

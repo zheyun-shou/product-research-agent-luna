@@ -267,3 +267,26 @@ def test_no_reviews_when_the_step_found_no_new_picks():
     state = run(graph, "t1", "Show me more")
     assert asked == [2]  # only after the first picks; "more" found no other product
     assert "No other stored product" in state["messages"][-1]["content"]
+
+
+def test_opinions_after_the_reviews_are_kept_with_the_picks():
+    world = World(stored=3)
+    deps = world.deps(FakeLLM([CategoryChoice(category="fridge"), ready()]))
+    deps.read_reviews = lambda picks: "Read the shop reviews."
+    deps.opinions = lambda category, picks, language: (
+        "What buyers say: quiet.", {picks[0]["listing_id"]: {"pros": [{"text": "quiet", "sources": [5]}]}})
+    state = run(build_graph(deps, InMemorySaver()), "t1", "A fridge with a freezer")
+    assert [m["content"] for m in state["messages"][-2:]] == ["Read the shop reviews.", "What buyers say: quiet."]
+    assert state["picks"][0]["opinions"]["pros"][0]["sources"] == [5] and state["picks"][1]["opinions"] is None
+
+
+def test_an_outage_in_the_opinions_keeps_the_picks():
+    world = World(stored=3)
+    deps = world.deps(FakeLLM([CategoryChoice(category="fridge"), ready()]))
+
+    def down(category, picks, language):
+        raise QuotaExhausted("daily quota used up")
+    deps.opinions = down
+    state = run(build_graph(deps, InMemorySaver()), "t1", "A fridge with a freezer")
+    assert state["messages"][-1]["content"].startswith("No summary of the reviews now.")
+    assert [p["listing_id"] for p in state["picks"]] == [1, 2]
