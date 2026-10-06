@@ -69,7 +69,8 @@ what to ask the shopper.
 - kinds: two to six kinds that shoppers choose between. search_terms_sv are the Swedish words that a shopper
   types on amazon.se for that kind.
 - attributes: four to eight facts that product pages state and shoppers compare. type is number, enum, boolean
-  or text. A number has a unit. An enum has its values. kind is hard when a wrong value means that the product
+  or text. A number has a unit, and plausible: [min, max], the range that a real product of any kind of the
+  category can have (wide, it only catches wrong seller data). An enum has its values. kind is hard when a wrong value means that the product
   cannot be used (for example a size that must fit), else soft. Never use price, rating or reviews: the system
   has them already.
 - questions_for_user: three to five short questions in English that help choose.

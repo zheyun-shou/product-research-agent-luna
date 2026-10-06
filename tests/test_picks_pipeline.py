@@ -113,3 +113,12 @@ def test_no_fill_without_missing_values(db):
     called = []
     shortlist(db, FRIDGE, Needs(category="fridge"), None, fill=lambda cards, conds: called.append(1) or [])
     assert called == []
+
+
+def test_stored_values_outside_the_range_are_ignored(db):
+    stock(db)
+    db.execute("""UPDATE products SET attributes = attributes || '{"height": {"value": 1.0, "unit": "cm"}}'::jsonb""")
+    db.commit()
+    short = shortlist(db, FRIDGE, Needs(category="fridge"), None)
+    assert all("height" not in c.attributes for c in short.ranked)
+    assert all("height 1 cm cannot be right" in short.size_notes[c.listing_id] for c in short.ranked)

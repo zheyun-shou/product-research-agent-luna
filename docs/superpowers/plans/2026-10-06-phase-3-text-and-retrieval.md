@@ -98,7 +98,7 @@ Plan as written before the build:
 - After the picks, the agent reads the positive and the critical review pages of the top 10, within the page limits. The reviews go into `page_texts` and into chunks. Each review keeps which filter found it.
 - Step that needs Zheyun: she logs in, and Claude saves one review page as a test fixture outside Git. The parser is written against that page.
 
-### Task 6: On-demand attribute extraction (built, real run waits)
+### Task 6: On-demand attribute extraction (done)
 
 Built on 2026-10-06. On that day the stored fridges had few values for the conditions: height, width and depth on 7 of 22, total volume on 4, freezer volume on 2, noise on 3.
 
@@ -106,7 +106,7 @@ Built on 2026-10-06. On that day the stored fridges had few values for the condi
 - Python keeps a value only when the chunk id was given, the raw text is in that chunk, and the raw text shows the value with a unit word (the same check as the page extraction). The value goes into `products.attributes` with `source_chunk_id`, and also with the listing and the ref of the chunk, because chunk ids change when a newer page is stored. Then the size plausibility check, the conditions and the rank run again, so a found value can remove a candidate.
 - The table `attribute_searches` records each search with an md5 hash of the text that it read, also when it found nothing. The same text is not searched again. A recheck of the same page and new review chunks do not change the hash. When the worker is not available, the values found before stay, and the note says that the search stopped early. An error of the text search does not stop the picks.
 - `scout eval-chat` does not use it (`find_missing=False`), so its runs stay comparable with the earlier runs.
-- Open: a real run on the stored fridges (at most 15 worker calls). It waits for the OK of Zheyun.
+- Real run (2026-10-06, condition height up to 180 cm, Gemma 4 26B as the worker): 6 products searched, 3 values found, all raw texts in the cited chunks. Two were right (180 cm and 54 cm). The third was 1 cm, from "10D x 10B x 10H millimeter" on a 173 l Bomann: the page really says it, so the raw-text check passed, and the volume check needs all four values. Thus number attributes of a profile now have `plausible: [min, max]` (fridge height 15 to 250 cm). On-demand and page extraction leave out values outside it, and the shortlist ignores stored ones with a note. The second run left out the 1 cm value and found 2 more heights (40.5 cm, 83 cm). The two runs cost 0.0015 USD (15 worker calls).
 
 Plan as written before the build:
 

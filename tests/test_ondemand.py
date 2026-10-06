@@ -121,3 +121,21 @@ def test_an_outage_keeps_the_values_found_before_it():
     assert cards[0].attributes["height"]["value"] == 178.0 and "height" not in cards[1].attributes
     assert "found 1. Stopped early" in notes[0]
     assert (2, "height", False) not in fake.marked  # searched again next time
+
+
+def test_a_value_outside_the_plausible_range_is_left_out():
+    fake = FakeStore(chunks={1: [Hit(11, "Produktmått: 10D x 10B x 10H millimeter")]})
+    cards = [card(1)]
+    llm = FakeLLM([found({"name": "height", "value": "1", "raw": "10H millimeter", "chunk_id": 11})])
+    notes = fill_missing(cards, HEIGHT, FRIDGE, llm, fake.store())
+    assert "height" not in cards[0].attributes and fake.saved == [] and fake.marked == [(1, "height", False)]
+    assert notes[1] == "Left out because a real product cannot have them: Fridge 1: height 1 cm."
+
+
+def test_plausible_range_of_a_profile():
+    import pytest as _pytest
+    from scout.profiles import ProfileAttribute
+    height = FRIDGE.attribute("height")
+    assert height.is_plausible(178) and not height.is_plausible(1.0) and height.is_plausible(None)
+    with _pytest.raises(ValueError):
+        ProfileAttribute(name="x", label="X", type="number", kind="soft", plausible=[5, 1])

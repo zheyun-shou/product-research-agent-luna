@@ -51,7 +51,9 @@ def shortlist(conn: psycopg.Connection, profile: CategoryProfile, needs: Needs, 
     `fill(cards, conditions)` looks for missing values in the text of the cards and gives notes.
     """
     cards = [c for c in load_cards(conn, profile.category, needs.budget_sek()) if c.product_id not in excluded]
-    size_notes = drop_implausible_sizes(cards)
+    size_notes = drop_out_of_range(cards, profile)
+    for listing_id, note in drop_implausible_sizes(cards).items():
+        size_notes[listing_id] = f"{size_notes[listing_id]} {note}" if listing_id in size_notes else note
     cards, dropped = apply_conditions(cards, needs.rank_conditions())
     ranked = rank(cards)
     notes: list[str] = []
@@ -83,6 +85,20 @@ def shortlist(conn: psycopg.Connection, profile: CategoryProfile, needs: Needs, 
         dropped += more
         ranked = rank(ranked)
     return Shortlist(ranked, dropped, notes, size_notes)
+
+
+def drop_out_of_range(cards: list[Card], profile: CategoryProfile) -> dict[int, str]:
+    """Ignore stored values that a real product of the category cannot have (the plausible range of the profile)."""
+    notes = {}
+    for card in cards:
+        bad = [(attr, card.attributes[attr.name]["value"]) for attr in profile.attributes
+               if attr.name in card.attributes and not attr.is_plausible((card.attributes[attr.name] or {}).get("value"))]
+        if bad:
+            card.attributes = {k: v for k, v in card.attributes.items() if k not in {a.name for a, _ in bad}}
+            notes[card.listing_id] = (f"{card.title}: " + ", ".join(f"{a.label.lower()} {v:g} {a.unit or ''}".rstrip()
+                                                                    for a, v in bad)
+                                      + " cannot be right for this category, so it was ignored.")
+    return notes
 
 
 def make_picks(short: Shortlist, needs: Needs, k: int, refetch: Refetch, llm, language: str = "English",
