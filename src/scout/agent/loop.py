@@ -30,7 +30,7 @@ SEARCH_DETAILS = 8  # new product pages for each search_shop call
 MAX_READ_CHARS = 5_000  # of the text of one product in read_product
 # Three products must fit in one report: each text is cut at MAX_READ_CHARS, the title and the question at 200
 REPORT_LIMITS = {"read_product": 3 * (MAX_READ_CHARS + 300) + 500,
-                 "search_web": 12_000}  # 5 pages with up to 6 quotes for each of up to 5 products
+                 "search_web": 30_000}  # 20 pages with their quotes
 
 SYSTEM = """You are product-scout, a shopping research assistant. You help the shopper choose products. The shopper
 is in Sweden. You find candidates in shops, check them against the shopper's needs, read what buyers say, and give a

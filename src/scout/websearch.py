@@ -19,7 +19,7 @@ from scout.llm.client import LLMOutputError, LLMUnavailable
 from scout.text.chunks import Chunk
 
 API = "https://api.tavily.com/search"
-RESULTS = 5  # pages for each search
+RESULTS = 20  # pages for each search (Zheyun, 2026-10-06); one credit for any number
 PAGE_CHARS = 15_000  # of one page for the worker
 STORED_CHARS = 30_000  # of one page in the stored results
 READ_WORKERS = 4
