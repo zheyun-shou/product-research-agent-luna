@@ -262,3 +262,16 @@ def test_a_search_reads_at_most_8_product_pages():
     llm = FakeLLM([[NEEDS, SearchShop(words="kylskåp")], "Ok."])
     run(build_agent_graph(shop.deps(llm), InMemorySaver()), "A fridge at most 180 cm")
     assert shop.max_details == 8
+
+
+def test_a_price_claim_needs_the_card_even_when_the_page_shows_the_number():
+    shop = page_shop()
+    shop.page_rows[1]["description"] = "Nu 299 kr. Volym 100 liter."
+    wrong = ShowPicks(picks=[Pick(id=1, text="Costs 299 SEK, 100 liter.",
+                                  claims=[Claim(id=1, field="price", value="299")])])
+    llm = FakeLLM([[NEEDS, SearchShop(words="kylskåp")], [wrong], [ShowPicks(picks=[Pick(id=1, text="Fits.")])]])
+    run(build_agent_graph(deps_with_pages(shop, llm), InMemorySaver()), "A fridge at most 180 cm")
+    retry = llm.requests[2][1]
+    assert "id 1: price is 5000, not 299" in retry and "page text does not show" not in retry
+    assert "the number 299 has no source" in retry  # "299 kr" in the page text is not a source
+    assert "the number 100 has no source" not in retry  # 100 liter is in the page text

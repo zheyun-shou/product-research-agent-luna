@@ -1,4 +1,5 @@
 """One calling interface for OpenAI-compatible endpoints (Gemini, Groq) with structured output and tool calls."""
+import contextvars
 import json
 import os
 import re
@@ -45,7 +46,8 @@ def within(seconds: float, fn):
             box["value"] = fn()
         except BaseException as exc:  # given to the caller
             box["error"] = exc
-    worker = threading.Thread(target=run, daemon=True)
+    context = contextvars.copy_context()  # the trace span of the caller
+    worker = threading.Thread(target=context.run, args=(run,), daemon=True)
     worker.start()
     worker.join(seconds)
     if worker.is_alive():
@@ -133,6 +135,7 @@ class LLM:
     TIMEOUT = 120  # seconds without data for one request
     # Seconds for one call in all, by role. The chat model reads a long context and can think first.
     DEADLINES = {"chat": 180.0, "worker": 60.0, "judge": 120.0}
+    TIMEOUT_ATTEMPTS = 2  # a call past its deadline is tried one more time, then LLMTimeout
 
     def __init__(self, config: LLMConfig, clients: dict[str, Any] | None = None, sleep=time.sleep,
                  clock=time.monotonic, tracer=None):
@@ -234,7 +237,9 @@ class LLM:
             except LLMTimeout:
                 self.calls.append(CallRecord(role, role_cfg.model, 0, 0, self._clock() - started, schema.__name__,
                                              valid=False, output="timed out"))
-                raise
+                if attempt >= self.TIMEOUT_ATTEMPTS:
+                    raise
+                continue
             except RateLimitError as exc:
                 # Gemini says PerDay, Groq says "per day".
                 if "perday" in str(exc).lower().replace(" ", ""):
@@ -310,7 +315,9 @@ class LLM:
             except LLMTimeout:
                 self.calls.append(CallRecord(role, role_cfg.model, 0, 0, self._clock() - started, name,
                                              valid=False, output="timed out"))
-                raise
+                if attempt >= self.TIMEOUT_ATTEMPTS:
+                    raise
+                continue
             except RateLimitError as exc:
                 if "perday" in str(exc).lower().replace(" ", ""):
                     raise QuotaExhausted(

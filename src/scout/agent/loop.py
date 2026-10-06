@@ -1,5 +1,6 @@
 """The agent loop (design 2026-10-06-agent-loop-design.md): the chat model decides and calls tools; Python runs the
 tools, keeps the fetching polite, and checks the facts of the final reply."""
+import re
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, Callable, Literal
@@ -24,7 +25,8 @@ MAX_GATE_ROUNDS = 3
 MAX_REPORT_CHARS = 6_000  # of one tool report in the prompt
 SEARCH_DETAILS = 8  # new product pages for each search_shop call
 MAX_READ_CHARS = 5_000  # of the text of one product in read_product
-REPORT_LIMITS = {"read_product": 3 * MAX_READ_CHARS + 1_000}  # three products must fit in one report
+# Three products must fit in one report: each text is cut at MAX_READ_CHARS, the title and the question at 200
+REPORT_LIMITS = {"read_product": 3 * (MAX_READ_CHARS + 300) + 500}
 
 SYSTEM = """You are product-scout, a shopping research assistant. You help the shopper choose products. The shopper
 is in Sweden. You find candidates in shops, check them against the shopper's needs, read what buyers say, and give a
@@ -259,19 +261,25 @@ def turn_numbers(state: dict) -> set[Decimal]:
     return set().union(*(numbers_in(r) for r in state.get("turn_log") or []), set())
 
 
+# Prices in the page text, for example "Nu 299 kr" in a description: an old price is not a source
+PAGE_PRICE = re.compile(r"\d[\d\s.,]*\s*(?:kr\b|sek\b|:-)", re.IGNORECASE)
+CARD_ONLY = {"price", "rating", "review_count", "in_stock"}  # the live facts come only from the card
+
+
 def page_numbers(row: dict | None) -> set[Decimal]:
-    """The numbers of the stored page text of one product: specifications, bullets and description. Not the reviews,
-    because a buyer's number is not a fact of the product."""
+    """The numbers of the stored page text of one product: specifications, bullets and description, without the
+    prices. Not the reviews, because a buyer's number is not a fact of the product."""
     if not row:
         return set()
     text = "\n".join([*(f"{k}: {v}" for k, v in (row.get("specs") or {}).items()), *(row.get("bullets") or []),
                       row.get("description") or ""])
-    return numbers_in(text)
+    return numbers_in(PAGE_PRICE.sub(" ", text))
 
 
 def check_claims(claims: list[Claim], cards: dict[int, Card],
                  pages: dict[int, set[Decimal]] | None = None) -> tuple[list[str], set[Decimal]]:
-    """A claim passes when the card has the value, or when the page text of the product shows its number."""
+    """A claim passes when the card has the value, or (not for the price, the rating, the review count and the
+    stock) when the page text of the product shows its number."""
     errors, numbers, pages = [], set(), pages or {}
     for claim in claims:
         card = cards.get(claim.id)
@@ -279,7 +287,7 @@ def check_claims(claims: list[Claim], cards: dict[int, Card],
             errors.append(f"there is no product with id {claim.id}")
             continue
         shown = numbers_in(claim.value)
-        if shown and shown <= pages.get(claim.id, set()):
+        if claim.field not in CARD_ONLY and shown and shown <= pages.get(claim.id, set()):
             numbers |= shown
             continue
         if claim.field == "page":
@@ -287,7 +295,8 @@ def check_claims(claims: list[Claim], cards: dict[int, Card],
             continue
         error, number = check_claim(card_facts(card), claim.field, claim.value)
         if error:
-            errors.append(f"id {claim.id}: {error}, and the page text does not show it")
+            errors.append(f"id {claim.id}: {error}" + ("" if claim.field in CARD_ONLY
+                                                         else ", and the page text does not show it"))
         elif number is not None:
             numbers.add(number)
     return errors, numbers
@@ -466,9 +475,9 @@ class Toolbox:
             text = product_text(texts[c.listing_id]) if c.listing_id in texts else "no page text is stored."
             if len(text) > MAX_READ_CHARS:
                 text = text[:MAX_READ_CHARS] + " [cut here; search_text finds a detail in the rest]"
-            parts.append(f"id {c.listing_id}: {c.title}\n{text}")
+            parts.append(f"id {c.listing_id}: {c.title[:200]}\n{text}")
         self.used["read"] = sorted(read | {c.listing_id for c in cards})
-        return f"({call.question})\n\n" + "\n\n".join(parts)
+        return f"({call.question[:200]})\n\n" + "\n\n".join(parts)
 
     def search_text(self, call: SearchText) -> str:
         from scout.text.retrieve import Scope

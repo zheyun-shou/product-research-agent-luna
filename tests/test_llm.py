@@ -258,32 +258,38 @@ def test_fallback_provider_must_exist():
             "worker": {"provider": "gemini", "model": "m", "rpm": 1}}})
 
 
-def test_a_call_past_its_deadline_raises_a_timeout_and_keeps_the_main_model():
+def slow_llm(slow_requests):
     import time as real_time
-
-    from scout.llm.client import LLMTimeout
 
     class Slow(FakeCompletions):
         def create(self, **kwargs):
-            if not self.requests:
-                self.requests.append(kwargs)
-                real_time.sleep(1.0)  # longer than the deadline below
-            return super().create(**kwargs)
+            number = len(self.requests)
+            self.requests.append(kwargs)
+            if number < slow_requests:
+                real_time.sleep(0.5)  # longer than the deadline below
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content='{"answer": "ok"}'))],
+                                   usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5))
 
     config = FALLBACK_CONFIG.model_copy(deep=True)
     config.roles["chat"].deadline = 0.1
-    main = FakeOpenAI(['{"answer": "late"}', '{"answer": "ok"}'])
-    main.chat.completions = Slow(['{"answer": "late"}', '{"answer": "ok"}'])
-    backup = FakeOpenAI([])
-    clock = FakeClock()
+    main, backup, clock = FakeOpenAI([]), FakeOpenAI([]), FakeClock()
+    main.chat.completions = Slow([])
     llm = LLM(config, clients={"gemini": main, "groq": backup}, sleep=clock.sleep, clock=clock.clock)
+    return llm, main, backup
+
+
+def test_a_call_past_its_deadline_is_tried_once_more():
+    llm, main, backup = slow_llm(1)
+    assert llm.structured("chat", "sys", "user", Answer).answer == "ok"
+    assert [c.output for c in llm.calls][0] == "timed out" and len(main.chat.completions.requests) == 2
+
+
+def test_two_calls_past_the_deadline_raise_a_timeout_and_keep_the_main_model():
+    from scout.llm.client import LLMTimeout
+    llm, main, backup = slow_llm(2)
     with pytest.raises(LLMTimeout):
         llm.structured("chat", "sys", "user", Answer)
-    assert llm.calls[-1].output == "timed out" and not llm.calls[-1].valid
-    assert "chat" not in llm.fallbacks  # one slow call does not move the role
-    real_time.sleep(1.0)  # the late call ends and takes its reply
-    assert llm.structured("chat", "sys", "user", Answer).answer == "ok"
-    assert backup.chat.completions.requests == []
+    assert "chat" not in llm.fallbacks and backup.chat.completions.requests == []
 
 
 def test_each_role_has_a_deadline():

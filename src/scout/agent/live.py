@@ -4,7 +4,7 @@ from scout.agent.lookup import image_reader
 from scout.crawl import CrawlReport, read_details
 from scout.crawl import crawl as run_crawl
 from scout.db.store import (add_eliminations, attribute_searches, complete_review_reads, eliminated_products,
-                            known_source_ids, listing_source_ids,
+                            known_source_ids, listing_source_ids, refresh_listings,
                             mark_attribute_search, page_texts, product_listing_ids, restore_products,
                             save_attribute)
 from scout.extract.ondemand import KINDS, Store, fill_missing
@@ -164,6 +164,7 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer):
         key = (profile.category, words, page, budget, repr(needs.wanted(profile)))
         if unread.get(key):
             known = known_source_ids(conn, SOURCE, [c.source_id for c in unread[key]])
+            refresh_listings(conn, [c for c in unread[key] if c.source_id in known])
             todo = [c for c in unread[key] if c.source_id not in known]
             report = read_details(conn, adapter, profile.category, todo[:max_details], CrawlReport(),
                                   on_problem=on_problem, enrich=enrich)
@@ -178,6 +179,8 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer):
                                screen=lambda cands: screen_titles(cands, profile, llm, needs.wanted(profile)))
             unread[key] = report.unread
             text = crawl_text(report, words, page)
+        if report.skipped:
+            text += f"\n{len(report.skipped)} product pages did not load: " + ", ".join(report.skipped)
         if unread[key]:
             text += (f"\n{len(unread[key])} more results fit and are not read yet. Call search_shop with the same "
                      "words and page to read the next ones.")

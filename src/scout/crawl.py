@@ -1,4 +1,6 @@
 """One crawl: search pages, then detail pages, each checked, parsed and stored."""
+import contextvars
+import threading
 from collections import Counter
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -147,6 +149,18 @@ def read_details(conn: psycopg.Connection, adapter, category: str, candidates: l
     in this thread."""
     pending: list[tuple[Future, object, str]] = []
     state = {"enrich": enrich}
+    stopped = threading.Event()  # the LLM is unavailable: the extractions not started yet do not call it
+
+    def extract(rec):
+        if stopped.is_set():
+            return rec, False
+        try:
+            return enrich(rec)
+        except LLMTimeout:
+            raise
+        except LLMUnavailable:
+            stopped.set()
+            raise
 
     def store(rec, url: str, future: Future | None) -> None:
         if future is not None:
@@ -161,6 +175,9 @@ def read_details(conn: psycopg.Connection, adapter, category: str, candidates: l
                 state["enrich"] = None
             except LLMOutputError as exc:
                 report.notes.append(f"{url}: {exc}. Stored without LLM extraction.")
+            except Exception as exc:  # an error in one extraction must not lose the page
+                report.notes.append(f"{url}: extraction failed ({type(exc).__name__}: {exc}). "
+                                    "Stored without LLM extraction.")
         save_record(conn, rec, category)
         report.saved += 1
         report.missing.update(rec.missing_core())
@@ -184,12 +201,13 @@ def read_details(conn: psycopg.Connection, adapter, category: str, candidates: l
                 report.skipped.append(cand.url)
                 report.notes.append(str(exc))
                 continue
-            if state["enrich"] is None:
+            if state["enrich"] is None or stopped.is_set():
                 store(rec, cand.url, None)
             else:
                 stored = stored_attributes(conn, rec.source, rec.source_id)
                 rec = rec.model_copy(update={"attributes": {**stored, **rec.attributes}})
-                pending.append((pool.submit(state["enrich"], rec), rec, cand.url))
+                # The worker thread keeps the trace span of this search
+                pending.append((pool.submit(contextvars.copy_context().run, extract, rec), rec, cand.url))
             store_done(wait=False)
         store_done(wait=True)
     return report

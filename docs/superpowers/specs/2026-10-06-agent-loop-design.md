@@ -177,11 +177,11 @@ One real conversation: "a fridge with a freezer, at most 180 cm high, budget 600
 
 Changes after this turn:
 
-- Each model call has a deadline in all: 180 seconds for chat, 60 for worker, 120 for judge (`deadline` in models.yaml can change it). A late call raises `LLMTimeout`. It does not move the role to its fallback, and the crawl stores that page without extraction.
+- Each model call has a deadline in all: 180 seconds for chat, 60 for worker, 120 for judge (`deadline` in models.yaml can change it). A late call is tried one more time, then it raises `LLMTimeout`. It does not move the role to its fallback, and the crawl stores that page without extraction. The late request cannot be stopped; its thread ends by itself.
 - The crawl extracts pages in 4 worker threads while the browser loads the next pages.
 - `search_shop` opens up to 8 new product pages. The sort orders take turns in the list, so the best rated and the best selling results are in the first 8. The rest stay for the next call with the same words.
 - The polite gap between pages is now 2.5 to 3.5 seconds (Zheyun, 2026-10-06), not 4 to 9.
-- A claim can cite the page text of its product (field `page`), and a number of the page text is a source for the text of that pick.
+- A claim can cite the page text of its product (field `page`), and a number of the page text is a source for the text of that pick. Prices in the page text ("299 kr") are not a source, and the price, the rating, the review count and the stock come only from the card.
 - `read_product` cuts each product at 5000 characters, and its report keeps all three. A product read in this turn is not given again.
 - The system prompt tells Luna to look at the stored products first.
 - The limit of 30 product pages for each turn stays.
