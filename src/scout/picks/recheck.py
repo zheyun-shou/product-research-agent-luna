@@ -3,7 +3,7 @@ from dataclasses import replace
 from decimal import Decimal
 from typing import Callable, Sequence
 
-from scout.picks.rank import Card, Condition, apply_conditions, drop_implausible_sizes
+from scout.picks.rank import Card, Condition, apply_conditions
 from scout.sources.base import ProductRecord
 
 
@@ -34,7 +34,6 @@ def recheck_picks(
         fresh = replace(card, price=rec.price, currency=rec.currency, in_stock=rec.in_stock,
                         fetched_at=rec.fetched_at, attributes={**card.attributes, **rec.attributes})
         # The page can show sizes that the stored card did not have, so check the conditions again.
-        drop_implausible_sizes([fresh])
         kept, failed = apply_conditions([fresh], list(conditions))
         if failed:
             wanted = ", ".join(f"{c.attribute}{c.op}{c.value:g}" for c in conditions)

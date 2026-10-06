@@ -105,25 +105,6 @@ def rank(cards: list[Card]) -> list[Card]:
     return ranked
 
 
-def drop_implausible_sizes(cards: list[Card]) -> dict[int, str]:
-    """Ignore height, width and depth when the outer box cannot hold the stated volume.
-
-    Sellers sometimes give sizes like "10D x 10B x 10H millimeter". The raw-text check
-    cannot catch this, because the page really says it.
-    """
-    notes = {}
-    for card in cards:
-        values = {name: (card.attributes.get(name) or {}).get("value") for name in (*SIZES, "total_volume")}
-        if any(not isinstance(v, (int, float)) for v in values.values()):
-            continue
-        box_litres = values["height"] * values["width"] * values["depth"] / 1000
-        if box_litres < values["total_volume"]:
-            card.attributes = {k: v for k, v in card.attributes.items() if k not in SIZES}
-            notes[card.listing_id] = (f"{card.title}: the sizes on the page cannot hold "
-                                      f"{values['total_volume']} l, so they were ignored.")
-    return notes
-
-
 CARDS_BY_ID_SQL = """
 SELECT DISTINCT ON (l.id) l.id AS listing_id, p.id AS product_id, COALESCE(l.title, p.name) AS title, p.brand,
        p.model, l.url, v.price, v.currency, v.in_stock, l.rating, l.review_count, p.attributes, l.fetched_at

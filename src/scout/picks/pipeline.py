@@ -10,7 +10,7 @@ from scout.extract.doubt import check_sizes
 from scout.extract.screen import screen_titles
 from scout.llm.client import LLMOutputError, LLMUnavailable
 from scout.needs import Needs
-from scout.picks.rank import Card, apply_conditions, drop_implausible_sizes, load_cards, rank
+from scout.picks.rank import Card, apply_conditions, load_cards, rank
 from scout.picks.recheck import recheck_picks
 from scout.picks.write import PicksText, format_picks, write_picks
 from scout.profiles import CategoryProfile
@@ -24,7 +24,6 @@ class Shortlist:
     ranked: list[Card]
     dropped: int
     notes: list[str] = field(default_factory=list)
-    size_notes: dict[int, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -44,14 +43,13 @@ class PicksResult:
 def shortlist(conn: psycopg.Connection, profile: CategoryProfile, needs: Needs, llm,
               excluded: Collection[int] = (), screened: dict[tuple[str, int], bool] | None = None,
               fill: Callable[[list[Card], list], list[str]] | None = None) -> Shortlist:
-    """SQL filter, implausible sizes, the user's conditions, the rank, the title screening, and the on-demand
+    """SQL filter, the user's conditions, the rank, the title screening, and the on-demand
     extraction of missing condition values.
 
     `screened` keeps the screening results (wanted kind, listing_id) -> keep, so a title is screened one time.
     `fill(cards, conditions)` looks for missing values in the text of the cards and gives notes.
     """
     cards = [c for c in load_cards(conn, profile.category, needs.budget_sek()) if c.product_id not in excluded]
-    size_notes = drop_implausible_sizes(cards)
     cards, dropped = apply_conditions(cards, needs.rank_conditions())
     ranked = rank(cards)
     notes: list[str] = []
@@ -78,11 +76,10 @@ def shortlist(conn: psycopg.Connection, profile: CategoryProfile, needs: Needs, 
             notes += fill(ranked, conditions)
         except Exception as exc:  # the text search (bge-m3, the index) must not stop the picks
             notes.append(f"Missing values were not looked for ({type(exc).__name__}: {exc}).")
-        size_notes.update(drop_implausible_sizes(ranked))  # found sizes get the same check
         ranked, more = apply_conditions(ranked, conditions)  # a found value can fail the condition
         dropped += more
         ranked = rank(ranked)
-    return Shortlist(ranked, dropped, notes, size_notes)
+    return Shortlist(ranked, dropped, notes)
 
 
 def make_picks(short: Shortlist, needs: Needs, k: int, refetch: Refetch, llm, language: str = "English",
@@ -107,7 +104,7 @@ def make_picks(short: Shortlist, needs: Needs, k: int, refetch: Refetch, llm, la
     new, recheck_notes = recheck_picks(ranked, k - len(kept), refetch_and_keep, needs.budget_sek(),
                                        needs.rank_conditions())
     chosen = [*kept, *new]
-    card_notes = {c.listing_id: short.size_notes[c.listing_id] for c in chosen if c.listing_id in short.size_notes}
+    card_notes: dict[int, str] = {}
     notes = short.notes + recheck_notes
     texts, errors = None, []
     if chosen and llm is not None:

@@ -4,7 +4,7 @@ from decimal import Decimal
 import pytest
 
 from scout.picks.rank import (
-    Card, Condition, apply_conditions, bayesian, drop_implausible_sizes, parse_condition, rank,
+    Card, Condition, apply_conditions, bayesian, parse_condition, rank,
 )
 
 NOW = datetime(2026, 10, 3, 10, 15, tzinfo=timezone.utc)
@@ -50,13 +50,3 @@ def test_rank_keeps_one_card_per_product():
     a, b, c = card(1, 4.0, 10), card(2, 4.6, 300), card(3, 4.5, 200)
     b.product_id = 1
     assert [x.listing_id for x in rank([a, b, c])] == [2, 3]
-
-
-def test_sizes_too_small_for_the_volume_are_ignored():
-    # A seller wrote "10D x 10B x 10H millimeter" for a 173 l fridge.
-    junk = card(1, height=1.0, width=1.0, depth=1.0, total_volume=173.0)
-    real = card(2, height=143.0, width=55.0, depth=55.0, total_volume=204.0)
-    notes = drop_implausible_sizes([junk, real])
-    assert "height" not in junk.attributes and junk.attributes["total_volume"]["value"] == 173.0
-    assert real.attributes["height"]["value"] == 143.0
-    assert list(notes) == [1] and "173" in notes[1]
