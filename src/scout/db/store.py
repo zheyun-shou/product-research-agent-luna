@@ -158,23 +158,36 @@ def save_attribute(conn: psycopg.Connection, product_id: int, name: str, entry: 
     conn.commit()
 
 
+# A hash of the product text that on-demand extraction reads. A recheck of the same page gives the same hash, and
+# new review chunks do not change it. The kinds are those of scout.extract.ondemand.KINDS.
+_TEXT_HASH = """
+SELECT COALESCE(md5(string_agg(c.text, '|' ORDER BY c.listing_id, c.ref)), '') FROM chunks c
+JOIN listings l ON l.id = c.listing_id
+WHERE l.product_id = {product} AND c.kind IN ('specs', 'description', 'image_text')"""
+
+
 def mark_attribute_search(conn: psycopg.Connection, product_id: int, name: str, found: bool) -> None:
     conn.execute(
-        """INSERT INTO attribute_searches (product_id, attribute, searched_at, found) VALUES (%s, %s, now(), %s)
-           ON CONFLICT (product_id, attribute) DO UPDATE SET searched_at = now(), found = EXCLUDED.found""",
-        (product_id, name, found))
+        f"""INSERT INTO attribute_searches (product_id, attribute, searched_at, found, text_hash)
+            VALUES (%(p)s, %(a)s, now(), %(f)s, ({_TEXT_HASH.format(product="%(p)s")}))
+            ON CONFLICT (product_id, attribute) DO UPDATE SET searched_at = now(), found = EXCLUDED.found,
+                text_hash = EXCLUDED.text_hash""",
+        {"p": product_id, "a": name, "f": found})
     conn.commit()
 
 
 def attribute_searches(conn: psycopg.Connection, product_ids: list[int]) -> set[tuple[int, str]]:
-    """The (product, attribute) pairs that were looked for after the newest text of the product was stored."""
+    """The (product, attribute) pairs that were looked for in the text that the product has now."""
     rows = conn.execute(
-        """SELECT a.product_id, a.attribute FROM attribute_searches a
-           WHERE a.product_id = ANY(%s)
-             AND a.searched_at >= COALESCE((SELECT max(c.fetched_at) FROM chunks c JOIN listings l ON l.id = c.listing_id
-                                            WHERE l.product_id = a.product_id), '-infinity'::timestamptz)""",
+        f"""SELECT a.product_id, a.attribute FROM attribute_searches a
+            WHERE a.product_id = ANY(%s) AND a.text_hash = ({_TEXT_HASH.format(product="a.product_id")})""",
         (product_ids,)).fetchall()
     return {(row["product_id"], row["attribute"]) for row in rows}
+
+
+def product_listing_ids(conn: psycopg.Connection, product_id: int) -> list[int]:
+    return [row["id"] for row in conn.execute("SELECT id FROM listings WHERE product_id = %s ORDER BY id",
+                                              (product_id,)).fetchall()]
 
 
 def page_texts(conn: psycopg.Connection, listing_ids: list[int]) -> dict[int, dict]:

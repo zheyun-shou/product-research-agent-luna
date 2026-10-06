@@ -76,8 +76,8 @@ def shortlist(conn: psycopg.Connection, profile: CategoryProfile, needs: Needs, 
     if fill is not None and conditions and any(c.missing for c in ranked):
         try:
             notes += fill(ranked, conditions)
-        except (LLMUnavailable, LLMOutputError) as exc:
-            notes.append(f"Missing values were not looked for: {exc}")
+        except Exception as exc:  # the text search (bge-m3, the index) must not stop the picks
+            notes.append(f"Missing values were not looked for ({type(exc).__name__}: {exc}).")
         size_notes.update(drop_implausible_sizes(ranked))  # found sizes get the same check
         ranked, more = apply_conditions(ranked, conditions)  # a found value can fail the condition
         dropped += more

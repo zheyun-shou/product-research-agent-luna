@@ -16,6 +16,8 @@ HEIGHT = [Condition("height", "<=", 180)]
 class Hit:
     chunk_id: int
     text: str
+    listing_id: int = 1
+    ref: str = "specs 1"
 
 
 class FakeStore:
@@ -28,9 +30,9 @@ class FakeStore:
         return Store(retrieve=self.retrieve, save=lambda p, n, e: self.saved.append((p, n, e)),
                      searched=lambda ids: self.done, mark=lambda p, n, f: self.marked.append((p, n, f)))
 
-    def retrieve(self, listing_id, query, k):
-        self.queries.append((listing_id, query))
-        return self.chunks.get(listing_id, [])
+    def retrieve(self, product_id, query, k):
+        self.queries.append((product_id, query))
+        return self.chunks.get(product_id, [])
 
 
 def found(*values):
@@ -43,6 +45,7 @@ def test_a_checked_value_is_kept_with_its_chunk():
     notes = fill_missing(cards, HEIGHT, FRIDGE, llm, fake.store())
     entry = cards[0].attributes["height"]
     assert (entry["value"], entry["raw"], entry["source_chunk_id"]) == (178.0, "Höjd: 1780 mm", 11)
+    assert (entry["source_listing_id"], entry["source_ref"]) == (1, "specs 1")
     assert fake.saved == [(1, "height", entry)] and fake.marked == [(1, "height", True)]
     assert notes == ["Looked for missing values of your conditions in the text of 1 products: found 1."]
     assert "[chunk 11]" in llm.requests[0][1] and fake.queries == [(1, "Height (cm)")]
@@ -86,6 +89,35 @@ def test_store_functions(db):
     assert attrs["noise"]["value"] == 35.0
     mark_attribute_search(db, product, "noise", True)
     assert attribute_searches(db, [product]) == {(product, "noise")}
-    db.execute("UPDATE chunks SET fetched_at = now() + interval '1 day'")  # a newer page was stored
+    db.execute("UPDATE chunks SET fetched_at = now() + interval '1 day'")  # a recheck of the same page
+    db.commit()
+    assert attribute_searches(db, [product]) == {(product, "noise")}
+    db.execute("UPDATE chunks SET text = text || ' Ljudnivå 35 dB' WHERE kind = 'specs'")  # the text changed
     db.commit()
     assert attribute_searches(db, [product]) == set()
+
+
+def test_searched_cards_do_not_take_the_places_of_others():
+    fake = FakeStore(chunks={i: [Hit(i, "x", i)] for i in range(1, 6)}, searched={(1, "height"), (2, "height")})
+    fill_missing([card(i) for i in range(1, 6)], HEIGHT, FRIDGE, FakeLLM([found(), found()]), fake.store(),
+                 max_cards=2)
+    assert [q[0] for q in fake.queries] == [3, 4]
+
+
+def test_one_retrieval_for_all_missing_attributes_of_a_card():
+    fake = FakeStore()
+    conds = [Condition("height", "<=", 180), Condition("width", "<=", 60), Condition("height", "<=", 190)]
+    fill_missing([card(1)], conds, FRIDGE, FakeLLM([found()]), fake.store())
+    assert fake.queries == [(1, "Height (cm); Width (cm)")]
+
+
+def test_an_outage_keeps_the_values_found_before_it():
+    from scout.llm.client import QuotaExhausted
+    fake = FakeStore(chunks={1: [Hit(11, "Höjd: 1780 mm")], 2: [Hit(21, "Höjd: 1700 mm", 2)]})
+    cards = [card(1), card(2)]
+    llm = FakeLLM([found({"name": "height", "value": "178", "raw": "Höjd: 1780 mm", "chunk_id": 11}),
+                   QuotaExhausted("daily quota used up")])
+    notes = fill_missing(cards, HEIGHT, FRIDGE, llm, fake.store())
+    assert cards[0].attributes["height"]["value"] == 178.0 and "height" not in cards[1].attributes
+    assert "found 1. Stopped early" in notes[0]
+    assert (2, "height", False) not in fake.marked  # searched again next time

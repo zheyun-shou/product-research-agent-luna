@@ -3,7 +3,8 @@ from scout.agent.graph import Deps
 from scout.agent.lookup import image_reader
 from scout.crawl import crawl as run_crawl
 from scout.db.store import (add_eliminations, attribute_searches, eliminated_products, listing_source_ids,
-                            mark_attribute_search, page_texts, restore_products, save_attribute)
+                            mark_attribute_search, page_texts, product_listing_ids, restore_products,
+                            save_attribute)
 from scout.extract.ondemand import KINDS, Store, fill_missing
 from scout.extract.page import enrich_record
 from scout.extract.screen import screen_titles
@@ -46,7 +47,8 @@ def shared_deps(conn, llm, crawl, refetch, k: int = 5, size_check: bool = True, 
     screened: dict[tuple[str, int], bool] = {}  # a title is screened one time in a session
     search_text = hybrid_search(conn, BgeM3Embedder)  # one instance, so bge-m3 loads one time
     store = Store(
-        retrieve=lambda listing_id, query, n: search_text(query, Scope(listing_ids=[listing_id], kinds=KINDS), n),
+        retrieve=lambda product_id, query, n: search_text(
+            query, Scope(listing_ids=product_listing_ids(conn, product_id), kinds=KINDS), n),
         save=lambda product_id, name, entry: save_attribute(conn, product_id, name, entry),
         searched=lambda ids: attribute_searches(conn, ids),
         mark=lambda product_id, name, found: mark_attribute_search(conn, product_id, name, found),
