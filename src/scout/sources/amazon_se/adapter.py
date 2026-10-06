@@ -12,9 +12,6 @@ from scout.sources.snapshots import save_html
 
 
 class Browser(Protocol):
-    def reviews_url(self, asin: str, star: str, sort: str = "top") -> str:
-        return reviews_url(asin, star, sort)
-
     def fetch(self, url: str) -> RawPage: ...
     def screenshot(self, path: Path) -> Path: ...
 

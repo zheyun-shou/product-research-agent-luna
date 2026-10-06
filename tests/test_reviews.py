@@ -113,3 +113,32 @@ def test_a_review_on_the_product_page_gets_no_second_chunk(db, tmp_path):
     texts = [r["text"] for r in db.execute("SELECT text FROM chunks WHERE source = 'review_page'").fetchall()]
     assert not any("Tyst och kall" in t for t in texts)
     assert db.execute("SELECT count(*) AS n FROM shop_reviews").fetchone()["n"] == 5
+
+
+@pytest.mark.db
+def test_a_read_cut_short_by_a_skip_is_read_again(db, tmp_path):
+    adapter, browser, listing = stored_listing(db, tmp_path, review_pages(critical=[CAPTCHA, CRITICAL]))
+    read_reviews(db, lambda: adapter, [(listing, "B0AAAAAAA1")], lambda status, url: False, now=NOW)
+    again = read_reviews(db, lambda: adapter, [(listing, "B0AAAAAAA1")], never_called, now=NOW + timedelta(hours=1))
+    assert (again.fresh, again.pages) == (0, 3)
+
+
+@pytest.mark.db
+def test_a_product_without_reviews_is_not_read_again_this_week(db, tmp_path):
+    empty = '<div id="cm_cr-review_list"></div>'
+    pages = {reviews_url("B0AAAAAAA1", "positive"): [empty], reviews_url("B0AAAAAAA1", "critical"): [empty]}
+    adapter, browser, listing = stored_listing(db, tmp_path, pages)
+    first = read_reviews(db, lambda: adapter, [(listing, "B0AAAAAAA1")], never_called, now=NOW)
+    assert (first.pages, sum(first.reviews.values())) == (2, 0)
+    again = read_reviews(db, lambda: adapter, [(listing, "B0AAAAAAA1")], never_called, now=NOW + timedelta(days=1))
+    assert (again.fresh, again.pages) == (1, 0)
+
+
+@pytest.mark.db
+def test_pages_that_never_load_are_reported(db, tmp_path):
+    broken = "<html><body>nav only</body></html>"  # no review list: incomplete, fetched again, then given up
+    pages = {reviews_url("B0AAAAAAA1", "positive"): [broken], reviews_url("B0AAAAAAA1", "critical"): [broken]}
+    adapter, browser, listing = stored_listing(db, tmp_path, pages)
+    report = read_reviews(db, lambda: adapter, [(listing, "B0AAAAAAA1")], never_called, now=NOW)
+    assert (report.listings, report.pages) == (0, 0)
+    assert "of 0 picks" in report.text() and "gave up after 3 attempts" in report.text()

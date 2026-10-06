@@ -2,7 +2,7 @@
 from scout.agent.graph import Deps
 from scout.agent.lookup import image_reader
 from scout.crawl import crawl as run_crawl
-from scout.db.store import add_eliminations, eliminated_products, page_texts, restore_products
+from scout.db.store import add_eliminations, eliminated_products, listing_source_ids, page_texts, restore_products
 from scout.extract.page import enrich_record
 from scout.extract.screen import screen_titles
 from scout.picks.pipeline import make_picks, refetcher, shortlist
@@ -10,6 +10,7 @@ from scout.picks.rank import load_cards_by_ids
 from scout.profiles import load_profile, profile_names, save_draft
 from scout.reviews import read_reviews
 from scout.sources.amazon_se.adapter import AmazonSeAdapter
+from scout.sources.amazon_se.urls import SOURCE
 from scout.sources.browser import BrowserSession
 from scout.text.embed import BgeM3Embedder
 from scout.text.retrieve import hybrid_search
@@ -80,9 +81,7 @@ def live_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, k: int =
 
     def reviews(picks):
         ids = [p["listing_id"] for p in picks]
-        rows = conn.execute("SELECT id, source_id FROM listings WHERE id = ANY(%s) AND source = 'amazon_se'",
-                            (ids,)).fetchall()
-        asins = {row["id"]: row["source_id"] for row in rows}
+        asins = listing_source_ids(conn, SOURCE, ids)
         targets = [(i, asins[i]) for i in ids if i in asins]
         return read_reviews(conn, browser.adapter, targets, on_problem, say=say).text()
 

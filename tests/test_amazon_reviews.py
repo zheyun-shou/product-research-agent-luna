@@ -39,3 +39,11 @@ def test_check_review_page():
     assert check_page(empty).problem == "incomplete"
     signin = ok.model_copy(update={"final_url": "https://www.amazon.se/ap/signin?openid=x"})
     assert check_page(signin).problem == "signin"
+
+
+def test_matching_count_is_the_last_number():
+    from scout.sources.amazon_se.reviews import matching_count
+    assert matching_count("113 matching customer reviews") == 113
+    assert matching_count("1 234 totala betyg, 113 med recensioner") == 113
+    assert matching_count("1 234 matchande kundrecensioner") == 1234
+    assert matching_count("no number") is None

@@ -7,7 +7,7 @@ from typing import Callable
 import psycopg
 
 from scout.crawl import OnProblem, fetch_checked
-from scout.db.store import save_shop_reviews, shop_reviews_fetched
+from scout.db.store import complete_review_reads, save_review_read, save_shop_reviews
 
 MAX_PICKS = 10
 PAGES_PER_PICK = 3
@@ -17,8 +17,8 @@ FRESH = timedelta(days=7)  # reviews younger than this are not read again
 
 @dataclass
 class ReviewReport:
-    listings: int = 0  # listings whose review pages were read
-    fresh: int = 0  # listings left out, because their reviews are younger than FRESH
+    listings: int = 0  # listings with at least one review page read
+    fresh: int = 0  # listings left out, because their last complete read is younger than FRESH
     pages: int = 0
     reviews: Counter = field(default_factory=Counter)  # filter -> reviews found
     new: int = 0
@@ -26,14 +26,14 @@ class ReviewReport:
     notes: list[str] = field(default_factory=list)
 
     def text(self) -> str:
-        if not self.pages and not self.stopped:
+        if not self.pages and not self.stopped and not self.notes:
             return ""
         found = sum(self.reviews.values())
         line = (f"Read the shop reviews of {self.listings} picks on amazon.se: {self.pages} review pages, "
                 f"{found} reviews ({self.reviews['positive']} positive, {self.reviews['critical']} critical), "
                 f"{self.new} of them new.")
         if self.fresh:
-            line += f" {self.fresh} picks have reviews from the last {FRESH.days} days, so they were not read again."
+            line += f" {self.fresh} picks were read in the last {FRESH.days} days, so they were not read again."
         if self.stopped:
             line += f" {self.stopped}"
         return "\n".join([line, *self.notes])
@@ -59,7 +59,7 @@ def read_reviews(conn: psycopg.Connection, adapter: Callable[[], object], target
     report = ReviewReport()
     targets = targets[:MAX_PICKS]
     now = now or datetime.now(timezone.utc)
-    fetched = shop_reviews_fetched(conn, [listing_id for listing_id, _ in targets])
+    last_read = complete_review_reads(conn, [listing_id for listing_id, _ in targets])
     skipped = []
 
     def asked(status, url) -> bool:
@@ -69,17 +69,20 @@ def read_reviews(conn: psycopg.Connection, adapter: Callable[[], object], target
         return fixed
 
     for listing_id, asin in targets:
-        if listing_id in fetched and now - fetched[listing_id] < FRESH:
+        if listing_id in last_read and now - last_read[listing_id] < FRESH:
             report.fresh += 1
             continue
-        if not report.pages and not report.listings:
+        if report.pages >= max_pages:
+            report.stopped = f"Stopped at the limit of {max_pages} review pages for one search."
+            break
+        if not report.pages and not report.notes:
             say("Reading the positive and the critical shop reviews of the picks on amazon.se. "
                 "This needs the login in the product-scout Chrome window.")
         source = adapter()
         found: dict[str, dict] = {}
         done: list[tuple[str, str]] = []
         more: dict[str, bool] = {}
-        fetched_at = now
+        pages_before, fetched_at = report.pages, now
         while (step := page_plan(more, done)) is not None:
             if report.pages >= max_pages:
                 report.stopped = f"Stopped at the limit of {max_pages} review pages for one search."
@@ -89,8 +92,9 @@ def read_reviews(conn: psycopg.Connection, adapter: Callable[[], object], target
             page = fetch_checked(source, conn, source.reviews_url(asin, star, sort), asked, report.notes)
             if page is None:
                 if skipped:
+                    report.stopped = "You skipped the login, so the other review pages were not read."
                     break
-                continue
+                continue  # the page is gone, or it did not load after the retries: it is not tried again this week
             report.pages += 1
             fetched_at = page.fetched_at
             reviews, matching = source.parse_reviews(page)
@@ -100,11 +104,10 @@ def read_reviews(conn: psycopg.Connection, adapter: Callable[[], object], target
         if found:
             report.new += save_shop_reviews(conn, listing_id, list(found.values()), fetched_at)
             report.reviews.update(r["filter"] for r in found.values())
-        if done:
+        if report.pages > pages_before:
             report.listings += 1
-        if skipped:
-            report.stopped = "You skipped the login, so the other review pages were not read."
-            break
+        # A read that a skip or the page limit cut short is read again by the next search
+        save_review_read(conn, listing_id, now, complete=not report.stopped)
         if report.stopped:
             break
     return report

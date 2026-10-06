@@ -4,11 +4,12 @@ import re
 
 from bs4 import BeautifulSoup, Tag
 
-from scout.sources.amazon_se.numbers import parse_count, parse_rating
+from scout.sources.amazon_se.numbers import parse_rating
 
 # The star text that some pages put in front of the title, in English and Swedish
 _STARS = re.compile(r"^\s*\d[.,]\d\s+(out of 5 stars|av 5 stjärnor)\s*", re.IGNORECASE)
-_MARKS = dict.fromkeys(map(ord, "‎‏"), None)
+_MARKS = dict.fromkeys(map(ord, "\u200e\u200f"), None)
+_NUMBER = re.compile(r"\d{1,3}(?:[\s\u00a0\u202f.,]\d{3})*|\d+")
 
 
 def _text(el: Tag | None) -> str:
@@ -52,7 +53,14 @@ def parse_review_page(html: str) -> tuple[list[dict], int | None]:
             "text": text,
         })
     count_el = soup.select_one('[data-hook="cr-filter-info-review-rating-count"]')
-    return reviews, parse_count(_text(count_el)) if count_el else None
+    return reviews, matching_count(_text(count_el)) if count_el else None
+
+
+def matching_count(text: str) -> int | None:
+    """The reviews that match the filter. A line can also give the number of ratings first, for example
+    "1 234 total ratings, 113 with reviews", so the last number counts."""
+    numbers = _NUMBER.findall(text)
+    return int(re.sub(r"\D", "", numbers[-1])) if numbers else None
 
 
 def has_review_list(html: str) -> bool:

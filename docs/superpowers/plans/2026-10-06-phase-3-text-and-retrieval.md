@@ -85,11 +85,11 @@ On 2026-10-06 Zheyun logged in, and Claude saved real review pages of the Bomann
 What was built:
 
 - New table `shop_reviews`: one row for each review, with the filter that found it. Its chunks have the source `review_page` and the ref `shop review <id>`. A review that the product page shows too gets no second chunk.
-- `scout.reviews.read_reviews`: for each pick, the top positive page, the top critical page, then the newest critical reviews when the filter has more than 10. Limits: 10 picks, 3 pages for each pick, 30 pages for each search. Reviews younger than 7 days are not read again. When the shopper skips a login or a captcha, the step stops.
+- `scout.reviews.read_reviews`: for each pick, the top positive page, the top critical page, then the newest critical reviews when the filter has more than 10. Limits: 10 picks, 3 pages for each pick, 30 pages for each search. The table `review_reads` keeps the last read of each listing, also when it found no review. A complete read is not repeated for 7 days. When the shopper skips a login or a captcha, the step stops, and a read that the skip or the page limit cut short is repeated by the next search. The step runs only after a turn that showed new picks.
 - The graph has a new step `reviews` after `recommend`. It reads the reviews of the picks that are shown (default 5), not of the top 10 candidates, because the state keeps only the picks. The web page now sends the replies of each step when the step ends, so the picks show before the reviews are read.
-- `scout reviews ASIN...` and `scout parse-reviews PATH`.
+- `scout reviews ASIN...` and `scout parse-reviews PATH`. `scout chat` also prints the replies of each step when the step ends.
 
-First real run (2026-10-06, 3 fridges): 9 review pages, 75 reviews (30 positive, 45 critical), 67 new chunks. `scout embed` gave them vectors in 7.3 s. A Chinese question about noise ("冰箱噪音大吗") found two German reviews about a loud fridge in its top 2.
+First real run (2026-10-06, 3 fridges): 9 review pages, 75 reviews (30 positive, 45 critical). 22 of them were on the product pages too, so they got no second chunk. The other 53 gave 54 chunks (one long review has two). `scout embed` gave 67 chunks vectors in 7.3 s: these 54 and 13 product page chunks from the web test of Zheyun. A Chinese question about noise ("冰箱噪音大吗") found two German reviews about a loud fridge in its top 2.
 
 Plan as written before the build:
 

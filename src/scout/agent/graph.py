@@ -193,11 +193,12 @@ def build_graph(deps: Deps, checkpointer=None):
         seen = ids if action not in ("more", "exclude", "restore", "recheck") else [*state.get("seen", []), *ids]
         text = result.render() if picks else ("No stored product meets these needs. You can loosen a condition, "
                                               "or ask me to search more.")
-        return {"picks": picks, "seen": sorted(set(seen)), "phase": "picks", "route": {},
+        return {"picks": picks, "seen": sorted(set(seen)), "phase": "picks", "route": {"new_picks": bool(picks)},
                 "messages": [assistant(text)]}
 
     def reviews_node(state, config):
-        if deps.read_reviews is None or not state.get("picks"):
+        # Only after the picks of this turn: a failed step or "no other product" keeps the old picks
+        if deps.read_reviews is None or not (state.get("route") or {}).get("new_picks"):
             return {}
         text = deps.read_reviews(state["picks"])
         return {"messages": [assistant(text)]} if text else {}

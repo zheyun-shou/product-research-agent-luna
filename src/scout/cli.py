@@ -296,7 +296,7 @@ def reviews(asins: List[str], max_pages: int = 30) -> None:
                                   max_pages=max_pages, say=typer.echo)
         finally:
             browser.close()
-    typer.echo(report.text() or "Nothing to read: the reviews of these products are less than 7 days old.")
+    typer.echo(report.text() or "Nothing to read: the review pages of these products were read in the last 7 days.")
 
 
 @app.command("eval-template")
@@ -407,20 +407,25 @@ def chat(thread: Optional[str] = typer.Option(None, help="the ID of a conversati
                 text = typer.prompt("\nyou", prompt_suffix="> ").strip()
                 if text.lower() in {"q", "quit", "exit"}:
                     break
-                before = len(graph.get_state(config).values.get("messages", []))
+                replies = []
                 try:
                     with tracer.turn(thread_id, text) as span:
-                        state = graph.invoke({"messages": [{"role": "user", "content": text}]}, config)
-                        replies = [m["content"] for m in state["messages"][before + 1:]]
+                        # Each step prints its replies when it ends, so the picks show before the reviews are read
+                        for update in graph.stream({"messages": [{"role": "user", "content": text}]}, config,
+                                                   stream_mode="updates"):
+                            for change in update.values():
+                                for message in (change or {}).get("messages", []):
+                                    if message.get("role") == "assistant":
+                                        replies.append(message["content"])
+                                        typer.echo(f"\n{message['content']}")
                         span.update(output="\n\n".join(replies))
                 except Exception as exc:  # the nodes catch most problems; this keeps the conversation open
-                    replies = [f"Something went wrong ({type(exc).__name__}: {exc}). You can try again."]
+                    message = f"Something went wrong ({type(exc).__name__}: {exc}). You can try again."
                     end_transaction(conn)
                     with contextlib.suppress(Exception):  # the thread gets the message, and the failed turn ends
-                        graph.update_state(config, {"messages": [assistant(replies[0])]}, as_node="reviews")
+                        graph.update_state(config, {"messages": [assistant(message)]}, as_node="reviews")
+                    typer.echo(f"\n{message}")
                 end_transaction(conn)
-                for reply in replies:
-                    typer.echo(f"\n{reply}")
         finally:
             browser.close()
             tracer.flush()

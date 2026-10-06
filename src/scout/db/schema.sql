@@ -95,6 +95,14 @@ CREATE TABLE IF NOT EXISTS shop_reviews (
     PRIMARY KEY (listing_id, review_id)
 );
 
+-- The last read of the review pages of each listing, also when it found no review. complete is false when a
+-- skipped login or the page limit stopped the read, so the next search reads the listing again.
+CREATE TABLE IF NOT EXISTS review_reads (
+    listing_id   bigint PRIMARY KEY REFERENCES listings(id) ON DELETE CASCADE,
+    read_at      timestamptz NOT NULL,
+    complete     boolean NOT NULL
+);
+
 -- Parts of the page texts for retrieval (spec 4.4 and 4.6). source is the page kind that the text came from.
 CREATE TABLE IF NOT EXISTS chunks (
     id           bigserial PRIMARY KEY,

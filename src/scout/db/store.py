@@ -131,12 +131,25 @@ def save_shop_reviews(conn: psycopg.Connection, listing_id: int, reviews: list[d
     return new
 
 
-def shop_reviews_fetched(conn: psycopg.Connection, listing_ids: list[int]) -> dict[int, object]:
-    """The time of the newest stored shop review of each listing that has one."""
-    rows = conn.execute(
-        """SELECT listing_id, max(fetched_at) AS at FROM shop_reviews WHERE listing_id = ANY(%s)
-           GROUP BY listing_id""", (listing_ids,)).fetchall()
-    return {row["listing_id"]: row["at"] for row in rows}
+def save_review_read(conn: psycopg.Connection, listing_id: int, read_at, complete: bool) -> None:
+    conn.execute(
+        """INSERT INTO review_reads (listing_id, read_at, complete) VALUES (%s, %s, %s)
+           ON CONFLICT (listing_id) DO UPDATE SET read_at = EXCLUDED.read_at, complete = EXCLUDED.complete""",
+        (listing_id, read_at, complete))
+    conn.commit()
+
+
+def complete_review_reads(conn: psycopg.Connection, listing_ids: list[int]) -> dict[int, object]:
+    """The time of the last complete read of the review pages of each listing that has one."""
+    rows = conn.execute("SELECT listing_id, read_at FROM review_reads WHERE complete AND listing_id = ANY(%s)",
+                        (listing_ids,)).fetchall()
+    return {row["listing_id"]: row["read_at"] for row in rows}
+
+
+def listing_source_ids(conn: psycopg.Connection, source: str, listing_ids: list[int]) -> dict[int, str]:
+    rows = conn.execute("SELECT id, source_id FROM listings WHERE source = %s AND id = ANY(%s)",
+                        (source, listing_ids)).fetchall()
+    return {row["id"]: row["source_id"] for row in rows}
 
 
 def page_texts(conn: psycopg.Connection, listing_ids: list[int]) -> dict[int, dict]:

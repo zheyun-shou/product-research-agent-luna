@@ -254,3 +254,16 @@ def test_no_review_message_when_nothing_was_read():
     state = run(build_graph(deps, InMemorySaver()), "t1", "A fridge with a freezer")
     assert state["messages"][-1]["content"] != ""
     assert len([m for m in state["messages"] if m["role"] == "assistant"]) == 2
+
+
+def test_no_reviews_when_the_step_found_no_new_picks():
+    world = World(stored=3, n=2)
+    asked = []
+    deps = world.deps(FakeLLM([CategoryChoice(category="fridge"), ready(),
+                               [NextStep(step="show_more")]]))
+    deps.read_reviews = lambda picks: asked.append(len(picks)) or ""
+    graph = build_graph(deps, InMemorySaver())
+    run(graph, "t1", "A fridge with a freezer")
+    state = run(graph, "t1", "Show me more")
+    assert asked == [2]  # only after the first picks; "more" found no other product
+    assert "No other stored product" in state["messages"][-1]["content"]
