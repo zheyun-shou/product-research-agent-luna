@@ -134,8 +134,9 @@ def live_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, k: int =
     )
 
 
-def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer):
-    """The dependencies of the agent loop (agent/loop.py): the same stores, browser and checks as the pipeline."""
+def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_embedder=BgeM3Embedder):
+    """The dependencies of the agent loop (agent/loop.py): the same stores, browser and checks as the pipeline.
+    make_embedder: a run with many conversations gives one that returns the same embedder, so bge-m3 loads once."""
     from datetime import datetime, timezone
 
     from scout.agent.graph import crawl_text
@@ -144,7 +145,7 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer):
     from scout.picks.rank import Condition
 
     screened: dict[tuple[str, int], bool] = {}
-    search_text = hybrid_search(conn, BgeM3Embedder)
+    search_text = hybrid_search(conn, make_embedder)
     store = Store(
         retrieve=lambda product_id, query, n: search_text(
             query, Scope(listing_ids=product_listing_ids(conn, product_id), kinds=KINDS), n),

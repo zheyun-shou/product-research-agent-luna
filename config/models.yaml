@@ -37,3 +37,7 @@ roles:
     provider: openrouter
     model: deepseek/deepseek-v4-flash
     rpm: 60
+  shopper:  # the simulated shopper of eval-hidden: not an OpenAI model like the chat model, and cheap
+    provider: openrouter
+    model: deepseek/deepseek-v4-flash
+    rpm: 60

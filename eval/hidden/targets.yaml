@@ -1,0 +1,162 @@
+# Hidden targets for `scout eval-hidden` (agent-loop design, section 10). Each target is one real product of
+# amazon.se. Claude wrote the opening and the facts on 2026-10-06 from the stored page of the product, without its
+# name, brand or model. The facts are true of the product; a few other products can also meet them. hidden_words
+# are the brand and the model: Python stops the run when the shopper writes one.
+# Prices are those of the first week of October 2026; a budget leaves a margin of 10 to 25 percent.
+# Only the fridge category has a full profile now. Other categories need a profile first.
+
+- id: red-bottom-freezer
+  source_id: B08PL233S8
+  category: fridge
+  kind: fridge_freezer
+  opening: 我想要一台红色的冰箱，带冷冻室，厨房那个位置宽50厘米、高145厘米
+  facts:
+    - The space is 50 cm wide, 145 cm high and 60 cm deep.
+    - You want a red fridge with a glossy front.
+    - The freezer part is at the bottom.
+    - About 170 to 180 litres in all is enough.
+    - The budget is 6000 SEK.
+  hidden_words: [Bomann, KG 320, KG 320.2, "732025"]
+
+- id: tall-top-freezer
+  source_id: B088MGYH4V
+  category: fridge
+  kind: fridge_freezer
+  opening: I need a fridge freezer for a family of four. At most 180 cm high and 56 cm wide. Budget 6500 kr.
+  facts:
+    - The space is 56 cm wide, 180 cm high and 60 cm deep.
+    - You want the freezer part at the top.
+    - The freezer part must hold at least 60 litres. In all at least 250 litres.
+    - It must be quiet, 40 dB or less.
+    - Colour does not matter.
+  hidden_words: [Gorenje, RK 4182, RK4182, RK4182PS4, PS4]
+
+- id: frost-free-55
+  source_id: B0CTKNJJGG
+  category: fridge
+  kind: fridge_freezer
+  opening: Jag söker en kombinerad kyl och frys som är frostfri. Max 55 cm bred och 180 cm hög. Budget 6000 kr.
+  facts:
+    - The space is 55 cm wide, 180 cm high and 60 cm deep.
+    - It must be frost free, so that you never defrost it.
+    - The freezer part is at the bottom.
+    - About 250 litres in all.
+    - White.
+  hidden_words: [Candy, CCG1S, 518EW, "34005403"]
+
+- id: retro-red
+  source_id: B07M89WVWC
+  category: fridge
+  kind: fridge_freezer
+  opening: I want a retro style fridge freezer in red. The space is 62 cm wide and 150 cm high.
+  facts:
+    - The space is 62 cm wide, 150 cm high and 60 cm deep.
+    - Retro style and red are the main wishes.
+    - The freezer part is at the top.
+    - About 200 litres in all.
+    - The budget is 6500 SEK.
+  hidden_words: [Severin, RKG 8930, RKG8930, "8930"]
+
+- id: dark-no-frost
+  source_id: B0C9J7SPK3
+  category: fridge
+  kind: fridge_freezer
+  opening: 想要一台No Frost的冰箱冷冻一体机，黑色或深色的，预算6500克朗
+  facts:
+    - The space is 60 cm wide, 190 cm high and 65 cm deep.
+    - No Frost is a must.
+    - A black or dark front.
+    - Energy class C or better.
+    - About 300 litres in all, and a freezer part of at least 90 litres.
+  hidden_words: [Gorenje, NRK619CABXL4, NRK619, "20012442"]
+
+- id: narrow-cheap
+  source_id: B0C27X2SX4
+  category: fridge
+  kind: fridge_freezer
+  opening: A cheap fridge freezer please. The space is only 50 cm wide and 145 cm high. Budget 3500 kr.
+  facts:
+    - The space is 50 cm wide, 145 cm high and 60 cm deep.
+    - The freezer part is at the bottom.
+    - About 170 litres in all.
+    - White.
+    - You do not mind defrosting it by hand.
+  hidden_words: [Exquisit, KGC5232, KGC5232-60-E-040E, "811620307"]
+
+- id: side-by-side
+  source_id: B0C4LCQYTP
+  category: fridge
+  kind: fridge_freezer
+  opening: Vi vill ha ett side-by-side kylskåp med frys, NoFrost. Max 90 cm brett och 180 cm högt. Budget 7000 kr.
+  facts:
+    - The space is 90 cm wide, 180 cm high and 65 cm deep.
+    - Side by side doors, fridge on one side and freezer on the other.
+    - No Frost.
+    - About 440 litres in all, and a freezer part of at least 150 litres.
+    - White.
+  hidden_words: [Bomann, SBS 7344, SBS7344, "734410"]
+
+- id: under-counter-quiet
+  source_id: B0DNF9BKY6
+  category: fridge
+  kind: fridge_freezer
+  opening: 我想要一台能放在厨房台面下面的小冰箱，要带一个小冷冻格，要安静
+  facts:
+    - The space under the counter is 56 cm wide, 86 cm high and 60 cm deep.
+    - A small freezer compartment of about 10 to 15 litres is enough.
+    - About 100 to 110 litres in all.
+    - It must be quiet, 38 dB or less.
+    - White. The budget is 3200 SEK.
+  hidden_words: [Bomann, KS 7251, KS7251, "772510"]
+
+- id: skincare-mini
+  source_id: B0BX9Q2MH6
+  category: fridge
+  kind: mini_fridge
+  opening: A tiny fridge for my skincare products on my desk, about 5 litres. Budget 700 kr.
+  facts:
+    - About 5 litres. It stands on a desk.
+    - It must also work in a car (12 V).
+    - Black.
+    - Quiet.
+    - It is good if it can also keep things warm.
+  hidden_words: [FOHERE, MFA-5L]
+
+- id: wine-24
+  source_id: B0CVGV39YR
+  category: fridge
+  kind: wine_cooler
+  opening: Jag vill ha en vinkyl för ungefär 24 flaskor, max 85 cm hög. Budget 5000 kr.
+  facts:
+    - About 24 bottles. At most 85 cm high and 46 cm wide.
+    - A glass door.
+    - One temperature zone is enough, for red and white wine.
+    - A silver or steel frame.
+    - Wooden shelves.
+  hidden_words: [Klarstein, Shiraz, HEA-SHiraz-Smart-24]
+
+- id: small-freezer-or-fridge
+  source_id: B0DPJ8JK1W
+  category: fridge
+  kind: mini_fridge
+  opening: I want a small box for a small room that can work as a freezer or as a fridge. About 30 litres. Budget 3000 kr.
+  facts:
+    - About 30 litres. At most 50 cm high and 48 cm wide.
+    - You can set it as a freezer or as a fridge.
+    - Quiet, 38 dB or less.
+    - Energy class C or better.
+    - White and blue.
+  hidden_words: [Klarstein, Irene]
+
+- id: car-compressor-box
+  source_id: B0F66T9BLS
+  category: fridge
+  kind: cool_box
+  opening: A compressor cool box for the car, around 15 litres. It must freeze down to -20 °C. Budget 2500 kr.
+  facts:
+    - About 15 litres. For the car and for camping.
+    - A compressor, not a thermoelectric one. It must go down to -20 °C.
+    - Quiet, 45 dB or less.
+    - A USB port is good.
+    - Price matters little within the budget.
+  hidden_words: [Furvveerr, JYCZBX15L]
