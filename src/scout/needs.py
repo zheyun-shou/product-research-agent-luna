@@ -51,9 +51,12 @@ class Needs(BaseModel):
         return kind.label if kind else profile.display_name
 
     def search_terms(self, profile: CategoryProfile) -> str:
+        """One search phrase. Drafted profiles can list several with commas. amazon.se would look for all the words
+        of the list at the same time, so only the first phrase is used."""
         kind = profile.kind(self.kind)
-        return self.search_terms_sv or (kind.search_terms_sv if kind else None) \
+        terms = self.search_terms_sv or (kind.search_terms_sv if kind else None) \
             or profile.search_terms_sv or profile.category
+        return terms.split(",")[0].strip()
 
 
 def was_said(value: float, said: set[Decimal], factors: tuple[Decimal, ...] = SAME) -> bool:

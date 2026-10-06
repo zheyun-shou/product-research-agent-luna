@@ -55,6 +55,11 @@ WILL_DO = [
 ]
 # Words that say the shopper means each pick that fits.
 ALL_WORDS = re.compile(r"\b(all|both|every|each|these|those|them)\b|全部|所有|都|两个|三个|这些|它们", re.I)
+# Words for a group: "the red ones". A Chinese phrase without a measure word after 这, 那, 哪 or 一 names a group
+# too: "超声波的不要" means all ultrasonic picks, "去掉红色那个" means one.
+GROUP_WORDS = re.compile(r"\bones\b", re.I)
+CHINESE = re.compile(r"[\u4e00-\u9fff]")
+ONE_ZH = re.compile(r"[这那哪一][个款台只件]")
 NOT_DONE = re.compile(r"\b(can['’]?t|cannot|can not|unable|not able|won['’]?t|will not|didn['’]?t|did not|"
                       r"if you|would you|should I|want me to)\b", re.I)
 
@@ -202,7 +207,9 @@ def unclear_question(remove: RemovePicks, picks: list[dict], last_user: str) -> 
     if len(remove.picks) < 2:
         return None
     named = {int(n) for n in re.findall(r"\d+", last_user)}
-    if set(remove.picks) <= named or ALL_WORDS.search(last_user):
+    if set(remove.picks) <= named or ALL_WORDS.search(last_user) or GROUP_WORDS.search(last_user):
+        return None
+    if CHINESE.search(last_user) and not ONE_ZH.search(last_user):
         return None
     options = ", ".join(f"pick {n} ({picks[n - 1]['title'][:50]})" for n in remove.picks)
     return f"Which do you mean, all of these or only one: {options}? Say all, or give the number."

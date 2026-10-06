@@ -51,7 +51,8 @@ def test_several_picks_without_numbers_make_python_ask():
 
 def test_several_picks_can_go_when_the_shopper_gives_each_number_or_says_all():
     for words, said in [("both Bomanns", "Remove both Bomanns"), ("1 and 2", "Remove 1 and 2"),
-                        ("红色的", "去掉所有红色的"), ("all", "all")]:
+                        ("红色的", "去掉所有红色的"), ("all", "all"), ("the red ones", "Remove the red ones"),
+                        ("超声波的", "超声波的不要，最好一次能洗15个碗及以上的")]:
         result, _ = run_act([[RemovePicks(picks=[1, 2], words=words)]], said)
         assert result.remove.picks == [1, 2] and result.question is None and result.action == "exclude", said
     result, _ = run_act([[RemovePicks(picks=[1], words="the red one")]], "Remove the red one")

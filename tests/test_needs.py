@@ -23,6 +23,8 @@ def test_wanted_and_search_terms_follow_the_kind():
     assert needs(kind="mini_fridge").search_terms(FRIDGE) == "minikylskåp"
     assert needs().search_terms(FRIDGE) == "kylskåp"
     assert needs(kind="mini_fridge", search_terms_sv="liten kyl").search_terms(FRIDGE) == "liten kyl"
+    assert needs(search_terms_sv="bänkdiskmaskin, borddiskmaskin").search_terms(FRIDGE) == "bänkdiskmaskin"
+    assert needs(search_terms_sv="bänkdiskmaskin, borddiskmaskin").search_terms(FRIDGE) == "bänkdiskmaskin"
 
 
 def test_only_lengths_and_weights_allow_a_unit_change():

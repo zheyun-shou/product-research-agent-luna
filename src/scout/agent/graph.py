@@ -109,27 +109,23 @@ def build_graph(deps: Deps, checkpointer=None):
         if needs.category is None:
             names = deps.profile_names()
             choice = pick_category(llm, history, [deps.load_profile(n) for n in names])
-            drafted = []
             if choice.category is None and choice.new_category and deps.save_draft:
                 profile = draft_profile(llm, choice.new_category, history, names)
                 deps.save_draft(profile)
                 choice.category = profile.category
-                kinds = ", ".join(k.label for k in profile.kinds)
-                facts = ", ".join(a.label for a in profile.attributes)
-                drafted = [assistant(f"There was no category for {choice.new_category}, so I drafted one. Kinds: "
-                                     f"{kinds}. Facts that I compare: {facts}. It is a draft that nobody has checked "
-                                     "yet. Tell me if something important is missing.")]
+                # A status line, not a message: the shopper does not need the draft in the conversation
+                deps.say(f"New category drafted: {profile.category}. Kinds: "
+                         f"{', '.join(k.label for k in profile.kinds)}. Facts that it compares: "
+                         f"{', '.join(a.label for a in profile.attributes)}.")
             if choice.category is None:
                 return {"phase": "clarify", "route": {}, "messages": [assistant(
                     f"I can search these categories now: {', '.join(names)}. Which one do you want?")]}
             needs.category = choice.category
-        else:
-            drafted = []
         reply = clarify(llm, deps.load_profile(needs.category), needs, history, user_numbers(state))
         update = {"needs": reply.needs.model_dump(mode="json"), "route": {}}
         if reply.ready:
-            return {**update, "phase": "search", **({"messages": drafted} if drafted else {})}
-        return {**update, "phase": "clarify", "messages": [*drafted, assistant(reply.question)]}
+            return {**update, "phase": "search"}
+        return {**update, "phase": "clarify", "messages": [assistant(reply.question)]}
 
     def search_node(state, config):
         needs = needs_of(state)

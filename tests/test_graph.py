@@ -233,5 +233,5 @@ def test_a_product_without_a_category_gets_a_draft_profile():
     deps.load_profile = lambda name: saved[0] if name == "headphones" else FRIDGE
     state = run(build_graph(deps, InMemorySaver()), "t1", "I need headphones")
     assert saved[0].draft and state["needs"]["category"] == "headphones"
-    assert state["messages"][-2]["content"].startswith("There was no category for headphones, so I drafted one.")
-    assert state["messages"][-1]["content"] == "Over-ear or in-ear?"
+    assert world.said[0].startswith("New category drafted: headphones. Kinds: Over-ear headphones.")
+    assert [m["content"] for m in state["messages"][1:]] == ["Over-ear or in-ear?"]
