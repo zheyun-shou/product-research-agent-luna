@@ -271,10 +271,20 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
             conn, listing_id, url_ref(url), chunks, datetime.now(timezone.utc)),
     )
 
+    loaded_reranker: list = []
+
+    def reranker(question, texts):  # loads at the first web search that has text to score
+        if not texts:
+            return []
+        if not loaded_reranker:
+            from scout.text.rerank import BgeReranker
+            loaded_reranker.append(BgeReranker())
+        return loaded_reranker[0](question, texts)
+
     def search_web(question, ids, max_pages):
         cards = load_cards_by_ids(conn, ids)
         products = [ProductRef(c.listing_id, c.title, c.model) for c in cards]
-        report = run_web_search(question, products, client, llm, web_store, max_pages)
+        report = run_web_search(question, products, client, llm, web_store, reranker, max_pages)
         conn.commit()
         return report.text, report.pages
 

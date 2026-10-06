@@ -30,7 +30,7 @@ SEARCH_DETAILS = 8  # new product pages for each search_shop call
 MAX_READ_CHARS = 5_000  # of the text of one product in read_product
 # Three products must fit in one report: each text is cut at MAX_READ_CHARS, the title and the question at 200
 REPORT_LIMITS = {"read_product": 3 * (MAX_READ_CHARS + 300) + 500,
-                 "search_web": 130_000}  # the text of up to 8 pages (websearch.MAX_TO_CHAT, PAGE_CHARS)
+                 "search_web": 60_000}  # up to websearch.MAX_CHAT_PARTS parts of about 1,000 characters
 
 SYSTEM = """You are product-scout, a shopping research assistant. You help the shopper choose products. The shopper
 is in Sweden. You find candidates in shops, check them against the shopper's needs, read what buyers say, and give a
@@ -92,9 +92,10 @@ class SearchShop(BaseModel):
 
 
 class SearchWeb(BaseModel):
-    """Search the web (Tavily). The worker judges each found page (test, forum, shop; relevant or not), and you get
-    the full text of the relevant pages, at least 5. Give the ids of the products that the search is for: the test
-    and forum pages about them are stored, so search_text finds them later."""
+    """Search the web (Tavily). The worker judges each found page (test, forum, shop; relevant or not). You get the
+    parts of the relevant pages that answer the question best, with their address and date. Ask a clear question:
+    the parts are chosen by it. Give the ids of the products that the search is for: the test and forum pages about
+    them are stored, so search_text finds them later."""
     question: str = Field(description="The search words, for example the model and 'test'. Any language")
     ids: list[int] = Field(default_factory=list, description="Product ids that the search is for, at most 5")
 

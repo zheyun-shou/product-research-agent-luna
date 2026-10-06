@@ -7,19 +7,25 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from scout.agent.loop import Claim, Pick, ReadReviews, SearchWeb, ShowPicks, UpdateNeeds, build_agent_graph
 from scout.llm.client import LLMUnavailable
-from scout.websearch import (MAX_TO_CHAT, PAGE_CHARS, PageJudgement, ProductRef, TavilyClient, WebResult,
-                             WebSearchUnavailable, WebStore, search_web, url_ref)
+from scout.websearch import (MAX_CHAT_PARTS, PageJudgement, Part, ProductRef, TavilyClient, WebResult,
+                             WebSearchUnavailable, WebStore, choose_parts, search_web, url_ref)
 from tests.fakes import FakeLLM
 from tests.test_loop import NEEDS, Shop, run
 
-TEST_PAGE = ("Gorenje RK4182PS4 i test. Vi mätte ljudnivån till 39 dB i vårt labb. Frysen är liten för en familj. "
-             "Bomann KG 320 är billigare men låter mer.")
-TEST = WebResult("https://www.testsite.se/kyl", "Test av kylskåp 2026", "Gorenje i test", TEST_PAGE)
-FORUM = WebResult("https://forum.example.com/t/1", "Vilken kyl?", "Tråd", "Min Gorenje RK4182PS4 har gått i 3 år.")
-SHOP = WebResult("https://www.elgiganten.se/product/1", "Gorenje RK4182PS4", "Köp", "Pris 5990 kr. Lägg i varukorg.")
-OTHERS = [WebResult(f"https://site{n}.se/", f"Page {n}", "", f"Text of page {n}.") for n in range(1, 5)]
+TEST_PAGE = ("Gorenje RK4182PS4 i test.\n\nVi mätte ljudnivån till 39 dB i vårt labb.\n\nFrysen är liten för en "
+             "familj.\n\nBomann KG 320 är billigare men låter mer.")
+TEST = WebResult("https://www.testsite.se/kyl", "Test av kylskåp 2026", "Gorenje i test", "", "2025-03-08")
+FORUM = WebResult("https://forum.example.com/t/1", "Vilken kyl?", "Tråd", "Min Gorenje RK4182PS4 är tyst.")
+SHOP = WebResult("https://www.elgiganten.se/product/1", "Gorenje RK4182PS4", "Köp", "Pris 5990 kr.")
+OTHER = WebResult("https://site.se/", "Recept", "Kakor", "Text om kakor.")
 PRODUCTS = [ProductRef(2, "Gorenje RK4182PS4 kyl/frys", "RK4182PS4"), ProductRef(3, "Bomann KG 320", "KG 320")]
-NOT = PageJudgement(kind="other", relevant=False, reason="no test")
+NOT = PageJudgement(kind="other", relevant=False, reason="about cakes")
+JUDGED = {
+    TEST.url: PageJudgement(kind="test", relevant=True, about=[2, 3, 9]),
+    FORUM.url: PageJudgement(kind="forum", relevant=True, about=[2]),
+    SHOP.url: PageJudgement(kind="shop", relevant=False, about=[2], reason="only a price"),
+}
+FILLER = "Lorem ipsum " * 82  # about 245 tokens: no other paragraph fits into its part
 
 
 class Worker:
@@ -42,99 +48,118 @@ class Store:
         self.results, self.searches, self.chunks = stored, [], {}
 
     def web_store(self):
-        return WebStore(stored=lambda q: self.results, save_search=lambda q, ids, rs: self.searches.append((q, ids)),
+        return WebStore(stored=lambda q: self.results,
+                        save_search=lambda q, ids, rs: self.searches.append((q, ids, rs)),
                         save_chunks=lambda listing, url, chunks: self.chunks.__setitem__((listing, url), chunks))
 
 
 class Client:
-    def __init__(self, results):
-        self.results, self.queries = results, []
+    def __init__(self, results, texts=None):
+        self.results, self.texts, self.queries, self.extracted = results, texts or {}, [], []
 
     def search(self, query, max_results=20):
         self.queries.append(query)
         return list(self.results)
 
-
-JUDGED = {
-    TEST.url: PageJudgement(kind="test", relevant=True, about=[2, 3, 9], reason="a lab test"),
-    FORUM.url: PageJudgement(kind="forum", relevant=True, about=[2]),
-    SHOP.url: PageJudgement(kind="shop", relevant=False, about=[2], reason="only a price"),
-}
+    def extract(self, urls):
+        self.extracted.append(list(urls))
+        return {u: self.texts[u] for u in urls if u in self.texts}
 
 
-def test_the_worker_judges_each_page_and_the_chat_model_gets_the_text_of_at_least_5():
-    store, client, worker = Store(), Client([SHOP, TEST, *OTHERS, FORUM]), Worker(JUDGED)
-    report = search_web("Gorenje RK4182PS4 test", PRODUCTS, client, worker, store.web_store())
-    assert (report.pages, report.credits, report.to_chat) == (7, 1, 5) and len(worker.prompts) == 7
-    assert "Search question: Gorenje RK4182PS4 test" in worker.prompts[0]
-    # the relevant pages first, then the next pages with text up to 5; the full text, not a summary
-    order = [line for line in report.text.splitlines() if line.startswith("[web page")]
-    assert [o.split("] ")[1].split(",")[0] for o in order] == ["testsite.se", "forum.example.com", "elgiganten.se",
-                                                               "site1.se", "site2.se"]
-    assert TEST_PAGE in report.text and "Text of page 2." in report.text and "Text of page 3." not in report.text
-    assert "about id 2, 3:" in report.text and "id 9" not in report.text  # an id that was not asked for is dropped
-    assert "(the worker found it not relevant)" in order[2]
-    assert "- site3.se, other: Page 3 (https://site3.se/): not relevant, no test" in report.text
-    # the test and forum pages are stored as chunks of the products that they are about; a shop page is not
-    assert set(store.chunks) == {(2, TEST.url), (3, TEST.url), (2, FORUM.url)}
+def rerank(question, texts):
+    """0.9 for a part about the noise, 0.2 for the others."""
+    return [0.9 if ("dB" in t or "tyst" in t) else 0.2 for t in texts]
+
+
+def run_search(results, texts=None, products=PRODUCTS, store=None, **kw):
+    store, client, worker = store or Store(), Client(results, texts), Worker(JUDGED)
+    report = search_web("Gorenje RK4182PS4 ljudnivå", products, client, worker, store.web_store(), rerank, **kw)
+    return report, store, client, worker
+
+
+def test_the_worker_judges_the_short_parts_and_the_relevant_pages_are_extracted():
+    report, store, client, worker = run_search([SHOP, TEST, OTHER, FORUM], {TEST.url: TEST_PAGE})
+    assert len(worker.prompts) == 4 and "Short part: Gorenje i test" in worker.prompts[1]
+    assert "Published: 2025-03-08" in worker.prompts[1] and "Vi mätte" not in "".join(worker.prompts)
+    assert client.extracted == [[TEST.url]]  # the forum page came with its text, the others are not relevant
+    assert (report.pages, report.credits) == (4, 2)  # the search and one extraction
+    # only the relevant pages keep their text
+    saved = {r.url: r.raw for r in store.searches[0][2]}
+    assert saved[TEST.url] == TEST_PAGE and saved[SHOP.url] == "" and saved[OTHER.url] == ""
+    assert set(store.chunks) == {(2, TEST.url), (3, TEST.url), (2, FORUM.url)}  # id 9 was not asked for
     chunk = store.chunks[(2, TEST.url)][0]
-    assert chunk.kind == "test" and chunk.ref == url_ref(TEST.url) + " 1" and chunk.text.endswith(TEST_PAGE)
-    assert chunk.meta == {"url": TEST.url, "title": TEST.title, "site": "testsite.se", "type": "test"}
-    assert store.searches == [("Gorenje RK4182PS4 test", [2, 3])]
+    assert chunk.kind == "test" and chunk.ref == url_ref(TEST.url) + " 1" and chunk.meta["published"] == "2025-03-08"
 
 
-def test_at_most_8_pages_go_to_the_chat_model():
-    pages = [WebResult(f"https://t{n}.se/", f"T{n}", "", f"Test {n}.") for n in range(12)]
-    report = search_web("q", [], Client(pages), Worker({}, PageJudgement(kind="test", relevant=True)),
-                        Store().web_store())
-    assert report.to_chat == MAX_TO_CHAT == 8
-    assert "- t8.se, test: T8 (https://t8.se/): relevant" in report.text
+def test_the_parts_above_the_threshold_go_to_the_chat_model_with_their_neighbours():
+    page = "\n\n".join(["Gorenje RK4182PS4 i test.", FILLER, FILLER, "Vi mätte ljudnivån till 39 dB i vårt labb.",
+                        FILLER, FILLER, "Bomann KG 320 är billigare men låter mer."])
+    report, *_ = run_search([TEST, FORUM, SHOP], {TEST.url: page})
+    text = report.text
+    assert "[web page 1] testsite.se, test, about id 2, 3, published 2025-03-08" in text
+    assert "(score 0.90) Vi mätte ljudnivån till 39 dB i vårt labb." in text
+    assert "(score 0.90) Min Gorenje RK4182PS4 är tyst." in text
+    assert "Lorem ipsum" in text  # the parts before and after the hit
+    assert "Bomann KG 320 är billigare" not in text  # two parts away from the hit, and below the threshold
+    assert "- elgiganten.se, shop, about id 2, published not known: Gorenje RK4182PS4" in text
+    assert "not relevant, only a price" in text
 
 
-def test_a_long_page_is_cut_for_the_chat_model():
-    long = WebResult("https://long.se/", "Long", "", "x" * (PAGE_CHARS + 10))
-    report = search_web("q", [], Client([long]), Worker({}), Store().web_store())
-    assert "x" * PAGE_CHARS + " [cut here]" in report.text
+def test_choose_parts_stops_at_the_limit_and_keeps_the_page_order():
+    parts = [Part(0, n, f"p{n}", 0.9 if n in (1, 5) else 0.1) for n in range(8)]
+    assert [p.n for p in choose_parts(parts)] == [0, 1, 2, 4, 5, 6]
+    assert [p.n for p in choose_parts(parts, limit=4)] == [0, 1, 2]
+    assert MAX_CHAT_PARTS == 40
+
+
+def test_a_relevant_page_whose_text_tavily_cannot_get():
+    report, *_ = run_search([TEST, FORUM], {})
+    assert "relevant; Tavily could not get its text" in report.text and report.credits == 1
 
 
 def test_stored_results_of_the_question_cost_no_credit():
-    store, client = Store(stored=[FORUM]), Client([TEST])
-    report = search_web("gorenje rk4182ps4 test", PRODUCTS[:1], client, Worker(JUDGED), store.web_store())
-    assert client.queries == [] and report.credits == 0 and "stored results" in report.text
-    assert store.searches  # the floor counts the search again
+    stored = [WebResult(**{**vars(TEST), "raw": TEST_PAGE}), FORUM]
+    report, store, client, _ = run_search([], store=Store(stored=stored))
+    assert client.queries == [] and client.extracted == [] and report.credits == 0
+    assert "stored results" in report.text and store.searches  # the floor counts the search again
 
 
 def test_without_products_nothing_is_stored():
-    store = Store()
-    report = search_web("bästa kylskåp test 2026", [], Client([TEST, FORUM]), Worker(JUDGED), store.web_store())
-    assert report.pages == 2 and store.chunks == {} and TEST_PAGE in report.text
+    report, store, *_ = run_search([TEST, FORUM], {TEST.url: TEST_PAGE}, products=[])
+    assert store.chunks == {} and "39 dB" in report.text
 
 
 def test_the_page_limit_and_a_worker_that_stops():
-    judged = {**JUDGED, FORUM.url: LLMUnavailable("quota")}
-    report = search_web("q", PRODUCTS, Client([TEST, FORUM, SHOP]), Worker(judged), Store().web_store(), max_pages=2)
+    store, client = Store(), Client([TEST, FORUM, SHOP])
+    worker = Worker({**JUDGED, FORUM.url: LLMUnavailable("quota")})
+    report = search_web("q", PRODUCTS, client, worker, store.web_store(), rerank, max_pages=2)
     assert report.pages == 2
     assert "1 more pages were found and not judged" in report.text
     assert "worker model is not available" in report.text
-
 
 
 def tavily(handler):
     return TavilyClient("key", http=httpx.Client(transport=httpx.MockTransport(handler)))
 
 
-def test_the_tavily_request_and_its_results():
+def test_the_tavily_requests_and_their_results():
     sent = []
 
     def handler(request):
         sent.append(request)
-        return httpx.Response(200, json={"results": [{"url": "https://a.se/x", "title": "T", "content": "c",
-                                                      "raw_content": "full text", "score": 0.9}]})
-    results = tavily(handler).search("kyl test")
-    assert results == [WebResult("https://a.se/x", "T", "c", "full text")]
+        if request.url.path == "/search":
+            return httpx.Response(200, json={"results": [{"url": "https://a.se/x", "title": "T", "content": "c",
+                                                          "raw_content": None, "score": 0.9,
+                                                          "published_date": "Sat, 08 Mar 2025 00:00:00 GMT"}]})
+        return httpx.Response(200, json={"results": [{"url": "https://a.se/x", "raw_content": "full text"}],
+                                         "failed_results": [{"url": "https://b.se/"}]})
+    client = tavily(handler)
+    assert client.search("kyl test") == [WebResult("https://a.se/x", "T", "c", "", "2025-03-08")]
+    assert client.extract(["https://a.se/x", "https://b.se/"]) == {"https://a.se/x": "full text"}
     assert sent[0].headers["Authorization"] == "Bearer key"
     body = json.loads(sent[0].content)
-    assert body["query"] == "kyl test" and body["search_depth"] == "basic" and body["include_raw_content"] == "text"
+    assert body["query"] == "kyl test" and body["include_raw_content"] == "text" and body["include_published_date"]
+    assert json.loads(sent[1].content)["urls"] == ["https://a.se/x", "https://b.se/"]
 
 
 @pytest.mark.parametrize("status", [401, 429, 432, 500])
@@ -227,8 +252,9 @@ def test_web_searches_count_for_the_product_and_web_text_loses_its_header(db):
     assert web_searched(db, [1], now + timedelta(minutes=1)) == set()
     assert stored_web_results(db, "gorenje TEST", now - timedelta(days=7))[0]["url"] == TEST.url
     assert stored_web_results(db, "other", now - timedelta(days=7)) is None
-    finding = Finding(TEST, "test", True, [1])
+    finding = Finding(WebResult(**{**vars(TEST), "raw": TEST_PAGE}), "test", True, [1])
     for _ in range(2):  # a second read of the page replaces its chunks
         save_web_chunks(db, 1, url_ref(TEST.url), web_chunks("Fridge 2026 model", finding), now)
     assert db.execute("SELECT count(*) AS n FROM chunks WHERE source = 'web'").fetchone()["n"] == 1
-    assert web_texts(db, [2]) == {2: TEST_PAGE}  # without the two lines that name the product and the page
+    # without the two lines that name the product and the page; the chunks join the paragraphs with one newline
+    assert web_texts(db, [2]) == {2: TEST_PAGE.replace("\n\n", "\n")}

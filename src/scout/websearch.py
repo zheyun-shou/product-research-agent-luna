@@ -1,17 +1,25 @@
-"""Web search (phase 3 Task 9): Tavily finds pages with their text, the worker judges each page, and the chat model
-reads the full text of the relevant pages.
+"""Web search (phase 3 Task 9): Tavily finds pages, the worker judges each one from its short part, and the chat
+model gets the parts of the relevant pages that answer the question.
 
-Tavily gives the text of each found page (include_raw_content), so product-scout does not fetch these pages itself.
-A basic search costs one credit for any number of results; the free plan has 1,000 each month. The same question in
-the last 7 days uses the stored results and costs nothing.
+The steps (Zheyun, 2026-10-07):
+1. A Tavily search gives up to 20 pages, one credit. Some come with their text; most have only a short part.
+2. The worker judges each page from its title and short part, in parallel: the kind, relevant or not, and which of
+   the given products it is about.
+3. The text of the relevant pages that came without text is fetched with Tavily Extract (one credit for each 5
+   pages that it gets).
+4. The text is cut into parts. A local reranker scores each part against the question. The parts above THRESHOLD
+   go to the chat model, best first, with the part before and the part after, up to MAX_CHAT_PARTS.
+5. The relevant test and forum pages about a given product are stored as chunks of that product. Pages that are
+   not relevant keep only their title, address and short part.
 
-Decided by Zheyun on 2026-10-07: the worker reads all found pages in parallel and only judges them. The chat model
-gets the page text itself, not a summary, and at least MIN_TO_CHAT pages.
+The idea of a score threshold on the parts comes from GPT Researcher (its context filter); the cross-encoder in place
+of the cosine of an embedding comes from a test on 2026-10-07 (scout.text.rerank).
 """
 import contextvars
 import hashlib
+import math
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable, Literal
 from urllib.parse import urlparse
 
@@ -21,13 +29,14 @@ from pydantic import BaseModel, Field
 from scout.llm.client import LLMOutputError, LLMUnavailable
 from scout.text.chunks import Chunk, split_text
 
-API = "https://api.tavily.com/search"
+API = "https://api.tavily.com"
 RESULTS = 20  # pages for each search (Zheyun, 2026-10-06); one credit for any number
-STORED_CHARS = 30_000  # of one page in the stored results
-PAGE_CHARS = 15_000  # of one page for the worker and for the chat model
+STORED_CHARS = 30_000  # of one page
+PART_TOKENS = 250  # the parts that the reranker scores, about 1,000 characters as in GPT Researcher
+PART_OVERLAP = 25
+THRESHOLD = 0.5  # reranker score from 0 to 1; first value from the test of 2026-10-07
+MAX_CHAT_PARTS = 40  # parts for the chat model in one search, the parts before and after included (~10,000 tokens)
 READ_WORKERS = 10
-MIN_TO_CHAT = 5  # pages whose text the chat model gets, also when fewer are relevant
-MAX_TO_CHAT = 8
 WEB_KINDS = ("test", "forum")
 
 
@@ -40,51 +49,78 @@ class WebResult:
     url: str
     title: str
     content: str  # the short part that Tavily gives
-    raw: str = ""  # the text of the page
+    raw: str = ""  # the text of the page, when Tavily gave it
+    published: str | None = None  # Tavily's estimate of when the page was published or last changed
 
     @property
     def site(self) -> str:
         return urlparse(self.url).netloc.removeprefix("www.")
 
-    @property
-    def text(self) -> str:
-        return self.raw or self.content
+
+def _date(value: str | None) -> str | None:
+    """'Sat, 08 Mar 2025 00:00:00 GMT' -> '2025-03-08'."""
+    if not value:
+        return None
+    from email.utils import parsedate_to_datetime
+    try:
+        return parsedate_to_datetime(value).date().isoformat()
+    except (TypeError, ValueError):
+        return value[:10]
 
 
 class TavilyClient:
     def __init__(self, key: str, http: httpx.Client | None = None, timeout: float = 60.0):
-        self.key, self.http, self.timeout = key, http or httpx.Client(timeout=timeout), timeout
+        self.key, self.http = key, http or httpx.Client(timeout=timeout)
 
-    def search(self, query: str, max_results: int = RESULTS) -> list[WebResult]:
+    def _post(self, path: str, body: dict) -> dict:
         try:
-            response = self.http.post(API, headers={"Authorization": f"Bearer {self.key}"}, json={
-                "query": query, "max_results": max_results, "search_depth": "basic",
-                "include_raw_content": "text"})
+            response = self.http.post(f"{API}/{path}", headers={"Authorization": f"Bearer {self.key}"}, json=body)
         except httpx.HTTPError as exc:
             raise WebSearchUnavailable(f"Tavily did not answer ({type(exc).__name__})") from exc
         if response.status_code in (401, 403):
             raise WebSearchUnavailable("the Tavily key is not valid")
         if response.status_code in (429, 432, 433):
-            raise WebSearchUnavailable(f"Tavily refused the search (status {response.status_code}): the credits "
+            raise WebSearchUnavailable(f"Tavily refused the request (status {response.status_code}): the credits "
                                        "or the rate limit of the plan are used up")
         if response.status_code != 200:
             raise WebSearchUnavailable(f"Tavily gave status {response.status_code}")
-        return [WebResult(r["url"], r.get("title") or "", r.get("content") or "", (r.get("raw_content") or "")[
-            :STORED_CHARS]) for r in response.json().get("results", [])]
+        return response.json()
+
+    def search(self, query: str, max_results: int = RESULTS) -> list[WebResult]:
+        data = self._post("search", {"query": query, "max_results": max_results, "search_depth": "basic",
+                                     "include_raw_content": "text", "include_published_date": True})
+        return [WebResult(r["url"], r.get("title") or "", r.get("content") or "",
+                          (r.get("raw_content") or "")[:STORED_CHARS], _date(r.get("published_date")))
+                for r in data.get("results", [])]
+
+    def extract(self, urls: list[str]) -> dict[str, str]:
+        """The text of each page that Tavily could get. One credit for each 5 pages that it gets."""
+        texts: dict[str, str] = {}
+        for start in range(0, len(urls), 20):  # at most 20 addresses in one request
+            data = self._post("extract", {"urls": urls[start:start + 20], "format": "text",
+                                          "extract_depth": "basic"})
+            texts |= {r["url"]: (r.get("raw_content") or "")[:STORED_CHARS] for r in data.get("results", [])
+                      if r.get("raw_content")}
+        return texts
 
 
-# ---- the worker judges one page ----
+def extract_credits(pages: int) -> int:
+    return math.ceil(pages / 5)
 
-JUDGE_SYSTEM = """You look at one web page for a shopping research assistant. The assistant will read the relevant
-pages itself. You only judge the page.
 
-- kind: "test" for a test or review by a magazine, a blog or a test site; "forum" for a forum or a discussion where
-  users write; "shop" for a shop page that sells products; "other" for anything else.
-- relevant: true when the page helps to answer the search question: tests, measurements, opinions of users,
-  problems, comparisons. When products are listed, the page must be about one of them or compare it. A page with
-  only a product name and a price, or no real text, is not relevant.
+# ---- the worker judges one page from its short part ----
+
+JUDGE_SYSTEM = """You look at one web search result for a shopping research assistant: its title, its address and a
+short part of its text. Judge if the page is worth reading. You do not answer the question.
+
+- kind: "test" for a test or review by a magazine, a blog, a video or a test site; "forum" for a forum or a
+  discussion where users write, or a page of buyer reviews; "shop" for a shop page that sells products; "other"
+  for anything else.
+- relevant: true when the page will probably help to answer the search question: tests, measurements, opinions of
+  users, problems, comparisons. When products are listed, the page must be about one of them or compare it. A shop
+  page with only a product name and a price is not relevant.
 - about: the ids of the listed products that the page is about (the same model, not only the same brand).
-- reason: one short sentence, why it is relevant or not."""
+- reason: one short sentence."""
 
 
 class PageJudgement(BaseModel):
@@ -116,13 +152,12 @@ def judge_prompt(question: str, result: WebResult, products: list[ProductRef]) -
     lines = [f"Search question: {question}", "Products:"]
     lines += [f"- id {p.listing_id}: {p.title[:200]}" + (f" (model {p.model})" if p.model else "")
               for p in products] or ["none listed"]
-    lines += ["", f"Page: {result.title}", f"URL: {result.url}", "", result.text[:PAGE_CHARS]]
+    lines += ["", f"Title: {result.title}", f"URL: {result.url}", f"Published: {result.published or 'not known'}",
+              f"Short part: {result.content[:1000]}"]
     return "\n".join(lines)
 
 
 def judge_page(llm, question: str, result: WebResult, products: list[ProductRef]) -> Finding:
-    if not result.text.strip():
-        return Finding(result, reason="the page has no text")
     try:
         judged = llm.structured("worker", JUDGE_SYSTEM, judge_prompt(question, result, products), PageJudgement)
     except LLMOutputError as exc:
@@ -150,12 +185,37 @@ def judge_pages(llm, question: str, results: list[WebResult], products: list[Pro
     return findings, stopped
 
 
-def for_chat(findings: list[Finding]) -> list[Finding]:
-    """The relevant pages in the order of the search, at most MAX_TO_CHAT. When fewer than MIN_TO_CHAT are
-    relevant, the next pages with text fill up to MIN_TO_CHAT."""
-    chosen = [f for f in findings if f.relevant][:MAX_TO_CHAT]
-    rest = [f for f in findings if not f.relevant and f.result.text.strip()]
-    return chosen + rest[:max(0, MIN_TO_CHAT - len(chosen))]
+# ---- the parts that answer the question ----
+
+@dataclass
+class Part:
+    page: int  # index in the findings
+    n: int  # place in the page
+    text: str
+    score: float = 0.0
+
+
+def page_parts(findings: list[Finding]) -> list[Part]:
+    parts = []
+    for i, f in enumerate(findings):
+        if f.relevant and f.result.raw:
+            parts += [Part(i, n, text) for n, text in enumerate(split_text(f.result.raw, max_tokens=PART_TOKENS,
+                                                                           overlap=PART_OVERLAP))]
+    return parts
+
+
+def choose_parts(parts: list[Part], limit: int = MAX_CHAT_PARTS) -> list[Part]:
+    """The parts above THRESHOLD, best first, each with the part before and after it, until the limit. Returned in
+    the order of the pages."""
+    by_place = {(p.page, p.n): p for p in parts}
+    chosen: dict[tuple[int, int], Part] = {}
+    for hit in sorted((p for p in parts if p.score >= THRESHOLD), key=lambda p: -p.score):
+        group = [by_place[k] for k in ((hit.page, hit.n - 1), (hit.page, hit.n), (hit.page, hit.n + 1))
+                 if k in by_place and k not in chosen]
+        if len(chosen) + len(group) > limit:
+            break
+        chosen |= {(p.page, p.n): p for p in group}
+    return [chosen[k] for k in sorted(chosen)]
 
 
 # ---- chunks and the report ----
@@ -167,10 +227,10 @@ def url_ref(url: str) -> str:
 def web_chunks(product_title: str, finding: Finding) -> list[Chunk]:
     """The text of one test or forum page, in chunks, for one product that it is about."""
     r = finding.result
-    meta = {"url": r.url, "title": r.title[:300], "site": r.site, "type": finding.kind}
-    head = f"Product: {product_title}\nWeb {finding.kind}, {r.site}: {r.title[:200]}\n"
+    meta = {"url": r.url, "title": r.title[:300], "site": r.site, "type": finding.kind, "published": r.published}
+    head = f"Product: {product_title}\nWeb {finding.kind}, {r.site}, {r.published or 'date not known'}: {r.title[:200]}\n"
     return [Chunk(finding.kind, f"{url_ref(r.url)} {n}", head + part, meta)
-            for n, part in enumerate(split_text(r.text[:STORED_CHARS]), 1)]
+            for n, part in enumerate(split_text(r.raw), 1)]
 
 
 @dataclass
@@ -185,50 +245,74 @@ class WebStore:
 class WebReport:
     text: str
     pages: int  # pages that the worker judged
-    credits: int  # 0 when the stored results were used
-    to_chat: int = 0  # pages whose text is in the report
+    credits: int  # Tavily credits: the search (0 for stored results) and the extraction
+    parts: int = 0  # parts in the report
 
 
 def page_line(finding: Finding) -> str:
     r = finding.result
     about = f", about id {', '.join(map(str, finding.about))}" if finding.about else ""
-    return f"{r.site}, {finding.kind}{about}: {r.title[:150]} ({r.url})"
+    return (f"{r.site}, {finding.kind}{about}, published {r.published or 'not known'}: {r.title[:150]} "
+            f"({r.url})")
 
 
 def search_web(question: str, products: list[ProductRef], client: TavilyClient, llm, store: WebStore,
-               max_pages: int = RESULTS) -> WebReport:
-    """Search, let the worker judge each found page, and give the text of the relevant pages. Test and forum pages
-    about a listed product are stored as chunks of that product."""
+               rerank: Callable[[str, list[str]], list[float]], max_pages: int = RESULTS) -> WebReport:
     results = store.stored(question)
     credits = 0
     if results is None:
         results = client.search(question)
         credits = 1
-    store.save_search(question, [p.listing_id for p in products], results)
     head = f"Web search '{question}'" + (" (stored results of the last 7 days)" if not credits else "")
     if not results:
+        store.save_search(question, [p.listing_id for p in products], [])
         return WebReport(f"{head}: no pages found.", 0, credits)
     todo = results[:max_pages]
     findings, stopped = judge_pages(llm, question, todo, products)
+    # The text of the relevant pages that came without it
+    missing = [f.result.url for f in findings if f.relevant and not f.result.raw]
+    texts = client.extract(missing) if missing else {}
+    credits += extract_credits(len(texts))
+    findings = [replace(f, result=replace(f.result, raw=texts[f.result.url])) if f.result.url in texts else f
+                for f in findings]
+    # Only the relevant pages keep their text
+    store.save_search(question, [p.listing_id for p in products],
+                      [f.result if f.relevant else replace(f.result, raw="") for f in findings]
+                      + results[len(todo):])
     titles = {p.listing_id: p.title for p in products}
-    for finding in findings:
-        if finding.relevant and finding.kind in WEB_KINDS:
-            for listing_id in finding.about:
-                store.save_chunks(listing_id, finding.result.url, web_chunks(titles[listing_id], finding))
-    chosen = for_chat(findings)
-    relevant = sum(f.relevant for f in findings)
-    lines = [f"{head}: {len(results)} pages found, {len(todo)} judged by the worker, {relevant} relevant. "
-             f"The text of {len(chosen)} pages follows."]
-    for n, finding in enumerate(chosen, 1):
-        mark = "" if finding.relevant else " (the worker found it not relevant)"
-        text = finding.result.text
-        cut = " [cut here]" if len(text) > PAGE_CHARS else ""
-        lines += ["", f"[web page {n}] {page_line(finding)}{mark}", text[:PAGE_CHARS] + cut]
-    others = [f for f in findings if f not in chosen]
+    for f in findings:
+        if f.relevant and f.result.raw and f.kind in WEB_KINDS:
+            for listing_id in f.about:
+                store.save_chunks(listing_id, f.result.url, web_chunks(titles[listing_id], f))
+    parts = page_parts(findings)
+    for part, score in zip(parts, rerank(question, [f"Page: {findings[p.page].result.title}\n{p.text}"
+                                                    for p in parts])):
+        part.score = score
+    chosen = choose_parts(parts)
+    relevant = [i for i, f in enumerate(findings) if f.relevant]
+    lines = [f"{head}: {len(results)} pages found, {len(todo)} judged by the worker, {len(relevant)} relevant. "
+             f"{len(chosen)} parts of their text answer the question best (a score from 0 to 1, above "
+             f"{THRESHOLD}; the parts before and after come with them)."]
+    best = {}
+    for p in chosen:
+        best[p.page] = max(best.get(p.page, 0.0), p.score)
+    for n, page in enumerate(sorted(best, key=lambda i: -best[i]), 1):
+        lines += ["", f"[web page {n}] {page_line(findings[page])}"]
+        last = None
+        for p in (p for p in chosen if p.page == page):
+            if last is not None and p.n != last + 1:
+                lines.append("[...]")
+            lines.append((f"(score {p.score:.2f}) " if p.score >= THRESHOLD else "") + p.text)
+            last = p.n
+    others = [i for i in range(len(findings)) if i not in best]
     if others:
         lines += ["", "The other pages:"]
-        lines += [f"- {page_line(f)}: " + (f.error or ("relevant" if f.relevant else "not relevant")
-                                            + (f", {f.reason}" if f.reason else "")) for f in others]
+        for i in others:
+            f = findings[i]
+            why = f.error or ("relevant; no part was above the threshold" if f.relevant and f.result.raw else
+                              "relevant; Tavily could not get its text" if f.relevant else
+                              "not relevant" + (f", {f.reason}" if f.reason else ""))
+            lines.append(f"- {page_line(f)}: {why}")
     if stopped:
         lines.append(stopped)
     if len(results) > len(todo):
