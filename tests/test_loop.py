@@ -128,7 +128,7 @@ def test_remove_products_and_the_picks_panel():
     state = run(graph, "Not the first one")
     assert shop.removed == {2} and [p["listing_id"] for p in state["picks"]] == [1]
     assert state["removed"][0]["listing_id"] == 2
-    assert "Removed in this conversation: id 2" in llm.requests[3][1]
+    assert "remove_products: removed 2." in llm.requests[3][1]  # the result of its own call, in the history
 
 
 def test_the_product_pages_of_a_turn_have_a_limit():
@@ -275,3 +275,51 @@ def test_a_price_claim_needs_the_card_even_when_the_page_shows_the_number():
     assert "id 1: price is 5000, not 299" in retry and "page text does not show" not in retry
     assert "the number 299 has no source" in retry  # "299 kr" in the page text is not a source
     assert "the number 100 has no source" not in retry  # 100 liter is in the page text
+
+
+def answered(history):
+    """Each tool call in the history has its result before the next call of the model, as the chat API needs."""
+    open_ids = set()
+    for message in history:
+        if message["role"] == "assistant":
+            assert not open_ids, open_ids
+            open_ids = {c["id"] for c in message["tool_calls"]}
+        elif message["role"] == "tool":
+            open_ids.discard(message["tool_call_id"])
+    return not open_ids
+
+
+def test_the_model_sees_its_own_calls_and_their_results():
+    shop = Shop()
+    llm = FakeLLM([[NEEDS, SearchShop(words="kyl och frys")], [FindProducts()], [ReadReviews(ids=[2, 1])], [PICKS]])
+    run(build_agent_graph(shop.deps(llm), InMemorySaver()), "A fridge with a freezer, at most 180 cm")
+    first, third = llm.histories[0], llm.histories[2]
+    assert first == []
+    calls = third[0]["tool_calls"]
+    assert [c["function"]["name"] for c in calls] == ["update_needs", "search_shop"]
+    assert '"words": "kyl och frys"' in calls[1]["function"]["arguments"]
+    assert third[1]["role"] == "tool" and third[1]["content"].startswith("update_needs: recorded")
+    assert "Profile: kinds" in third[1]["content"]  # a new category gives its names
+    assert all(answered(h) for h in llm.histories)
+    # The first message stays the same in the whole turn, so the provider can cache it
+    assert len({request.split("\n\nConversation:")[0] for _, request in llm.requests}) == 1
+
+
+def test_the_problems_of_a_final_call_come_back_as_its_result():
+    shop = Shop()
+    llm = FakeLLM([[NEEDS], [PICKS], [SearchShop(words="kylskåp"), ReadReviews(ids=[1, 2])], [PICKS]])
+    run(build_agent_graph(shop.deps(llm), InMemorySaver()), "A fridge at most 180 cm")
+    history = llm.histories[2]
+    final_id = history[-2]["tool_calls"][0]["id"]
+    assert history[-1] == {"role": "tool", "tool_call_id": final_id, "content": history[-1]["content"]}
+    assert "no shop search in this conversation yet" in history[-1]["content"]
+    assert all(answered(h) for h in llm.histories)
+
+
+def test_a_final_call_next_to_work_calls_waits_and_gets_a_result():
+    shop = Shop()
+    shop.reviewed = {1, 2}
+    llm = FakeLLM([[NEEDS, SearchShop(words="kylskåp"), PICKS], [PICKS]])
+    state = run(build_agent_graph(shop.deps(llm), InMemorySaver()), "A fridge at most 180 cm")
+    assert "not run: other tools ran in the same step" in llm.requests[1][1]
+    assert all(answered(h) for h in llm.histories) and [p["listing_id"] for p in state["picks"]] == [2, 1]

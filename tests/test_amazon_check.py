@@ -25,9 +25,10 @@ def test_sign_in_redirect():
     assert status.problem == "signin"
 
 
-def test_server_error_and_no_response_are_blocked():
-    assert check_page(page(status=503)).problem == "blocked"
-    assert check_page(page(status=0, html="")).problem == "blocked"
+def test_server_error_and_no_response_are_unavailable_and_too_many_requests_is_blocked():
+    assert check_page(page(status=503)).problem == "unavailable"
+    assert check_page(page(status=0, html="")).problem == "unavailable"
+    assert check_page(page(status=429)).problem == "blocked"
 
 
 def test_missing_product_is_gone():

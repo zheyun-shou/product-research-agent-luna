@@ -9,6 +9,9 @@ from scout.sources.base import RawPage
 NOW = datetime(2026, 10, 3, 10, 15, tzinfo=timezone.utc)
 
 
+SERVER_ERROR = "<503>"  # a page in FakeBrowser that comes with the status 503
+
+
 class FakeBrowser:
     """Serves HTML by URL. A list gives one page per fetch; the last one repeats."""
 
@@ -20,7 +23,8 @@ class FakeBrowser:
         self.fetched.append(url)
         queue = self.pages[url]
         html = queue.pop(0) if len(queue) > 1 else queue[0]
-        return RawPage(url=url, final_url=url, status=200, html=html, fetched_at=NOW, duration_ms=5)
+        status = 503 if html == SERVER_ERROR else 200
+        return RawPage(url=url, final_url=url, status=status, html=html, fetched_at=NOW, duration_ms=5)
 
     def screenshot(self, path: Path) -> Path:
         path.write_bytes(b"png")
@@ -58,9 +62,12 @@ class FakeLLM:
         self.images = list(images)
         return self._reply(role, user, schema.__name__)
 
-    def tools(self, role, system, user, tools, name="tools", text_reply=None):
-        """The queued reply is the list of tool objects that the model calls, or a str for a text answer."""
-        reply = self._reply(role, user, name)
+    def tools(self, role, system, user, tools, name="tools", text_reply=None, history=()):
+        """The queued reply is the list of tool objects that the model calls, or a str for a text answer.
+        The request text has the user message and then the history, so a test can look for a tool result in it."""
+        self.histories = getattr(self, "histories", []) + [list(history)]
+        seen = [m.get("content") or json.dumps(m.get("tool_calls"), ensure_ascii=False) for m in history]
+        reply = self._reply(role, "\n\n".join([user, *seen]), name)
         return [text_reply(text=reply)] if isinstance(reply, str) and text_reply else reply
 
     def mark_checked(self, passed, problems=()):

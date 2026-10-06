@@ -43,7 +43,8 @@ def fetch_checked(
     """Fetch and check one page. Ask the user to fix a problem, then try the same URL again.
 
     The last attempt does not ask, because no fetch would follow the answer.
-    An incomplete page is fetched again without asking.
+    An incomplete page and a server error (503) are fetched again without asking, after the polite gap of the
+    browser (about 5 seconds).
     """
     for attempt in range(1, MAX_ATTEMPTS + 1):
         page = adapter.fetch(url)
@@ -58,7 +59,7 @@ def fetch_checked(
             if notes is not None:
                 notes.append(f"gave up after {MAX_ATTEMPTS} attempts ({status.problem}) at {url}")
             return None
-        if status.problem != "incomplete" and not on_problem(status, url):
+        if status.problem not in ("incomplete", "unavailable") and not on_problem(status, url):
             return None
     return None
 

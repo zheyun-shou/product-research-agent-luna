@@ -296,3 +296,14 @@ def test_each_role_has_a_deadline():
     llm, _, _ = make([])
     assert llm._deadline("chat", CONFIG.roles["chat"]) == 180
     assert llm._deadline("worker", CONFIG.roles["worker"]) == 60
+
+
+def test_too_little_credit_raises_no_credits_and_keeps_the_main_model():
+    from openai import APIStatusError
+
+    from scout.llm.client import NoCredits
+    response = httpx2.Response(402, request=httpx2.Request("POST", "https://example.test/"))
+    llm, main, backup = make_with_fallback([APIStatusError("more credits", response=response, body=None)], [])
+    with pytest.raises(NoCredits):
+        llm.structured("chat", "sys", "user", Answer)
+    assert "chat" not in llm.fallbacks and backup.chat.completions.requests == []

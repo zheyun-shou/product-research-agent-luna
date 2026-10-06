@@ -7,7 +7,7 @@ from scout.crawl import crawl, interleave, read_details, CrawlReport
 from scout.llm.client import LLMOutputError, LLMTimeout, QuotaExhausted
 from scout.sources.amazon_se.adapter import AmazonSeAdapter
 from scout.sources.amazon_se.urls import product_url, search_url
-from tests.fakes import FakeBrowser
+from tests.fakes import SERVER_ERROR, FakeBrowser
 
 pytestmark = pytest.mark.db
 FIXTURES = Path(__file__).parent / "fixtures" / "amazon_se"
@@ -246,3 +246,11 @@ def test_candidates_past_the_limit_are_kept_and_can_be_read_later(db, tmp_path):
     assert report.saved == 1 and len(report.unread) == 2
     later = read_details(db, adapter, "fridge", report.unread, CrawlReport(), on_problem=never_called)
     assert later.saved == 2 and count(db, "listings") == 3
+
+
+def test_a_server_error_is_fetched_again_without_asking(db, tmp_path):
+    browser = site()
+    browser.pages[product_url("B0AAAAAAA1")].insert(0, SERVER_ERROR)
+    report = crawl(db, AmazonSeAdapter(browser, tmp_path), "fridge", "kylskåp", on_problem=never_called)
+    assert report.saved == 3
+    assert browser.fetched.count(product_url("B0AAAAAAA1")) == 2

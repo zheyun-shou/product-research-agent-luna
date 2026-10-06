@@ -18,7 +18,7 @@ class RawPage(BaseModel):
 
 class SessionStatus(BaseModel):
     ok: bool
-    problem: Literal["captcha", "signin", "blocked", "gone", "incomplete"] | None = None
+    problem: Literal["captcha", "signin", "blocked", "gone", "incomplete", "unavailable"] | None = None
     detail: str = ""
 
 

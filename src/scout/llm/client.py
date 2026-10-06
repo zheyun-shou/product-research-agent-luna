@@ -8,7 +8,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Literal, TypeVar
 
-from openai import APIConnectionError, BadRequestError, InternalServerError, OpenAI, RateLimitError
+from openai import (APIConnectionError, APIStatusError, BadRequestError, InternalServerError, OpenAI,
+                    RateLimitError)
 from pydantic import BaseModel, ValidationError
 
 from scout.llm.config import LLMConfig, ModelConfig
@@ -25,6 +26,16 @@ class LLMUnavailable(RuntimeError):
 
 class QuotaExhausted(LLMUnavailable):
     """The provider's daily free quota is used up."""
+
+
+class NoCredits(LLMUnavailable):
+    """The paid account has too little credit for the request (HTTP 402). Someone must add credit."""
+
+
+def no_credits(exc: APIStatusError, model: str) -> "NoCredits | None":
+    if getattr(exc, "status_code", None) != 402:
+        return None
+    return NoCredits(f"The account has too little credit for {model}. Add credit at the provider, then try again.")
 
 
 class LLMTimeout(LLMUnavailable):
@@ -184,19 +195,23 @@ class LLM:
         return self._with_fallback(role, lambda cfg: self._structured(role, cfg, system, user, schema, images))
 
     def tools(self, role: Role, system: str, user: str, tools: list[type[BaseModel]], name: str = "tools",
-              text_reply: type[BaseModel] | None = None) -> list:
+              text_reply: type[BaseModel] | None = None, history: list[dict] = ()) -> list:
         """The model calls one or more of the tools. Return the arguments of each call, as tool objects, in order.
 
         With text_reply, the model can also answer in plain text without a tool: the text becomes
-        text_reply(text=...). Without it, the model must call a tool."""
-        return self._with_fallback(role, lambda cfg: self._tool_calls(role, cfg, system, user, tools, name, text_reply))
+        text_reply(text=...). Without it, the model must call a tool.
+
+        history: the messages after the user message, in the format of the chat API: the earlier tool calls of the
+        model (role assistant, tool_calls) and their results (role tool)."""
+        return self._with_fallback(role, lambda cfg: self._tool_calls(role, cfg, system, user, tools, name, text_reply,
+                                                                      history))
 
     def _with_fallback(self, role: Role, call):
         fallback = self.config.roles[role].fallback
         if role not in self.fallbacks:
             try:
                 return call(self.config.roles[role])
-            except LLMTimeout:  # one slow call: the next call uses the main model again
+            except (LLMTimeout, NoCredits):  # a slow call, or a step for the owner of the account
                 raise
             except LLMUnavailable as exc:
                 if fallback is None:
@@ -262,6 +277,8 @@ class LLM:
                                                           f"schema:\n{json.dumps(schema_dict)}"}] + messages[1:]
                 last_error = str(exc)
                 continue
+            except APIStatusError as exc:
+                raise no_credits(exc, role_cfg.model) or exc
             record = CallRecord(role, role_cfg.model, tokens_in, tokens_out, self._clock() - started, schema.__name__,
                                 output=text, cost=getattr(usage, "cost", None))
             self.calls.append(record)
@@ -284,13 +301,14 @@ class LLM:
         )
 
     def _tool_calls(self, role: Role, role_cfg: ModelConfig, system: str, user: str,
-                    tools: list[type[BaseModel]], name: str, text_reply: type[BaseModel] | None = None) -> list:
+                    tools: list[type[BaseModel]], name: str, text_reply: type[BaseModel] | None = None,
+                    history: list[dict] = ()) -> list:
         client = self.client(role_cfg.provider)
         limiter = self._limiters.setdefault(
             (role_cfg.provider, role_cfg.model), RateLimiter(role_cfg.rpm, self._sleep, self._clock))
         by_name = {tool_name(t): t for t in tools}
         specs = [tool_spec(t) for t in tools]
-        messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+        messages = [{"role": "system", "content": system}, {"role": "user", "content": user}, *history]
         last_error = ""
         for attempt in range(1, self.MAX_ATTEMPTS + 1):
             limiter.wait()
@@ -330,6 +348,8 @@ class LLM:
                 last_error = "unavailable"
                 self._sleep(15 * attempt)
                 continue
+            except APIStatusError as exc:
+                raise no_credits(exc, role_cfg.model) or exc
             record = CallRecord(role, role_cfg.model, tokens_in, tokens_out, self._clock() - started, name,
                                 output=json.dumps(raw or message.content or "", ensure_ascii=False),
                                 cost=getattr(usage, "cost", None))

@@ -1,5 +1,6 @@
 """The agent loop (design 2026-10-06-agent-loop-design.md): the chat model decides and calls tools; Python runs the
 tools, keeps the fetching polite, and checks the facts of the final reply."""
+import json
 import re
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -224,35 +225,39 @@ def context_text(state: dict, deps: LoopDeps, thread: str) -> str:
         f"Needs so far: {needs.model_dump_json(exclude_none=True)}",
     ]
     if needs.category:
-        profile = deps.load_profile(needs.category)
-        lines.append("Profile: kinds " + ", ".join(f"{k.name} ({k.label})" for k in profile.kinds)
-                     + "; number attributes " + ", ".join(f"{a.name} ({a.unit or ''})" for a in profile.attributes
-                                                           if a.type == "number"))
+        lines.append(profile_text(deps.load_profile(needs.category)))
     lines.append("Current picks:\n" + ("\n".join(f"{n}. {candidate_text(c)}" for n, c in enumerate(picks, 1))
                                        or "none"))
     lines.append("Removed in this conversation: " + (", ".join(f"id {r['listing_id']} {r['title'][:50]}"
                                                                for r in removed) or "none"))
     lines.append("Shop searches in this conversation: " + (", ".join(f"'{w}' up to page {s['page']}"
                                                                      for w, s in searches.items()) or "none"))
-    used = state.get("used") or {}
-    lines.append(f"Left in this turn: {MAX_TOOL_CALLS - used.get('calls', 0)} tool calls, "
-                 f"{MAX_PRODUCT_PAGES - used.get('product_pages', 0)} product pages, "
-                 f"{MAX_REVIEW_PAGES - used.get('review_pages', 0)} review pages.")
     return "\n".join(lines)
 
 
+def profile_text(profile: CategoryProfile) -> str:
+    return ("Profile: kinds " + ", ".join(f"{k.name} ({k.label})" for k in profile.kinds)
+            + "; number attributes " + ", ".join(f"{a.name} ({a.unit or ''})" for a in profile.attributes
+                                                 if a.type == "number"))
+
+
 def turn_prompt(state: dict, deps: LoopDeps, thread: str) -> str:
-    parts = [context_text(state, deps, thread), "Conversation:\n" + history_text(state)]
-    log = state.get("turn_log") or []
-    if log:
-        parts.append("Tool results in this turn:\n\n" + "\n\n".join(log))
-    errors = state.get("gate_errors") or []
-    if errors:
-        parts.append("Python checked your last final call and found problems. Fix them and call show_picks or reply "
-                     "again:\n- " + "\n- ".join(errors))
-    if (state.get("used") or {}).get("calls", 0) >= MAX_TOOL_CALLS:
-        parts.append("The tool calls of this turn are used up. Answer now with show_picks or reply.")
-    return "\n\n".join(parts)
+    """The first message of a turn: the context and the conversation at the start of the turn. The tool calls of the
+    turn follow it as chat messages (turn_messages), so the model sees what it did and what came back."""
+    return "\n\n".join([context_text(state, deps, thread), "Conversation:\n" + history_text(state)])
+
+
+USED_UP = "The tool calls of this turn are used up. Answer now with show_picks or reply."
+
+
+def call_message(calls: list[BaseModel], ids: list[str]) -> dict:
+    return {"role": "assistant", "content": None, "tool_calls": [
+        {"id": i, "type": "function", "function": {"name": tool_name(type(c)), "arguments": json.dumps(
+            c.model_dump(mode="json"), ensure_ascii=False)}} for c, i in zip(calls, ids)]}
+
+
+def result_message(call_id: str, text: str) -> dict:
+    return {"role": "tool", "tool_call_id": call_id, "content": text}
 
 
 # ---- the checks of the final call (design section 8) ----
@@ -429,9 +434,11 @@ class Toolbox:
         errors = check_needs(needs, self.deps.load_profile(category), user_numbers(self.state))
         if errors:
             return "not recorded: " + "; ".join(errors)
+        new_category = category != self.needs.category
         self.needs = needs
         self.update["needs"] = needs.model_dump(mode="json")
-        return f"recorded: {needs.text() or 'no conditions'} (category {category}, kind {needs.kind})."
+        text = f"recorded: {needs.text() or 'no conditions'} (category {category}, kind {needs.kind})."
+        return text + ("\n" + profile_text(self.deps.load_profile(category)) if new_category else "")
 
     def search_shop(self, call: SearchShop) -> str:
         profile = self.profile()
@@ -568,7 +575,8 @@ def build_agent_graph(deps: LoopDeps, checkpointer=None):
     llm = deps.llm
 
     def start_node(state, config):
-        return {"turn_log": [], "used": {}, "gate_errors": [], "gate_rounds": 0, "pending": [], "final": None}
+        return {"turn_log": [], "turn_context": None, "turn_messages": [], "used": {}, "gate_errors": [],
+                "gate_rounds": 0, "pending": [], "final": None}
 
     def compact_node(state, config):
         try:
@@ -578,36 +586,54 @@ def build_agent_graph(deps: LoopDeps, checkpointer=None):
 
     def agent_node(state, config):
         thread = thread_of(config)
+        context = state.get("turn_context") or turn_prompt(state, deps, thread)  # the same in the whole turn
+        history = list(state.get("turn_messages") or [])
+        used_up = (state.get("used") or {}).get("calls", 0) >= MAX_TOOL_CALLS
         with deps.tracer.span("agent"):
             try:
-                calls = llm.tools("chat", SYSTEM, turn_prompt(state, deps, thread), WORK_TOOLS + FINAL_TOOLS,
-                                  name="Agent", text_reply=Reply)
+                calls = llm.tools("chat", SYSTEM, context, WORK_TOOLS + FINAL_TOOLS, name="Agent", text_reply=Reply,
+                                  history=history + ([{"role": "user", "content": USED_UP}] if used_up else []))
             except LLMUnavailable as exc:
                 return {"final": None, "pending": [], "gate_errors": [],
                         "messages": [assistant(f"I cannot work on this now. {exc}")]}
             except LLMOutputError as exc:
                 return {"final": None, "pending": [], "gate_errors": [], "messages": [assistant(
                     f"The model did not give a usable reply ({exc}). You can say it in other words.")]}
-        final = next((c for c in calls if isinstance(c, tuple(FINAL_TOOLS))), None)
-        work = [c for c in calls if not isinstance(c, tuple(FINAL_TOOLS))]
-        if work and (state.get("used") or {}).get("calls", 0) < MAX_TOOL_CALLS:
-            return {"pending": [to_state(c) for c in work], "final": None}
-        if final is None:
-            final = Reply(text="I could not finish this within the limits of one turn. You can ask me to go on.")
-        return {"pending": [], "final": to_state(final)}
+        ids = [f"call_{len(history)}_{n}" for n in range(len(calls))]
+        history.append(call_message(calls, ids))
+        finals = [(c, i) for c, i in zip(calls, ids) if isinstance(c, tuple(FINAL_TOOLS))]
+        work = [(c, i) for c, i in zip(calls, ids) if not isinstance(c, tuple(FINAL_TOOLS))]
+        update = {"turn_context": context}
+        if work and not used_up:
+            # Each call needs a result in the history: a final call waits for the results of the other tools
+            history += [result_message(i, "not run: other tools ran in the same step. Call it again when their "
+                                          "results are in.") for _, i in finals]
+            return {**update, "turn_messages": history, "pending": [{**to_state(c), "id": i} for c, i in work],
+                    "final": None}
+        history += [result_message(i, "not run: the tool calls of this turn are used up.") for _, i in work]
+        history += [result_message(i, "not run: only one final call counts.") for _, i in finals[1:]]
+        if finals:
+            final, final_id = finals[0]
+        else:
+            final, final_id = Reply(text="I could not finish this within the limits of one turn. You can ask me to "
+                                         "go on."), None
+        return {**update, "turn_messages": history, "pending": [], "final": {**to_state(final), "id": final_id}}
 
     def tools_node(state, config):
         box = Toolbox(deps, state, thread_of(config))
         log = list(state.get("turn_log") or [])
+        history = list(state.get("turn_messages") or [])
         for item in state.get("pending") or []:
             if box.used.get("calls", 0) >= MAX_TOOL_CALLS:
-                log.append(f"{item['tool']}: not run, the tool calls of this turn are used up.")
-                continue
-            box.used["calls"] = box.used.get("calls", 0) + 1
-            with deps.tracer.span(item["tool"]):
-                report = box.run(from_state(item))
-            log.append(report[:REPORT_LIMITS.get(item["tool"], MAX_REPORT_CHARS)])
-        return {**box.update, "turn_log": log, "used": box.used, "pending": []}
+                report = f"{item['tool']}: not run, the tool calls of this turn are used up."
+            else:
+                box.used["calls"] = box.used.get("calls", 0) + 1
+                with deps.tracer.span(item["tool"]):
+                    report = box.run(from_state(item))
+                report = report[:REPORT_LIMITS.get(item["tool"], MAX_REPORT_CHARS)]
+            log.append(report)
+            history.append(result_message(item["id"], report))
+        return {**box.update, "turn_log": log, "turn_messages": history, "used": box.used, "pending": []}
 
     def gate_node(state, config):
         thread = thread_of(config)
@@ -616,8 +642,13 @@ def build_agent_graph(deps: LoopDeps, checkpointer=None):
         errors = check_final(call, state, deps, thread, used)
         if errors and state.get("gate_rounds", 0) + 1 < MAX_GATE_ROUNDS:
             llm.mark_checked(False, errors)
+            feedback = ("Python checked this call and found problems. Fix them and call show_picks or reply "
+                        "again:\n- " + "\n- ".join(errors))
+            history = list(state.get("turn_messages") or [])
+            history.append(result_message(state["final"]["id"], feedback) if state["final"].get("id")
+                           else {"role": "user", "content": feedback})
             return {"gate_errors": errors, "gate_rounds": state.get("gate_rounds", 0) + 1, "final": None,
-                    "used": used}
+                    "used": used, "turn_messages": history}
         llm.mark_checked(not errors, errors)
         if errors:
             return {"final": None, "gate_errors": [], "messages": [assistant(

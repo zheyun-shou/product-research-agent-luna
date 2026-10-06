@@ -180,11 +180,28 @@ Changes after this turn:
 - Each model call has a deadline in all: 180 seconds for chat, 60 for worker, 120 for judge (`deadline` in models.yaml can change it). A late call is tried one more time, then it raises `LLMTimeout`. It does not move the role to its fallback, and the crawl stores that page without extraction. The late request cannot be stopped; its thread ends by itself.
 - The crawl extracts pages in 4 worker threads while the browser loads the next pages.
 - `search_shop` opens up to 8 new product pages. The sort orders take turns in the list, so the best rated and the best selling results are in the first 8. The rest stay for the next call with the same words.
-- The polite gap between pages is now 2.5 to 3.5 seconds (Zheyun, 2026-10-06), not 4 to 9.
+- The polite gap between pages is now 4.5 to 5.5 seconds (Zheyun, 2026-10-06), not 4 to 9. A first try with 2.5 to 3.5 seconds gave 5 HTTP 503 in 13 pages.
 - A claim can cite the page text of its product (field `page`), and a number of the page text is a source for the text of that pick. Prices in the page text ("299 kr") are not a source, and the price, the rating, the review count and the stock come only from the card.
 - `read_product` cuts each product at 5000 characters, and its report keeps all three. A product read in this turn is not given again.
 - The system prompt tells Luna to look at the stored products first.
 - The limit of 30 product pages for each turn stays.
 
 Goal from Zheyun: 3 to 4 minutes for a turn. A new category needs about 20 pages (3 search pages, 8 product pages, 9 review pages), so it is not sure that this goal can be met there. The next real turn measures it.
+
+## 15. The second real turn (2026-10-06)
+
+The same conversation, after the changes of section 14. It stopped after 182 seconds with an HTTP 402 from OpenRouter: the credit was too low for the default reservation of the request. Until then:
+
+- Luna had read the stored products, searched, looked for missing heights, read 3 products and their reviews, and was writing the review summaries. So a turn of about 3.5 minutes looks possible; it is not measured yet.
+- No model call was late. Chat: 23 calls, 79 seconds. Worker: 8 calls, 16 seconds. Cost 0.0205 USD.
+- Luna called `update_needs` 12 times with the same needs. Each call passed. The cause: each step sent one new message with the context and the tool results, without the calls of the model. So at each step Luna read the shopper's request as if for the first time.
+- 5 of 13 pages gave HTTP 503, with a gap of about 3 seconds. The program asked the shopper to fix each 503.
+
+Changes after this turn:
+
+- The model sees its own calls. A turn is now a chat history in the format of the API: the first message (the context and the conversation at the start of the turn), then each call of the model (role assistant) and its result (role tool). The first message stays the same in the whole turn, so the provider can cache it. The remaining limits are not in the context; a tool says when a limit is used up. The problems found by the gate come back as the result of the final call.
+- `update_needs` gives the names of the profile when the category is new.
+- A 503 or a page without an answer is fetched again without asking, after the polite gap. A 429 still asks.
+- The polite gap is 4.5 to 5.5 seconds (Zheyun).
+- An HTTP 402 raises `NoCredits` with a clear message. It does not move the role to its fallback. A limit on the output length is not set (Zheyun).
 
