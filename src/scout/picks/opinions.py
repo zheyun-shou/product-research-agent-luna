@@ -4,7 +4,7 @@ from typing import Callable
 
 from pydantic import BaseModel
 
-from scout.llm.client import LLMOutputError
+from scout.llm.client import LLMOutputError, LLMUnavailable
 from scout.llm.feedback import retry_prompt
 from scout.picks.rank import Card
 from scout.picks.write import numbers_in
@@ -38,8 +38,12 @@ class PickOpinions(BaseModel):
 
 
 def build_prompt(card: Card, chunks: dict[int, str]) -> str:
-    rating = (f"{card.rating} of 5 from {card.review_count} ratings" if card.rating is not None
-              else "no overall rating")
+    if card.rating is None:
+        rating = "no overall rating"
+    elif card.review_count:
+        rating = f"{card.rating} of 5 from {card.review_count} ratings"
+    else:
+        rating = f"{card.rating} of 5 (the number of ratings is not known)"
     lines = [f"Product: {card.title}", f"Overall rating: {rating}", "", "Reviews:"]
     lines += [f"[{cid}] {text}" for cid, text in chunks.items()]
     return "\n".join(lines)
@@ -75,28 +79,36 @@ def retrieve_reviews(card: Card, complaint_types: list[str], search: Callable[[s
 
 
 def write_opinions(llm, card: Card, chunks: dict[int, str], language: str = "English",
-                   max_rounds: int = 3) -> PickOpinions | None:
-    """The checked pros and complaints of one pick, or None when no round passed the checks."""
+                   max_rounds: int = 3) -> tuple[PickOpinions | None, str]:
+    """The checked pros and complaints of one pick, and "" or why there are none: "checks" when no round passed the
+    checks, "format" when the model never gave a usable reply. LLMUnavailable goes to the caller."""
     base = build_prompt(card, chunks)
-    opinions, errors = None, []
+    opinions, errors, checked = None, [], False
     for _ in range(max_rounds):
         try:
             opinions = llm.structured("chat", SYSTEM.format(language=language), retry_prompt(base, opinions, errors),
                                       PickOpinions)
         except LLMOutputError:
             continue
+        checked = True
         errors = check_opinions(opinions, chunks)
         llm.mark_checked(not errors, errors)
         if not errors:
-            return opinions
-    return None
+            return opinions, ""
+    return None, "checks" if checked else "format"
 
 
-def opinions_text(n: int, card: Card, opinions: PickOpinions | None, reviews: int) -> list[str]:
+WHY_NONE = {
+    "few": "Too few reviews to summarize.",
+    "checks": "The summary did not pass the checks, so it is not shown.",
+    "format": "The model did not give a usable summary.",
+}
+
+
+def opinions_text(n: int, card: Card, opinions: PickOpinions | None, why: str = "") -> list[str]:
     lines = [f"{n}. {card.title[:80]}"]
     if opinions is None:
-        lines.append("   " + ("Too few reviews to summarize." if reviews < MIN_REVIEWS
-                              else "The summary did not pass the checks, so it is not shown."))
+        lines.append(f"   {WHY_NONE[why]}")
         return lines
     lines += [f"   + {p.text}" for p in opinions.pros]
     lines += [f"   - {p.text}" for p in opinions.complaints]
@@ -105,16 +117,29 @@ def opinions_text(n: int, card: Card, opinions: PickOpinions | None, reviews: in
     return lines
 
 
-def pick_opinions(llm, cards: list[Card], complaint_types: list[str],
+def pick_opinions(llm, picks: list[tuple[int, Card]], complaint_types: list[str],
                   search_for: Callable[[Card], Callable[[str, int], list]], language: str = "English"
                   ) -> tuple[str, dict[int, dict]]:
-    """The text for the shopper, and for each listing its checked pros and complaints with their sources."""
+    """picks are (the number that the shopper saw, card). Returns the text for the shopper ("" when no pick has
+    enough reviews), and for each listing its checked pros and complaints with their sources. When the model is not
+    available, the summaries written before stay."""
     lines = ["What buyers say (buyer reviews from amazon.se):"]
     stored: dict[int, dict] = {}
-    for n, card in enumerate(cards, 1):
+    useful, stopped = False, ""
+    for n, card in picks:
         chunks = retrieve_reviews(card, complaint_types, search_for(card))
-        opinions = write_opinions(llm, card, chunks, language) if len(chunks) >= MIN_REVIEWS else None
+        if len(chunks) < MIN_REVIEWS:
+            lines += opinions_text(n, card, None, "few")
+            continue
+        try:
+            opinions, why = write_opinions(llm, card, chunks, language)
+        except LLMUnavailable as exc:
+            stopped = f"The other picks have no summary now. {exc}"
+            break
+        useful = True
         if opinions is not None:
             stored[card.listing_id] = opinions.model_dump()
-        lines += opinions_text(n, card, opinions, len(chunks))
-    return "\n".join(lines), stored
+        lines += opinions_text(n, card, opinions, why)
+    if stopped:
+        lines.append(stopped)
+    return ("\n".join(lines) if useful or stopped else ""), stored

@@ -13,4 +13,5 @@ class ChatState(TypedDict, total=False):
     seen: list[int]    # product IDs shown since the needs last changed; "more" leaves them out
     searches: dict     # search terms -> {"page": the last result page read, "budget": the lowest budget of those reads}
     removed: list[dict]  # product_id, listing_id and title of each product that the shopper removed
+    opinions: dict     # listing_id (as text) -> the checked pros and complaints of that pick, with their sources
     route: dict        # what the follow-up tools of this turn did, and the next step

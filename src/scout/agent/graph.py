@@ -47,9 +47,9 @@ class Deps:
     save_draft: Callable[[CategoryProfile], Any] | None = None  # without it, no new category is drafted
     # Reads the shop reviews of the picks after they are shown (phase 3 Task 5). Gives the report text, or "".
     read_reviews: Callable[[list[dict]], str] | None = None
-    # The pros and complaints of the picks from their reviews (phase 3 Task 7): (category, picks, language) ->
-    # (text, {listing_id: checked pros and complaints with their sources})
-    opinions: Callable[[str, list[dict], str], tuple[str, dict]] | None = None
+    # The pros and complaints of the picks from their reviews (phase 3 Task 7): (profile, [(number, listing_id)],
+    # language) -> (text, {listing_id: checked pros and complaints with their sources})
+    opinions: Callable[[CategoryProfile, list[tuple[int, int]], str], tuple[str, dict]] | None = None
 
 
 def crawl_text(report: CrawlReport, terms: str, page: int) -> str:
@@ -213,12 +213,17 @@ def build_graph(deps: Deps, checkpointer=None):
             if text:
                 messages.append(assistant(text))
         if deps.opinions is not None:
+            known = dict(state.get("opinions") or {})
+            # Picks kept from an earlier turn have their summary already
+            todo = [(n, p["listing_id"]) for n, p in enumerate(state["picks"], 1) if str(p["listing_id"]) not in known]
             try:
-                text, found = deps.opinions(needs_of(state).category, state["picks"], language_of(state))
-                messages.append(assistant(text))
-                update["picks"] = [{**p, "opinions": found.get(p["listing_id"])} for p in state["picks"]]
-            except LLMUnavailable as exc:
-                messages.append(assistant(f"No summary of the reviews now. {exc}"))
+                if todo:
+                    text, found = deps.opinions(deps.load_profile(needs_of(state).category), todo, language_of(state))
+                    if text:
+                        messages.append(assistant(text))
+                    update["opinions"] = {**known, **{str(k): v for k, v in found.items()}}
+            except Exception as exc:  # the report of the reviews that were read must still reach the shopper
+                messages.append(assistant(f"No summary of the reviews now ({type(exc).__name__}: {exc})."))
         return {**update, "messages": messages} if messages else update
 
     def act_node(state, config):

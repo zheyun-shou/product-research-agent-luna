@@ -269,15 +269,23 @@ def test_no_reviews_when_the_step_found_no_new_picks():
     assert "No other stored product" in state["messages"][-1]["content"]
 
 
-def test_opinions_after_the_reviews_are_kept_with_the_picks():
-    world = World(stored=3)
-    deps = world.deps(FakeLLM([CategoryChoice(category="fridge"), ready()]))
+def test_opinions_after_the_reviews_are_kept_and_not_written_again():
+    world = World(stored=3, n=3)
+    asked = []
+
+    def opinions(profile, picks, language):
+        asked.append(picks)
+        return "What buyers say: quiet.", {picks[0][1]: {"pros": [{"text": "quiet", "sources": [5]}]}}
+    deps = world.deps(FakeLLM([CategoryChoice(category="fridge"), ready(),
+                               [RemovePicks(picks=[2], reason="too big")]]))
     deps.read_reviews = lambda picks: "Read the shop reviews."
-    deps.opinions = lambda category, picks, language: (
-        "What buyers say: quiet.", {picks[0]["listing_id"]: {"pros": [{"text": "quiet", "sources": [5]}]}})
-    state = run(build_graph(deps, InMemorySaver()), "t1", "A fridge with a freezer")
+    deps.opinions = opinions
+    graph = build_graph(deps, InMemorySaver())
+    state = run(graph, "t1", "A fridge with a freezer")
     assert [m["content"] for m in state["messages"][-2:]] == ["Read the shop reviews.", "What buyers say: quiet."]
-    assert state["picks"][0]["opinions"]["pros"][0]["sources"] == [5] and state["picks"][1]["opinions"] is None
+    assert state["opinions"] == {"1": {"pros": [{"text": "quiet", "sources": [5]}]}}
+    run(graph, "t1", "Remove the second one")
+    assert asked == [[(1, 1), (2, 2)], [(2, 3)]]  # pick 2 has no summary yet, the new pick 3 shows as number 2
 
 
 def test_an_outage_in_the_opinions_keeps_the_picks():
@@ -288,5 +296,5 @@ def test_an_outage_in_the_opinions_keeps_the_picks():
         raise QuotaExhausted("daily quota used up")
     deps.opinions = down
     state = run(build_graph(deps, InMemorySaver()), "t1", "A fridge with a freezer")
-    assert state["messages"][-1]["content"].startswith("No summary of the reviews now.")
+    assert state["messages"][-1]["content"].startswith("No summary of the reviews now (QuotaExhausted")
     assert [p["listing_id"] for p in state["picks"]] == [1, 2]

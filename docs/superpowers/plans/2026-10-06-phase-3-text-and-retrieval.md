@@ -122,7 +122,8 @@ Built on 2026-10-06.
 - One chat call for each pick writes one to three pros and complaints. They are qualitative ("most buyers", "a few"), never counts. Each cites the ids of its review chunks. Python checks that each statement cites at least one review, that the ids are reviews of this product, and that each number in the text is in a cited review. Up to 3 rounds with the problems.
 - The review pages over-represent critical reviews (one positive page, two critical pages). The prompt gives the overall rating and the number of ratings, and tells the model to judge with them in mind.
 - A pick with fewer than 3 review chunks gets "Too few reviews to summarize". The checked statements and their sources are kept with the picks in the state. An LLM outage keeps the picks and says that no summary was made.
-- `scout eval-chat` does not use it (`write_opinions=False`).
+- The summaries are kept in the state by listing. A pick that stays from an earlier turn keeps its summary, so a removal does not write all summaries again. When the model is not available, the summaries written before stay. The text says if a summary failed the checks or if the model gave no usable reply. No message is sent when no pick has enough reviews.
+- `scout eval-chat` does not use it (`write_opinions=False`), because its scripts measure the conversation. The summaries need their own measurement: how many pass the checks, and a judge or a hand check of whether the statements agree with the cited reviews. This belongs with Task 8 or the full evaluation.
 - Open: a real run on picks with reviews (one chat call for each pick). It waits for the OK of Zheyun.
 
 Plan as written before the build:

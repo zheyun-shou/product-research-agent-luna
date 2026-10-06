@@ -164,10 +164,12 @@ def hybrid_search(conn, make_embedder) -> Callable[[str, Scope, int], list[Hit]]
     from scout.text.index import index_chunks
     loaded: list = []
 
-    def search(query: str, scope: Scope, k: int = 10) -> list[Hit]:
+    def search(query: str, scope: Scope, k: int = 10, index: bool = True) -> list[Hit]:
+        """index=False skips the indexing, for the second and later searches of one step."""
         if not loaded:
             loaded.append(make_embedder())
-        index_chunks(conn, loaded[0])
+        if index:
+            index_chunks(conn, loaded[0])
         return HybridRetriever([VectorRetriever(conn, loaded[0]), Bm25Retriever(conn, loaded[0])]).search(
             query, scope, k)
     return search

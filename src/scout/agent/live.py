@@ -56,13 +56,20 @@ def shared_deps(conn, llm, crawl, refetch, k: int = 5, size_check: bool = True, 
         mark=lambda product_id, name, found: mark_attribute_search(conn, product_id, name, found),
     )
 
-    def opinions(category, picks, language):
-        cards = load_cards_by_ids(conn, [p["listing_id"] for p in picks])
+    def opinions(profile, picks, language):
+        cards = {c.listing_id: c for c in load_cards_by_ids(conn, [listing_id for _, listing_id in picks])}
+        indexed: list[bool] = []
 
         def search_for(card):
             scope = Scope(listing_ids=product_listing_ids(conn, card.product_id), kinds=["review"])
-            return lambda query, n: search_text(query, scope, n)
-        return pick_opinions(llm, cards, load_profile(category).complaint_types, search_for, language)
+
+            def search(query, n):
+                hits = search_text(query, scope, n, index=not indexed)  # the chunks are indexed one time
+                indexed.append(True)
+                return hits
+            return search
+        numbered = [(n, cards[listing_id]) for n, listing_id in picks if listing_id in cards]
+        return pick_opinions(llm, numbered, profile.complaint_types, search_for, language)
 
     def count(profile, needs, excluded):
         return len(shortlist(conn, profile, needs, llm, excluded, screened).ranked)
