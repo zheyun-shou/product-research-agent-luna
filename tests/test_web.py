@@ -1,4 +1,5 @@
 import dataclasses
+import json
 import threading
 
 import pytest
@@ -81,3 +82,22 @@ def test_a_failed_turn_gives_an_error_and_the_thread_continues():
     assert [e["type"] for e in events][-2:] == ["picks", "done"]
     assert any(e["type"] in ("error", "reply") for e in events)
     assert chat.history("t1")["messages"][0] == {"role": "user", "content": "A fridge"}
+
+
+def test_the_routes():
+    from fastapi.testclient import TestClient
+
+    from scout.web.app import create_app
+
+    world = World()
+    client = TestClient(create_app(service(world, FakeLLM([CategoryChoice(category="fridge"), ready()]))))
+    assert client.get("/").status_code == 200
+    assert client.get("/api/threads/bad%20id").status_code == 400
+    assert client.get("/api/threads/t1").json() == {"thread": "t1", "messages": [], "picks": [], "removed": []}
+    with client.stream("POST", "/api/threads/t1/messages", json={"text": "A fridge with a freezer"}) as response:
+        events = [json.loads(line) for line in response.iter_lines() if line]
+    assert events[-1] == {"type": "done"} and len(events[-2]["picks"]) == 2
+    assert client.post("/api/threads/t1/messages", json={"text": ""}).status_code == 422
+    assert client.delete("/api/threads/t1/picks/1").json()["removed"] == [{"product_id": 1, "title": "Fridge 1"}]
+    assert client.delete("/api/threads/t1/picks/1").status_code == 404
+    assert client.post("/api/problem", json={"skip": True}).status_code == 404

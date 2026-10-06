@@ -18,7 +18,9 @@ class Busy(Exception):
 
 class ChatService:
     """`build(say, on_problem)` gives the graph and its dependencies. The service gives the two callbacks, so the
-    crawl report and the login pause of a turn go to the page that sent the message."""
+    crawl report and the login pause of a turn go to the page that sent the message.
+
+    All turns run in one worker thread, because the Playwright browser works only in the thread that opened it."""
 
     def __init__(self, build: Callable[[Callable, Callable], tuple[Any, Deps]],
                  end_transaction: Callable[[], None] = lambda: None):
@@ -26,7 +28,28 @@ class ChatService:
         self._send: Callable[[dict], None] | None = None
         self._problem: dict | None = None
         self._end = end_transaction
+        self._jobs: queue.Queue = queue.Queue()
+        threading.Thread(target=self._worker, daemon=True).start()
         self.graph, self.deps = build(self._say, self._on_problem)
+
+    def _worker(self) -> None:
+        while True:
+            self._jobs.get()()
+
+    def in_worker(self, fn: Callable[[], Any]) -> Any:
+        """Run fn in the worker thread and wait, for example to close the browser."""
+        result: queue.Queue = queue.Queue()
+
+        def job():
+            try:
+                result.put((fn(), None))
+            except Exception as exc:
+                result.put((None, exc))
+        self._jobs.put(job)
+        value, error = result.get()
+        if error:
+            raise error
+        return value
 
     @staticmethod
     def _config(thread: str) -> dict:
@@ -82,7 +105,7 @@ class ChatService:
                 self._lock.release()
                 events.put(None)
 
-        threading.Thread(target=work, daemon=True).start()
+        self._jobs.put(work)
         return iter(events.get, None)
 
     def _run(self, thread: str, text: str, send: Callable[[dict], None]) -> None:

@@ -397,6 +397,36 @@ def chat(thread: Optional[str] = typer.Option(None, help="the ID of a conversati
 
 
 @app.command()
+def web(port: int = 8000, k: int = 5) -> None:
+    """Open the chat page at http://127.0.0.1:PORT. It uses the same threads as scout chat."""
+    import uvicorn
+
+    from scout.web.app import create_app
+    from scout.web.service import ChatService
+
+    settings = load_settings()
+    tracer = tracer_from_env()
+    llm = LLM(load_llm_config(), tracer=tracer)
+    browser = LazyBrowser(settings)
+    with connect(settings.database_url) as conn, connect_checkpoints(settings.database_url) as cp_conn:
+        saver = PostgresSaver(cp_conn)
+        saver.setup()
+
+        def build(say, on_problem):
+            deps = live_deps(conn, llm, browser, on_problem, say, tracer, k)
+            return build_graph(deps, saver), deps
+
+        service = ChatService(build, lambda: end_transaction(conn))
+        typer.echo(f"Open http://127.0.0.1:{port} in your browser. Press Ctrl+C to stop.")
+        try:
+            uvicorn.run(create_app(service), host="127.0.0.1", port=port, log_level="warning")
+        finally:
+            service.in_worker(browser.close)
+            tracer.flush()
+    report_llm_use(llm)
+
+
+@app.command()
 def threads(limit: int = 20) -> None:
     """List the stored conversations, newest first."""
     with connect_checkpoints(load_settings().database_url) as cp_conn:
