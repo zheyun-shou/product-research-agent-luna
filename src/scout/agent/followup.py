@@ -39,8 +39,11 @@ Write in the shopper's language."""
 # A reply that says it did an action, or that it will do one, needs the tool call that does it. Nothing runs after
 # the reply, so a promise without the call is false. Each entry: the words, and the calls that do the action.
 DONE = [
-    (re.compile(r"\b(removed|deleted|excluded|took out|taken out)\b", re.I), {"remove_picks"}),
-    (re.compile(r"\b(restored|brought back|added back|put back)\b", re.I), {"restore_picks"}),
+    # Only the model's own claims: "You removed the Bomann earlier" or "excluded by your budget" state facts.
+    (re.compile(r"(?:^\s*|\b(?:I(?:['’]ve| have)?|(?:has|have) been|(?:is|are) now) )(?P<verb>removed|deleted|"
+                r"excluded|took out|taken out)\b", re.I), {"remove_picks"}),
+    (re.compile(r"(?:^\s*|\b(?:I(?:['’]ve| have)?|(?:has|have) been|(?:is|are) now) )(?P<verb>restored|"
+                r"brought back|added back|put back)\b", re.I), {"restore_picks"}),
     (re.compile(r"\bI(?:['’]ve| have)? (re-?checked|checked (again|the (current )?(prices?|stock)))\b", re.I),
      {"next_step:recheck"}),
 ]
@@ -163,7 +166,7 @@ def unbacked_actions(text: str, done: set[str]) -> list[str]:
             checks += [(promise.group("rest"), pattern, tools) for pattern, tools in WILL_DO]
         for part, pattern, tools in checks:
             if (found := pattern.search(part)) and not tools & done:
-                missing.append(found.group(0))
+                missing.append(found.groupdict().get("verb") or found.group(0))
     return missing
 
 

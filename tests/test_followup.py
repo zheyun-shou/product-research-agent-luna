@@ -58,6 +58,10 @@ def test_a_reply_that_claims_a_removal_without_the_tool_goes_back():
     assert check_act([Reply(text="Which pick should be removed?")], CARDS, set(), set(), "remove it") == []
     assert unbacked_actions("Done. I removed pick 2.", set()) == ["removed"]
     assert unbacked_actions("Do you want pick 2 removed?", set()) == []
+    assert unbacked_actions("Pick 2 has been removed.", set()) == ["removed"]
+    for fact in ["You removed the Bomann KG 320 earlier.", "Fridges over 5000 SEK are excluded by your budget.",
+                 "The Severin was restored in your last message."]:
+        assert unbacked_actions(fact, set()) == [], fact
 
 
 def test_a_reply_that_promises_an_action_needs_the_call_now():

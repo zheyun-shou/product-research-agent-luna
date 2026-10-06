@@ -35,6 +35,8 @@ def test_the_grader_sees_the_cards_the_history_and_the_actions():
     assert prompt.endswith("Messages to the shopper in this turn:\n[Model] 5499 SEK. I'll recheck the price.")
     assert "[Python] Here are 5 picks." in turn_prompt(TURNS[0], [])
     assert model_texts({"model_texts": ["a"], "rounds": []}) == {"a"}
+    old_text_answer = {"schema": "Act", "passed": True, "output": json.dumps("Pick 2 is cheaper.")}
+    assert model_texts({"rounds": [old_text_answer]}) == {"Pick 2 is cheaper."}
     assert "Cards after this turn:\nPick 1" in turn_prompt(TURNS[0], [])
 
 

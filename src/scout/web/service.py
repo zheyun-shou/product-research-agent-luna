@@ -34,7 +34,9 @@ class ChatService:
 
     def _worker(self) -> None:
         while True:
-            self._jobs.get()()
+            job = self._jobs.get()
+            with contextlib.suppress(Exception):  # each job sends its own errors; the worker must keep running
+                job()
 
     def in_worker(self, fn: Callable[[], Any]) -> Any:
         """Run fn in the worker thread and wait, for example to close the browser."""
@@ -110,8 +112,8 @@ class ChatService:
 
     def _run(self, thread: str, text: str, send: Callable[[dict], None]) -> None:
         config = self._config(thread)
-        before = len(self._values(thread).get("messages", []))
         try:
+            before = len(self._values(thread).get("messages", []))
             with self.deps.tracer.turn(thread, text) as span:
                 state = self.graph.invoke({"messages": [{"role": "user", "content": text}]}, config)
                 replies = [m["content"] for m in state["messages"][before + 1:]]
@@ -120,12 +122,15 @@ class ChatService:
                 send({"type": "reply", "text": reply})
         except Exception as exc:  # the nodes catch most problems; this keeps the conversation open
             message = f"Something went wrong ({type(exc).__name__}: {exc}). You can try again."
-            self._end()
             with contextlib.suppress(Exception):  # the thread gets the message, and the failed turn ends
+                self._end()
                 self.graph.update_state(config, {"messages": [assistant(message)]}, as_node="recommend")
             send({"type": "error", "text": message})
-        self._end()
-        send({"type": "picks", **self._picks(thread)})
+        try:
+            self._end()
+            send({"type": "picks", **self._picks(thread)})
+        except Exception as exc:
+            send({"type": "error", "text": f"The picks could not be loaded ({type(exc).__name__}: {exc})."})
         send({"type": "done"})
 
     def history(self, thread: str) -> dict:

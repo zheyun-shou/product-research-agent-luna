@@ -101,3 +101,15 @@ def test_the_routes():
     assert client.delete("/api/threads/t1/picks/1").json()["removed"] == [{"product_id": 1, "title": "Fridge 1"}]
     assert client.delete("/api/threads/t1/picks/1").status_code == 404
     assert client.post("/api/problem", json={"skip": True}).status_code == 404
+
+
+def test_a_failed_picks_load_does_not_stop_the_worker():
+    world = World()
+    chat = service(world, FakeLLM([CategoryChoice(category="fridge"), ready()]))
+    list(chat.turn("t1", "A fridge with a freezer"))
+    cards = chat.deps.cards
+    chat.deps.cards = lambda ids: 1 / 0
+    events = list(chat.turn("t1", "Thanks"))  # the FakeLLM has no reply left, and the picks fail to load
+    assert events[-1] == {"type": "done"} and events[-2]["type"] == "error"
+    chat.deps.cards = cards
+    assert chat.history("t1")["picks"] and chat.in_worker(lambda: "alive") == "alive"

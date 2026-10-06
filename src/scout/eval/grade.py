@@ -71,6 +71,8 @@ def model_texts(turn: dict) -> set[str]:
         output = json.loads(r["output"]) if r["output"] else None
         if r["schema"] == "Act" and isinstance(output, list):
             texts |= {json.loads(args).get("text", "") for name, args in output if name == "reply"}
+        elif r["schema"] == "Act" and isinstance(output, str):  # a text answer in a record from before 2026-10-06
+            texts.add(output)
         elif r["schema"] == "ClarifyReply" and isinstance(output, dict):
             texts.add(output.get("question", ""))
     return texts - {""}

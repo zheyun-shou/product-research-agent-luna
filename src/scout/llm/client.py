@@ -297,9 +297,12 @@ class LLM:
                     problems.append(f"{tool}: {exc.errors()[:3]}")
             text = (message.content or "").strip() if text_reply else ""
             if text and not raw:  # the model chose to answer in text
+                record.output = json.dumps([[tool_name(text_reply), json.dumps({"text": text})]], ensure_ascii=False)
                 return [text_reply(text=text)]
             if text and message.tool_calls and calls and not any(isinstance(c, text_reply) for c in calls):
                 calls.append(text_reply(text=text))  # native tool calls and a text answer in one reply
+                record.output = json.dumps([*raw, [tool_name(text_reply), json.dumps({"text": text})]],
+                                           ensure_ascii=False)
             if calls and not problems:
                 return calls
             record.valid = False
