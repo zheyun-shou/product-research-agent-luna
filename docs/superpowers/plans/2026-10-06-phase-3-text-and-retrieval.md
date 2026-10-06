@@ -115,7 +115,7 @@ Plan as written before the build:
 - The worker extracts the value with `raw` and `source_chunk_id`. Python checks that `raw` is in that chunk. If not, the value is missing and the picks say so.
 - The value goes into `attributes` in the spec format.
 
-### Task 7: Pros and complaints in the picks (built, real run waits)
+### Task 7: Pros and complaints in the picks (done)
 
 Built on 2026-10-06.
 
@@ -125,7 +125,7 @@ Built on 2026-10-06.
 - A pick with fewer than 3 review chunks gets "Too few reviews to summarize". The checked statements and their sources are kept with the picks in the state. An LLM outage keeps the picks and says that no summary was made.
 - The summaries are kept in the state by listing. A pick that stays from an earlier turn keeps its summary, so a removal does not write all summaries again. When the model is not available, the summaries written before stay. The text says if a summary failed the checks or if the model gave no usable reply. No message is sent when no pick has enough reviews.
 - `scout eval-chat` does not use it (`write_opinions=False`), because its scripts measure the conversation. The summaries need their own measurement: how many pass the checks, and a judge or a hand check of whether the statements agree with the cited reviews. This belongs with Task 8 or the full evaluation.
-- Open: a real run on picks with reviews (one chat call for each pick). It waits for the OK of Zheyun.
+- Real run (2026-10-06, the 3 fridges with shop reviews, GPT-6 Luna, summaries in Chinese): all 3 passed the checks in the first round. Each pick got two pros and three complaints, qualitative, with mixed views stated (for example on noise). Each statement cited 1 to 6 reviews. A spot check by Claude: "dented on delivery" cites review 226, which says "Beschädigt geliefert". 3 calls, 0.0017 USD, 51 s.
 
 Plan as written before the build:
 
