@@ -26,7 +26,7 @@ The page runs on the local computer first (127.0.0.1). A public deployment needs
 
 The login prompt replaces the terminal prompt of `ask_user`. The program never types a password. The shopper logs in or solves the captcha in the product-scout Chrome window, then clicks Done.
 
-**Delete a pick.** The delete button calls `DELETE /api/threads/{thread}/picks/{product_id}`. Python does what `remove_picks` does: it adds the product to the eliminations of the thread, moves the pick to `removed` in the state, and adds the message "Removed: title" to the thread. No LLM call. The other picks keep their numbers in the order shown, so "pick 2" in the next message means the second card in the panel. The panel does not fill the empty place. The shopper can ask for more in the chat.
+**Delete a pick.** The delete button calls `DELETE /api/threads/{thread}/picks/{product_id}`. Python does what `remove_picks` does: it adds the product to the eliminations of the thread, moves the pick to `removed` in the state, and adds the message "Removed: title" to the thread. No LLM call. The panel numbers the cards 1, 2, 3 in the order of the state, so "pick 2" in the next message means the card with the number 2. The panel does not fill the empty place. The shopper can ask for more in the chat.
 
 **Pick view.** For each pick the server sends the title, the amazon.se URL, the price, the rating with the review count, at most 4 attributes, the first product image from `page_texts`, the doubtful sizes and the note. All values come from the cards in the database, as in the picks text.
 

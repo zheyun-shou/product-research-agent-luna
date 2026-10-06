@@ -1,0 +1,83 @@
+import dataclasses
+import threading
+
+import pytest
+from langgraph.checkpoint.memory import InMemorySaver
+
+from scout.agent.clarify import CategoryChoice
+from scout.agent.graph import build_graph
+from scout.sources.base import SessionStatus
+from scout.web.service import Busy, ChatService
+from tests.fakes import FakeLLM
+from tests.test_graph import World, ready
+
+
+def service(world, llm, problem=False, texts=None):
+    def build(say, on_problem):
+        deps = dataclasses.replace(world.deps(llm), say=say,
+                                   page_texts=lambda ids: {i: v for i, v in (texts or {}).items() if i in ids})
+        if problem:
+            crawl = deps.crawl
+
+            def crawl_with_login(profile, needs, page):
+                on_problem(SessionStatus(ok=False, problem="signin", detail="Sign-in page"), "https://www.amazon.se/x")
+                return crawl(profile, needs, page)
+            deps.crawl = crawl_with_login
+        return build_graph(deps, InMemorySaver()), deps
+    return ChatService(build)
+
+
+def test_a_turn_gives_status_reply_and_picks_events():
+    world = World(stored=3)
+    texts = {1: {"images": ["data:x", "https://m.media-amazon.com/1.jpg"]}}
+    chat = service(world, FakeLLM([CategoryChoice(category="fridge"), ready()]), texts=texts)
+    events = list(chat.turn("t1", "A fridge with a freezer"))
+    kinds = [e["type"] for e in events]
+    assert kinds[0] == "status" and kinds[-2:] == ["picks", "done"] and kinds.count("reply") == 2
+    picks = events[-2]["picks"]
+    assert [p["number"] for p in picks] == [1, 2] and picks[0]["image"] == "https://m.media-amazon.com/1.jpg"
+    assert picks[0]["price"] == "5000 SEK" and picks[0]["rating"] == "4.5" and picks[0]["review_count"] == 100
+    assert picks[0]["attributes"] == [{"name": "height", "text": "143.0", "doubtful": False}]
+    assert picks[1]["image"] is None
+    history = chat.history("t1")
+    assert [m["role"] for m in history["messages"]] == ["user", "assistant", "assistant"]
+    assert history["picks"] == picks
+
+
+def test_delete_a_pick_without_the_llm():
+    world = World()
+    chat = service(world, FakeLLM([CategoryChoice(category="fridge"), ready()]))
+    list(chat.turn("t1", "A fridge with a freezer"))
+    result = chat.remove("t1", 1)
+    assert world.removed["t1"] == {1}
+    assert [p["product_id"] for p in result["picks"]] == [2] and result["picks"][0]["number"] == 1
+    assert result["removed"] == [{"product_id": 1, "title": "Fridge 1"}]
+    assert chat.history("t1")["messages"][-1]["content"].startswith("Removed: Fridge 1.")
+    with pytest.raises(KeyError):
+        chat.remove("t1", 1)
+
+
+def test_the_login_pause_waits_for_done():
+    world = World(stored=3)
+    chat = service(world, FakeLLM([CategoryChoice(category="fridge"), ready()]), problem=True)
+    assert not chat.answer_problem(skip=False)  # nothing waits yet
+    events = chat.turn("t1", "A fridge with a freezer")
+    with pytest.raises(Busy):
+        chat.turn("t1", "again")
+    with pytest.raises(Busy):
+        chat.history("t1")
+    first = next(e for e in events if e["type"] != "status")
+    assert first == {"type": "problem", "detail": "Sign-in page", "url": "https://www.amazon.se/x"}
+    threading.Timer(0.05, chat.answer_problem, kwargs={"skip": False}).start()
+    rest = list(events)
+    assert rest[-1] == {"type": "done"} and world.crawls
+    assert chat.history("t1")["picks"]  # the lock is free again
+
+
+def test_a_failed_turn_gives_an_error_and_the_thread_continues():
+    world = World()
+    chat = service(world, FakeLLM([]))  # no queued reply: the clarify node gets an IndexError
+    events = list(chat.turn("t1", "A fridge"))
+    assert [e["type"] for e in events][-2:] == ["picks", "done"]
+    assert any(e["type"] in ("error", "reply") for e in events)
+    assert chat.history("t1")["messages"][0] == {"role": "user", "content": "A fridge"}
