@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>product-scout</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232462a8'/%3E%3Ccircle cx='14' cy='14' r='6.5' fill='none' stroke='white' stroke-width='3'/%3E%3Cpath d='M19 19l6 6' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="empty">
+<div class="app">
+  <header class="top">
+    <a class="brand" href="/" id="brand"><span class="mark" aria-hidden="true"></span>product-scout</a>
+    <div class="top-actions">
+      <button class="ghost" id="new-chat" type="button">New chat</button>
+      <button class="ghost picks-toggle" id="picks-toggle" type="button" hidden>Picks <span class="count" id="picks-count">0</span></button>
+    </div>
+  </header>
+
+  <main class="chat">
+    <div class="log" id="log" aria-live="polite"></div>
+
+    <section class="hero" id="hero">
+      <h1>What do you want to buy?</h1>
+      <p>I search amazon.se, check each number against the product pages, and show my top picks.</p>
+    </section>
+
+    <div class="dock">
+      <div class="problem" id="problem" hidden>
+        <div class="problem-text">
+          <strong id="problem-detail">amazon.se needs you</strong>
+          <span>Log in or solve the check in the product-scout Chrome window, then click Done. I never type passwords.</span>
+          <a id="problem-url" href="#" target="_blank" rel="noopener">The page</a>
+        </div>
+        <div class="problem-actions">
+          <button type="button" class="primary" id="problem-done">Done</button>
+          <button type="button" class="ghost" id="problem-skip">Skip</button>
+        </div>
+      </div>
+
+      <form class="composer" id="composer">
+        <textarea id="input" rows="1" placeholder="For example: a fridge with a freezer, under 180 cm, up to 6000 kr" aria-label="Message"></textarea>
+        <button type="submit" class="send" id="send" aria-label="Send">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+        </button>
+      </form>
+
+      <div class="examples" id="examples">
+        <button type="button">A quiet fridge with a freezer, at most 180 cm high</button>
+        <button type="button">Noise-cancelling headphones under 2000 kr</button>
+        <button type="button">我想买一个适合小厨房的冰箱</button>
+      </div>
+    </div>
+  </main>
+
+  <aside class="panel" id="panel" aria-label="Picks">
+    <div class="panel-head">
+      <h2>Picks</h2>
+      <button class="icon" id="panel-close" type="button" aria-label="Close the picks">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <p class="panel-hint">Open a title to see it on amazon.se. Delete a pick to keep it out of this conversation.</p>
+    <ol class="cards" id="cards"></ol>
+    <details class="removed" id="removed" hidden>
+      <summary>Removed <span id="removed-count">0</span></summary>
+      <ul id="removed-list"></ul>
+      <p>To bring one back, ask in the chat.</p>
+    </details>
+  </aside>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>

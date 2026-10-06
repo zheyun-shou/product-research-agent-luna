@@ -47,6 +47,8 @@ The login prompt replaces the terminal prompt of `ask_user`. The program never t
 2. **Service.** `src/scout/web/service.py`: `ChatService` runs a turn and sends the events, answers a login problem, removes a pick, and gives the history and the pick views. Tests with the fake world of `tests/test_graph.py`.
 3. **App and command.** `src/scout/web/app.py` with the routes, and `scout web --port 8000`. Tests with the FastAPI test client.
 4. **Page.** `src/scout/web/static/` with `index.html`, `app.css` and `app.js`. Claude checks it in Chrome with a fake service that needs no LLM and no browser: the empty state, a turn, the picks panel, delete, the login banner, dark mode and a narrow window.
+Tasks 1 to 4 are done (2026-10-06, 275 tests). All turns run in one worker thread, because Playwright works only in the thread that opened the browser. The Chrome extension of Claude could not open 127.0.0.1 on this computer, so Claude checked the page with headless Chrome through Playwright, on a fake world with real cards and images from the database. The checks passed: the empty state, a question, the login banner and Done, the picks panel, delete, a reload of the thread, dark mode, and a window 400 px wide. The browser console had no errors.
+
 5. **Her test.** Zheyun runs `scout web` and talks with the agent. This is a real run with the paid chat model, a few cents a conversation.
 
 ## Not in this plan
