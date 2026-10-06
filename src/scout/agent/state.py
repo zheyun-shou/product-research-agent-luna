@@ -15,3 +15,10 @@ class ChatState(TypedDict, total=False):
     removed: list[dict]  # product_id, listing_id and title of each product that the shopper removed
     opinions: dict     # listing_id (as text) -> the checked pros and complaints of that pick, with their sources
     route: dict        # what the follow-up tools of this turn did, and the next step
+    # The agent loop (agent/loop.py). Each turn starts them again.
+    turn_log: list[str]  # the reports of the tools of this turn, for the model
+    used: dict           # tool calls, product pages, review pages, checked listings of this turn
+    pending: list[dict]  # tool calls that the model made and Python has not run yet
+    final: dict | None   # the final call (show_picks or reply) that waits for the checks
+    gate_errors: list[str]  # the problems that the checks found in the last final call
+    gate_rounds: int

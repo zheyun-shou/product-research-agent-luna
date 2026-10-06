@@ -1,0 +1,581 @@
+"""The agent loop (design 2026-10-06-agent-loop-design.md): the chat model decides and calls tools; Python runs the
+tools, keeps the fetching polite, and checks the facts of the final reply."""
+from dataclasses import dataclass, field
+from decimal import Decimal
+from typing import Any, Callable, Literal
+
+from langgraph.graph import END, START, StateGraph
+from pydantic import BaseModel, Field
+
+from scout.agent.followup import Derived
+from scout.agent.history import assistant, compact, history_text, user_numbers
+from scout.agent.state import ChatState
+from scout.llm.client import LLMOutputError, LLMUnavailable, tool_name
+from scout.needs import ConditionSpec, Needs, check_needs
+from scout.picks.rank import Card
+from scout.picks.write import attribute_text, card_facts, check_claim, numbers_in, unchecked_numbers
+from scout.profiles import CategoryProfile
+from scout.trace import NoTracer
+
+MAX_TOOL_CALLS = 25  # for each turn; set again from the hidden-target test (design section 10)
+MAX_PRODUCT_PAGES = 30
+MAX_REVIEW_PAGES = 30
+MAX_GATE_ROUNDS = 3
+MAX_REPORT_CHARS = 6_000  # of one tool report in the prompt
+
+SYSTEM = """You are product-scout, a shopping research assistant. You help the shopper choose products. The shopper
+is in Sweden. You find candidates in shops, check them against the shopper's needs, read what buyers say, and give a
+few picks with the reasons. You work with tools. Python runs them and gives you the results.
+
+How to work:
+- First understand the needs. Ask the shopper when they are not clear enough to search. Record the needs with
+  update_needs, with only numbers that the shopper wrote.
+- Search before you recommend. search_shop reads amazon.se. Use Swedish search words. Read more pages or search
+  with other words when the results are weak.
+- find_products lists the stored candidates that meet conditions. It does not choose for you.
+- Look things up before you guess: read_product, search_text, read_images, find_missing.
+- Read the buyers' reviews of the products that you want to recommend (read_reviews, then summarize_reviews).
+- Say clearly when data is missing, doubtful or in conflict, and what you did about it. You can leave out a
+  candidate whose data cannot be right; say why.
+- show_picks gives the final picks, best first. Usually 5. Fewer when fewer fit well; then say why.
+- remove_products and restore_products change which products the shopper has rejected in this conversation.
+
+Rules:
+- A budget is a hard limit. Price does not rank the picks, unless the shopper asks for it (for example good value
+  for money).
+- Never add shipping, duty or moms that the shopper did not give. For a currency conversion, state the rate.
+- Summarize reviews in qualitative words ("most buyers", "a few"), never as counts.
+- Each number that you write is a value from a tool result, a number that the shopper wrote, or your own
+  calculation. Give claims (the product id, the card field and the value) for the facts of products, and put each
+  calculated number in derived with how you got it.
+- Before show_picks, Python checks: each pick was searched for in a shop in this conversation, and its reviews
+  were read (good and bad). Python opens each pick again for the price and the stock now.
+- Reply in the shopper's language."""
+
+
+# ---- tools ----
+
+class UpdateNeeds(BaseModel):
+    """Record the shopper's needs. Give the full needs each time, not only the change."""
+    category: str | None = Field(None, description="One of the categories that the context lists")
+    kind: str | None = None
+    conditions: list[ConditionSpec] = Field(default_factory=list)
+    budget: float | None = Field(None, description="SEK")
+    budget_note: str | None = Field(None, description="A budget in another currency: the amount, the currency, "
+                                                      "the rate used")
+    preferences: list[str] = Field(default_factory=list)
+
+
+class SearchShop(BaseModel):
+    """Search amazon.se and store the new products (up to 20 product pages). Takes some minutes."""
+    words: str = Field(description="Swedish search words, one phrase")
+    page: int = Field(1, description="The result page, from 1")
+
+
+class FindProducts(BaseModel):
+    """List the stored products of the category that meet conditions, with their facts and ids."""
+    kind: str | None = None
+    conditions: list[ConditionSpec] = Field(default_factory=list)
+    budget: float | None = Field(None, description="Highest price in SEK, or null for the shopper's budget")
+    limit: int = Field(15, description="At most 30")
+
+
+class ReadProduct(BaseModel):
+    """Read the full stored text of products: specifications, description, reviews on the product page."""
+    ids: list[int] = Field(description="Product ids, at most 3")
+    question: str
+
+
+class SearchText(BaseModel):
+    """Search the stored text of many products at once and give the 10 best matching parts."""
+    question: str
+    ids: list[int] = Field(default_factory=list, description="Product ids, or empty for all of the category")
+    kinds: list[Literal["specs", "description", "review"]] = Field(default_factory=list)
+
+
+class ReadImages(BaseModel):
+    """Look at the product images of one product. Never read a price from an image."""
+    id: int
+    question: str
+
+
+class FindMissing(BaseModel):
+    """Look for values of number attributes that the facts of products do not have, in their stored text."""
+    ids: list[int]
+    attributes: list[str]
+
+
+class ReadReviews(BaseModel):
+    """Read the positive and the critical review pages of products on amazon.se. Needs the shopper's login."""
+    ids: list[int]
+
+
+class SummarizeReviews(BaseModel):
+    """Qualitative pros and complaints of products from their stored reviews, each with the reviews it cites."""
+    ids: list[int]
+
+
+class RemoveProducts(BaseModel):
+    """The shopper rejects products. They stay out for the rest of the conversation."""
+    ids: list[int]
+    reason: str = ""
+
+
+class RestoreProducts(BaseModel):
+    """Bring back products that were removed in this conversation."""
+    ids: list[int]
+
+
+class Claim(BaseModel):
+    id: int = Field(description="The product id")
+    field: str = Field(description="price, rating, review_count, or an attribute name")
+    value: str
+
+
+class Pick(BaseModel):
+    id: int
+    text: str = Field(description="Why it fits, and what to watch out for")
+    claims: list[Claim] = Field(default_factory=list)
+
+
+class ShowPicks(BaseModel):
+    """The final picks for the shopper, best first. Ends your work in this turn."""
+    picks: list[Pick]
+    note: str = Field("", description="What the shopper should know about all picks, for example why fewer than 5")
+    derived: list[Derived] = Field(default_factory=list)
+
+
+class Reply(BaseModel):
+    """Your message to the shopper. Ends your work in this turn."""
+    text: str
+    claims: list[Claim] = Field(default_factory=list)
+    derived: list[Derived] = Field(default_factory=list)
+
+
+WORK_TOOLS = [UpdateNeeds, SearchShop, FindProducts, ReadProduct, SearchText, ReadImages, FindMissing, ReadReviews,
+              SummarizeReviews, RemoveProducts, RestoreProducts]
+FINAL_TOOLS = [ShowPicks, Reply]
+BY_NAME = {tool_name(t): t for t in WORK_TOOLS + FINAL_TOOLS}
+
+
+def to_state(call: BaseModel) -> dict:
+    return {"tool": tool_name(type(call)), "args": call.model_dump(mode="json")}
+
+
+def from_state(item: dict) -> BaseModel:
+    return BY_NAME[item["tool"]].model_validate(item["args"])
+
+
+# ---- dependencies ----
+
+@dataclass
+class LoopDeps:
+    llm: Any
+    profile_names: Callable[[], list[str]]
+    load_profile: Callable[[str], CategoryProfile]
+    cards: Callable[[list[int]], list[Card]]  # listing ids -> cards, in order
+    find: Callable[[CategoryProfile, Needs, set[int]], list[Card]]  # stored candidates, the removed left out
+    eliminate: Callable[[str, list[int], str], None]  # thread, product ids, reason
+    eliminated: Callable[[str], set[int]]
+    restore: Callable[[str, list[int]], None]
+    # (profile, needs, words, page) -> (report text, product pages fetched)
+    search_shop: Callable[[CategoryProfile, Needs, str, int], tuple[str, int]]
+    # listing ids -> {listing_id: problem or ""}; opens each page again and stores it
+    check_now: Callable[[list[int], Needs], dict[int, str]]
+    page_texts: Callable[[list[int]], dict[int, dict]] | None = None
+    search_text: Callable[..., list] | None = None
+    read_images: Callable[[list[str], str], Any] | None = None
+    find_missing: Callable[[list[Card], list[str], CategoryProfile], str] | None = None
+    read_reviews: Callable[[list[int]], tuple[str, int]] | None = None  # -> (report, review pages)
+    reviews_read: Callable[[list[int]], set[int]] = lambda ids: set()  # listings with a recent complete read
+    summarize: Callable[[CategoryProfile, list[int], str], str] | None = None
+    say: Callable[[str], None] = print
+    tracer: Any = field(default_factory=NoTracer)
+
+
+# ---- text for the model ----
+
+def candidate_text(card: Card) -> str:
+    attrs = ", ".join(f"{k}={attribute_text(v)}" for k, v in card.attributes.items())
+    stock = {True: "yes", False: "no", None: "not known"}[card.in_stock]
+    return (f"id {card.listing_id}: {card.title} | price={card.price} {card.currency or ''} | in_stock={stock} | "
+            f"rating={card.rating} | review_count={card.review_count} | {attrs or 'no attributes'}")
+
+
+def context_text(state: dict, deps: LoopDeps, thread: str) -> str:
+    needs = Needs.model_validate(state.get("needs") or {})
+    picks = deps.cards([p["listing_id"] for p in state.get("picks", [])])
+    removed = state.get("removed", [])
+    searches = state.get("searches") or {}
+    lines = [
+        f"Categories with a profile: {', '.join(deps.profile_names())}",
+        f"Needs so far: {needs.model_dump_json(exclude_none=True)}",
+    ]
+    if needs.category:
+        profile = deps.load_profile(needs.category)
+        lines.append("Profile: kinds " + ", ".join(f"{k.name} ({k.label})" for k in profile.kinds)
+                     + "; number attributes " + ", ".join(f"{a.name} ({a.unit or ''})" for a in profile.attributes
+                                                           if a.type == "number"))
+    lines.append("Current picks:\n" + ("\n".join(f"{n}. {candidate_text(c)}" for n, c in enumerate(picks, 1))
+                                       or "none"))
+    lines.append("Removed in this conversation: " + (", ".join(f"id {r['listing_id']} {r['title'][:50]}"
+                                                               for r in removed) or "none"))
+    lines.append("Shop searches in this conversation: " + (", ".join(f"'{w}' up to page {s['page']}"
+                                                                     for w, s in searches.items()) or "none"))
+    used = state.get("used") or {}
+    lines.append(f"Left in this turn: {MAX_TOOL_CALLS - used.get('calls', 0)} tool calls, "
+                 f"{MAX_PRODUCT_PAGES - used.get('product_pages', 0)} product pages, "
+                 f"{MAX_REVIEW_PAGES - used.get('review_pages', 0)} review pages.")
+    return "\n".join(lines)
+
+
+def turn_prompt(state: dict, deps: LoopDeps, thread: str) -> str:
+    parts = [context_text(state, deps, thread), "Conversation:\n" + history_text(state)]
+    log = state.get("turn_log") or []
+    if log:
+        parts.append("Tool results in this turn:\n\n" + "\n\n".join(log))
+    errors = state.get("gate_errors") or []
+    if errors:
+        parts.append("Python checked your last final call and found problems. Fix them and call show_picks or reply "
+                     "again:\n- " + "\n- ".join(errors))
+    if (state.get("used") or {}).get("calls", 0) >= MAX_TOOL_CALLS:
+        parts.append("The tool calls of this turn are used up. Answer now with show_picks or reply.")
+    return "\n\n".join(parts)
+
+
+# ---- the checks of the final call (design section 8) ----
+
+def turn_numbers(state: dict) -> set[Decimal]:
+    return set().union(*(numbers_in(r) for r in state.get("turn_log") or []), set())
+
+
+def check_claims(claims: list[Claim], cards: dict[int, Card]) -> tuple[list[str], set[Decimal]]:
+    errors, numbers = [], set()
+    for claim in claims:
+        card = cards.get(claim.id)
+        if card is None:
+            errors.append(f"there is no product with id {claim.id}")
+            continue
+        error, number = check_claim(card_facts(card), claim.field, claim.value)
+        if error:
+            errors.append(f"id {claim.id}: {error}")
+        elif number is not None:
+            numbers.add(number)
+    return errors, numbers
+
+
+def check_text(text: str, known: set[Decimal], models: list[str | None]) -> list[str]:
+    return [f"the number {raw} has no source. Give a claim with the product id and the card field, put it in "
+            "derived with how you calculated it, or remove it" for raw in unchecked_numbers(text, known, models)]
+
+
+def check_final(call: BaseModel, state: dict, deps: LoopDeps, thread: str) -> list[str]:
+    """Numbers have a source, citations exist, the floors are met. The live check of the picks runs here too."""
+    allowed = user_numbers(state) | turn_numbers(state)
+    if isinstance(call, Reply):
+        ids = {c.id for c in call.claims} | {p["listing_id"] for p in state.get("picks", [])}
+        cards = {c.listing_id: c for c in deps.cards(sorted(ids))}
+        errors, claimed = check_claims(call.claims, cards)
+        on_cards = {v for c in cards.values() for v in card_facts(c).values() if isinstance(v, Decimal)}
+        derived = set().union(set(), *(numbers_in(d.value) for d in call.derived))
+        picks = {Decimal(n) for n in range(1, len(state.get("picks", [])) + 1)}
+        errors += check_text(call.text, claimed | allowed | on_cards | derived | picks,
+                             [c.model for c in cards.values()])
+        return errors
+    assert isinstance(call, ShowPicks)
+    errors: list[str] = []
+    ids = [p.id for p in call.picks]
+    if not ids:
+        return ["show_picks has no pick. If nothing fits, tell the shopper with reply"]
+    if len(set(ids)) < len(ids):
+        errors.append("a product is in the picks more than one time")
+    cards = {c.listing_id: c for c in deps.cards(ids)}
+    errors += [f"there is no product with id {i}" for i in ids if i not in cards]
+    removed = deps.eliminated(thread)
+    errors += [f"id {i} was removed by the shopper in this conversation" for i in ids
+               if i in cards and cards[i].product_id in removed]
+    if errors:
+        return errors
+    # The floors (design section 5)
+    if not state.get("searches"):
+        errors.append("no shop search in this conversation yet. Call search_shop first")
+    if deps.read_reviews is not None:
+        read = deps.reviews_read(ids)
+        skipped = set((state.get("used") or {}).get("reviews_skipped", []))
+        errors += [f"the reviews of id {i} were not read. Call read_reviews" for i in ids
+                   if i not in read and i not in skipped]
+    if errors:
+        return errors
+    # The price and the stock now, for the picks that were not checked in this turn
+    needs = Needs.model_validate(state.get("needs") or {})
+    checked = set((state.get("used") or {}).get("checked_now", []))
+    problems = deps.check_now([i for i in ids if i not in checked], needs)
+    errors += [f"id {i}: {problem}" for i, problem in problems.items() if problem]
+    if errors:
+        return errors
+    cards = {c.listing_id: c for c in deps.cards(ids)}  # with the prices that were just checked
+    derived = set().union(set(), *(numbers_in(d.value) for d in call.derived))
+    for pick in call.picks:
+        claim_errors, claimed = check_claims(pick.claims, cards)
+        errors += claim_errors
+        errors += [f"pick id {pick.id}: {e}" for e in check_text(pick.text, claimed | allowed | derived,
+                                                                [cards[pick.id].model])]
+    errors += check_text(call.note, allowed | derived | {Decimal(len(ids))}, [])
+    return errors
+
+
+def picks_text(call: ShowPicks, cards: dict[int, Card]) -> str:
+    lines = []
+    for n, pick in enumerate(call.picks, 1):
+        card = cards[pick.id]
+        price = f"{card.price} {card.currency}" if card.price is not None else "price unknown"
+        rating = f"{card.rating} ({card.review_count} ratings)" if card.rating is not None else "no ratings"
+        lines += [f"{n}. {card.title}", f"   {price} | {rating} | id {card.listing_id}", f"   {pick.text}",
+                  f"   {card.url}"]
+    if call.note:
+        lines += ["", call.note]
+    return "\n".join(lines)
+
+
+# ---- running the work tools ----
+
+class Toolbox:
+    def __init__(self, deps: LoopDeps, state: dict, thread: str):
+        self.deps, self.state, self.thread = deps, state, thread
+        self.needs = Needs.model_validate(state.get("needs") or {})
+        self.used = dict(state.get("used") or {})
+        self.update: dict = {}
+
+    def profile(self) -> CategoryProfile | None:
+        return self.deps.load_profile(self.needs.category) if self.needs.category else None
+
+    def cards(self, ids: list[int]) -> tuple[list[Card], list[int]]:
+        found = self.deps.cards(ids)
+        known = {c.listing_id for c in found}
+        return found, [i for i in ids if i not in known]
+
+    def run(self, call: BaseModel) -> str:
+        name = tool_name(type(call))
+        try:
+            return f"{name}: " + getattr(self, name)(call)
+        except (LLMUnavailable, LLMOutputError) as exc:
+            return f"{name}: the model for this tool is not available now ({exc})."
+        except Exception as exc:  # a browser, database or index problem: Luna gets it as a result
+            return f"{name}: failed ({type(exc).__name__}: {exc})."
+
+    def update_needs(self, call: UpdateNeeds) -> str:
+        names = self.deps.profile_names()
+        category = call.category or self.needs.category
+        if category not in names:
+            return f"'{category}' is not a category. Use one of: {', '.join(names)}."
+        needs = Needs(category=category, **call.model_dump(exclude={"category"}))
+        errors = check_needs(needs, self.deps.load_profile(category), user_numbers(self.state))
+        if errors:
+            return "not recorded: " + "; ".join(errors)
+        self.needs = needs
+        self.update["needs"] = needs.model_dump(mode="json")
+        return f"recorded: {needs.text() or 'no conditions'} (category {category}, kind {needs.kind})."
+
+    def search_shop(self, call: SearchShop) -> str:
+        profile = self.profile()
+        if profile is None:
+            return "record the category with update_needs first."
+        if self.used.get("product_pages", 0) >= MAX_PRODUCT_PAGES:
+            return "the product pages of this turn are used up."
+        self.deps.say(f"Searching amazon.se for '{call.words}', result page {call.page}. This can take a few minutes.")
+        report, pages = self.deps.search_shop(profile, self.needs, call.words, call.page)
+        self.used["product_pages"] = self.used.get("product_pages", 0) + pages
+        searches = dict(self.update.get("searches") or self.state.get("searches") or {})
+        searches[call.words] = {"page": max(call.page, (searches.get(call.words) or {}).get("page", 0)),
+                                "budget": self.needs.budget}
+        self.update["searches"] = searches
+        return report
+
+    def find_products(self, call: FindProducts) -> str:
+        profile = self.profile()
+        if profile is None:
+            return "record the category with update_needs first."
+        needs = self.needs.model_copy(update={
+            "kind": call.kind or self.needs.kind, "conditions": [*self.needs.conditions, *call.conditions],
+            "budget": call.budget if call.budget is not None else self.needs.budget})
+        found = self.deps.find(profile, needs, self.deps.eliminated(self.thread))[:max(1, min(call.limit, 30))]
+        return (f"{len(found)} stored products ({needs.text() or 'no conditions'}). A missing value is not shown; "
+                "it can be looked for with find_missing.\n" + ("\n".join(map(candidate_text, found)) or "none"))
+
+    def read_product(self, call: ReadProduct) -> str:
+        from scout.agent.lookup import product_text
+        if self.deps.page_texts is None:
+            return "not available."
+        cards, unknown = self.cards(call.ids[:3])
+        texts = self.deps.page_texts([c.listing_id for c in cards])
+        parts = [f"there is no product with id {i}." for i in unknown]
+        parts += [f"id {c.listing_id}: {c.title}\n" + (product_text(texts[c.listing_id]) if c.listing_id in texts
+                                                       else "no page text is stored.") for c in cards]
+        return f"({call.question})\n\n" + "\n\n".join(parts)
+
+    def search_text(self, call: SearchText) -> str:
+        from scout.text.retrieve import Scope
+        if self.deps.search_text is None:
+            return "not available."
+        scope = Scope(listing_ids=call.ids or None, kinds=list(call.kinds) or None, category=self.needs.category)
+        hits = self.deps.search_text(call.question, scope, 10)
+        lines = [f"[chunk {h.chunk_id}] id {h.listing_id}, {h.ref}:\n{h.text}" for h in hits]
+        return (f"({call.question}) the {len(hits)} best parts. Reviews are a sample.\n\n"
+                + ("\n\n".join(lines) or "nothing matches."))
+
+    def read_images(self, call: ReadImages) -> str:
+        from scout.agent.lookup import IMAGE_HOSTS, MAX_IMAGES
+        if self.deps.read_images is None or self.deps.page_texts is None:
+            return "not available."
+        urls = (self.deps.page_texts([call.id]).get(call.id) or {}).get("images") or []
+        urls = [u for u in urls if u.startswith(IMAGE_HOSTS)][:MAX_IMAGES]
+        if not urls:
+            return f"no images are stored for id {call.id}."
+        answer = self.deps.read_images(urls, call.question)
+        return f"(id {call.id}, {call.question}) " + (answer.answer if answer.found else "the images do not show it.")
+
+    def find_missing(self, call: FindMissing) -> str:
+        profile = self.profile()
+        if self.deps.find_missing is None or profile is None:
+            return "not available." if profile else "record the category with update_needs first."
+        cards, unknown = self.cards(call.ids)
+        return self.deps.find_missing(cards, call.attributes, profile) + "".join(
+            f" There is no product with id {i}." for i in unknown)
+
+    def read_reviews(self, call: ReadReviews) -> str:
+        if self.deps.read_reviews is None:
+            return "not available."
+        if self.used.get("review_pages", 0) >= MAX_REVIEW_PAGES:
+            return "the review pages of this turn are used up."
+        report, pages = self.deps.read_reviews(call.ids)
+        self.used["review_pages"] = self.used.get("review_pages", 0) + pages
+        if "skipped the login" in report:  # the shopper chose to go on without the reviews
+            self.used["reviews_skipped"] = sorted(set(self.used.get("reviews_skipped", [])) | set(call.ids))
+        return report or "the reviews of these products were read in the last 7 days."
+
+    def summarize_reviews(self, call: SummarizeReviews) -> str:
+        profile = self.profile()
+        if self.deps.summarize is None or profile is None:
+            return "not available." if profile else "record the category with update_needs first."
+        return self.deps.summarize(profile, call.ids, last_language(self.state))
+
+    def remove_products(self, call: RemoveProducts) -> str:
+        cards, unknown = self.cards(call.ids)
+        if cards:
+            self.deps.eliminate(self.thread, [c.product_id for c in cards], call.reason)
+            removed = list(self.update.get("removed") or self.state.get("removed") or [])
+            removed += [{"product_id": c.product_id, "listing_id": c.listing_id, "title": c.title} for c in cards]
+            self.update["removed"] = removed
+            gone = {c.listing_id for c in cards}
+            self.update["picks"] = [p for p in (self.update.get("picks") or self.state.get("picks") or [])
+                                    if p["listing_id"] not in gone]
+        return (f"removed {', '.join(str(c.listing_id) for c in cards) or 'nothing'}."
+                + "".join(f" There is no product with id {i}." for i in unknown))
+
+    def restore_products(self, call: RestoreProducts) -> str:
+        removed = list(self.update.get("removed") or self.state.get("removed") or [])
+        back = [r for r in removed if r["listing_id"] in set(call.ids)]
+        not_removed = [i for i in call.ids if i not in {r["listing_id"] for r in back}]
+        if back:
+            self.deps.restore(self.thread, [r["product_id"] for r in back])
+            self.update["removed"] = [r for r in removed if r not in back]
+        return (f"brought back {', '.join(str(r['listing_id']) for r in back) or 'nothing'}."
+                + "".join(f" Id {i} was not removed in this conversation." for i in not_removed))
+
+
+def last_language(state: dict) -> str:
+    from scout.agent.history import last_user_text
+    return f"the language of this message from the shopper: {last_user_text(state)[:200]!r}"
+
+
+# ---- the graph ----
+
+def thread_of(config) -> str:
+    return config["configurable"]["thread_id"]
+
+
+def build_agent_graph(deps: LoopDeps, checkpointer=None):
+    llm = deps.llm
+
+    def start_node(state, config):
+        return {"turn_log": [], "used": {}, "gate_errors": [], "gate_rounds": 0, "pending": [], "final": None}
+
+    def compact_node(state, config):
+        try:
+            return compact(state, llm)
+        except (LLMUnavailable, LLMOutputError):
+            return {}
+
+    def agent_node(state, config):
+        thread = thread_of(config)
+        with deps.tracer.span("agent"):
+            try:
+                calls = llm.tools("chat", SYSTEM, turn_prompt(state, deps, thread), WORK_TOOLS + FINAL_TOOLS,
+                                  name="Agent", text_reply=Reply)
+            except LLMUnavailable as exc:
+                return {"final": None, "pending": [], "messages": [assistant(f"I cannot work on this now. {exc}")]}
+            except LLMOutputError as exc:
+                return {"final": None, "pending": [], "messages": [assistant(
+                    f"The model did not give a usable reply ({exc}). You can say it in other words.")]}
+        final = next((c for c in calls if isinstance(c, tuple(FINAL_TOOLS))), None)
+        work = [c for c in calls if not isinstance(c, tuple(FINAL_TOOLS))]
+        if work and (state.get("used") or {}).get("calls", 0) < MAX_TOOL_CALLS:
+            return {"pending": [to_state(c) for c in work], "final": None}
+        if final is None:
+            final = Reply(text="I could not finish this within the limits of one turn. You can ask me to go on.")
+        return {"pending": [], "final": to_state(final)}
+
+    def tools_node(state, config):
+        box = Toolbox(deps, state, thread_of(config))
+        log = list(state.get("turn_log") or [])
+        for item in state.get("pending") or []:
+            if box.used.get("calls", 0) >= MAX_TOOL_CALLS:
+                log.append(f"{item['tool']}: not run, the tool calls of this turn are used up.")
+                continue
+            box.used["calls"] = box.used.get("calls", 0) + 1
+            with deps.tracer.span(item["tool"]):
+                report = box.run(from_state(item))
+            log.append(report[:MAX_REPORT_CHARS])
+        return {**box.update, "turn_log": log, "used": box.used, "pending": []}
+
+    def gate_node(state, config):
+        thread = thread_of(config)
+        call = from_state(state["final"])
+        used = dict(state.get("used") or {})
+        errors = check_final(call, state, deps, thread)
+        if isinstance(call, ShowPicks):
+            used["checked_now"] = sorted(set(used.get("checked_now", [])) | {p.id for p in call.picks})
+        if errors and state.get("gate_rounds", 0) + 1 < MAX_GATE_ROUNDS:
+            llm.mark_checked(False, errors)
+            return {"gate_errors": errors, "gate_rounds": state.get("gate_rounds", 0) + 1, "final": None,
+                    "used": used}
+        llm.mark_checked(not errors, errors)
+        if errors:
+            return {"final": None, "gate_errors": [], "messages": [assistant(
+                "I could not write an answer whose facts all agree with the records, so I changed nothing. "
+                "You can ask again.")]}
+        if isinstance(call, Reply):
+            return {"final": None, "gate_errors": [], "messages": [assistant(call.text)]}
+        cards = {c.listing_id: c for c in deps.cards([p.id for p in call.picks])}
+        picks = [{"listing_id": p.id, "product_id": cards[p.id].product_id, "title": cards[p.id].title,
+                  "doubtful": [], "note": None} for p in call.picks]
+        seen = sorted(set(state.get("seen", [])) | {p["product_id"] for p in picks})
+        return {"final": None, "gate_errors": [], "picks": picks, "seen": seen, "phase": "picks",
+                "messages": [assistant(picks_text(call, cards))]}
+
+    def after_agent(state):
+        if state.get("pending"):
+            return "tools"
+        return "gate" if state.get("final") else END
+
+    graph = StateGraph(ChatState)
+    for name, fn in [("start", start_node), ("compact", compact_node), ("agent", agent_node),
+                     ("tools", tools_node), ("gate", gate_node)]:
+        graph.add_node(name, fn)
+    graph.add_edge(START, "start")
+    graph.add_edge("start", "compact")
+    graph.add_edge("compact", "agent")
+    graph.add_conditional_edges("agent", after_agent, ["tools", "gate", END])
+    graph.add_edge("tools", "agent")
+    graph.add_conditional_edges("gate", lambda s: "agent" if s.get("gate_errors") else END, ["agent", END])
+    return graph.compile(checkpointer=checkpointer)
