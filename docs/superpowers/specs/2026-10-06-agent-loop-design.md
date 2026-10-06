@@ -1,6 +1,6 @@
 # Agent loop design
 
-Date: 2026-10-06. Status: draft for the review of Zheyun.
+Date: 2026-10-06. Status: accepted by Zheyun on 2026-10-06, with her answers in section 13.
 Extends: `2026-10-02-product-scout-design.md` (sections 1a, 3 and 4.8 change when this design is accepted).
 
 ## 1. Why
@@ -22,8 +22,7 @@ Zheyun wants Luna to be an intelligent assistant with the whole context. It call
 | Which pages and reviews to read | Each extracted value has raw text that is in its source |
 | Which data is doubtful, and what to do about it | Each number in a reply traces to a record, a review, the shopper's words, or a calculation that the reply states |
 | Which candidates fit, how they rank, how many picks to show | Each cited id (pick, listing, chunk, review) exists and belongs to what it is cited for |
-| When to ask the shopper, and when to give picks | A claim that a pick meets a condition cites a stored value that meets it |
-| What to say, in the shopper's language | Tool calls are valid (the product exists, it was removed before it is restored) |
+| When to ask the shopper, and when to give picks; what to say, in the shopper's language | Tool calls are valid (the product exists, it was removed before it is restored) |
 
 Python does not judge words or common sense (see the rule "the model judges the words").
 
@@ -61,7 +60,7 @@ message →  │ compact (summary of old turns)│
 - **agent.** One Luna call. It gets the system prompt (section 6), the conversation, and the results of the tool calls of this turn. It answers with tool calls, a reply, or both.
 - **tools.** Python runs the calls. Calls that do not depend on each other run in parallel (for example several web pages). Each tool gives a short report for Luna and, when useful, a status line for the shopper.
 - **final checks.** The checks of section 7 on the reply or on `show_picks`. Problems go back to Luna with the values from the records, as now.
-- **Limits for each turn.** At most 25 tool calls, 30 product pages, 30 review pages and 20 web pages. At a limit, the tool says so, and Luna replies with what it has.
+- **Limits for each turn.** The first values are 25 tool calls, 30 product pages, 30 review pages and 20 web pages. At a limit, the tool says so, and Luna replies with what it has. The values are set again from the measurement of section 10 (the hidden-target test).
 
 ## 5. The floors (decided by Zheyun on 2026-10-06)
 
@@ -83,7 +82,7 @@ One system prompt for Luna in all turns. In outline:
 - **Who it is.** "You are product-scout, a shopping research assistant. You help the shopper choose products. The shopper is in Sweden. You find candidates in shops and on the web, check them against the shopper's needs and give a few picks with the reasons."
 - **The global context, in each turn.** The needs so far, the summary of older turns, the current picks with their cards, the removed products, the searches already made in this conversation, and the page limits that are left.
 - **How to work.** Look things up before you guess. Use several sources. Say clearly when data is missing, doubtful or in conflict, and what you did about it. You can set a candidate aside when its data cannot be right; say why. Ask the shopper when the needs are not clear enough to search.
-- **Product rules from the main design.** Price is a budget filter, not a ranking factor (unless Zheyun changes this). No shipping, duty or moms unless the shopper gives them. A currency conversion states its rate. Reviews and tests are summarized in qualitative words, never as counts.
+- **Product rules.** A budget is a hard limit. Price does not rank the picks by default. When the shopper asks for it (for example "good value for money"), Luna can weigh the price (decided 2026-10-06). No shipping, duty or moms unless the shopper gives them. A currency conversion states its rate. Reviews and tests are summarized in qualitative words, never as counts.
 - **The floors** of section 5, so that Luna plans for them.
 - **Facts.** Each number comes from a tool result, the shopper, or your own calculation that you state. Cite the ids that the tools give.
 - **Language.** Reply in the shopper's language.
@@ -98,27 +97,28 @@ Most tools exist already as code. The table gives what changes.
 | `search_shop(site, words, page, sort)` | Searches a shop, drops titles off the topic (worker), opens up to 20 new product pages, stores them | Polite fetching, the floors of section 5, the raw-text check, the login pause | `crawl` |
 | `search_web(question)` | Tavily search, reads the found pages in parallel | Stores test and forum text as chunks; shop pages go through the generic reader | Task 9 |
 | `read_page(url)` | Reads one product page of any shop | schema.org JSON-LD first, then the worker with the raw-text check | new (generic reader of section 1a of the main design) |
-| `query_products(conditions)` | Lists stored candidates that meet conditions, with their cards | SQL and Python filter; the result is a list for Luna, not a decision | `query_products`, `shortlist` |
+| `query_products(conditions)` | Lists stored candidates that meet conditions, with their cards | SQL and Python filter; candidates over the budget are not given; the result is a list for Luna, not a decision | `query_products`, `shortlist` |
 | `find_missing(products, attributes)` | Looks for missing values in the stored text | Raw text in the cited chunk, the unit check | Task 6 |
 | `read_reviews(products)` | Reads the positive and the critical review pages | Polite fetching, page limits, the login pause | Task 5 |
 | `summarize_reviews(products)` | Qualitative pros and complaints with cited reviews | Cited ids belong to the product; numbers are in the cited reviews | Task 7 |
 | `read_product`, `search_text`, `read_images` | Look up text and images of stored products | as now | exist |
-| `check_now(products)` | Opens the product pages again for the price, the stock and the sizes now | as the recheck now | the recheck in the picks |
+| `check_now(products)` | Opens the product pages again for the price, the stock and the sizes now | Reports a product that is sold out or now over the budget | the recheck in the picks |
 | `remove_picks`, `restore_picks` | The shopper rejects or wants back products | as now | exist |
-| `show_picks(picks)` | The final picks: for each, the listing id, the reasons, the claims, the conditions it meets, the doubts | Section 8 | the picks writer |
+| `show_picks(picks)` | The final picks: for each, the listing id, the reasons, the claims, the doubts | Runs `check_now` on each pick that was not checked in this turn. A pick that is sold out or over the budget goes back to Luna. Then the checks of section 8 | the picks writer |
 
-`show_picks` replaces the fixed picks step. Luna chooses the picks and their order. It can show fewer than 5 and say why.
+`show_picks` replaces the fixed picks step. Luna chooses the picks and their order. It can show fewer than 5 when fewer fit well, and says why (decided 2026-10-06).
 
 ## 8. Checks before the picks and the replies show
 
-- The ids exist. The claims agree with the cards (as now).
-- A pick that the reply says meets a condition cites the stored value, and that value meets the condition. When the value is missing or Luna doubts it, the pick says so. This replaces the Python filter that removed or ranked candidates.
-- The budget: a pick over the budget is not allowed. This is a fact check on the price, not a judgement.
-- Each pick was checked on its live page in this turn or within the last hour (`check_now`), as the main design requires.
-- The floors of section 5.
-- Numbers in free text: as now (records, the shopper's words, stated calculations).
+Zheyun decided on 2026-10-06 to keep only three checks at this gate. The budget and the live check of the price moved into the tools (`query_products`, `check_now`, `show_picks`).
 
-**Proposal: remove the word rules for actions.** Today Python reads the reply for words such as "removed" or "I will search" and requires the tool call. In the loop, Luna can call the tool in the same turn, and nothing happens "later". These rules are word rules that second-guess the model. This design removes them. Zheyun decides.
+1. **Numbers have a source.** Each number in a reply or in the picks is a value of a record, a number that the shopper wrote, a number in a cited review, or a calculation that the reply states. The claims cite the card field, as now.
+2. **Citations exist.** Each cited listing, review or chunk exists and belongs to the product that it is cited for.
+3. **The floors of section 5** are met before `show_picks`.
+
+A problem goes back to Luna with the values from the records, up to 3 rounds.
+
+**Removed: the word rules for actions** (decided 2026-10-06). Python no longer reads the reply for words such as "removed" or "I will search" to require a tool call. In the loop, Luna can call the tool in the same turn.
 
 ## 9. What changes for the shopper
 
@@ -128,6 +128,7 @@ Most tools exist already as code. The table gives what changes.
 
 ## 10. Evaluation
 
+- **Hidden-target test** (asked by Zheyun on 2026-10-06). Claude selects real products that are on amazon.se, for example 20 across the categories. For each, Claude writes the needs of a shopper from the facts of the product, without its name, brand or model. A simulated shopper (the planned Task 14) knows the hidden product and answers Luna's questions only from its facts. We measure: is the hidden product in the picks, at which place, how many tool calls, product pages, review pages and web pages, how many model calls, the cost and the time. The limits of section 4 are set from these numbers (for example from the run that needed the most, plus a margin). The Princeton WebShop benchmark uses a similar idea. Zheyun mentioned a Microsoft study of this kind; its link is not in this document yet.
 - `scout eval-chat` scripts check routes today (for example "remove pick 2"). In the loop there are no fixed routes. The scripts change to check outcomes: which picks are removed, which tools were called, what the reply must or must not say, and that the checks pass.
 - Compare the fixed pipeline (the code now, kept on a branch) with the loop on the same scripts: the share of turns that pass the checks in the first round, facts correct (grader), floors met, number of model calls, cost and time for each turn.
 - Later the baseline of the main design: Claude with web search on the same needs.
@@ -140,7 +141,7 @@ Most tools exist already as code. The table gives what changes.
 3. `update_needs`, `search_shop`, `query_products`, `check_now`, `show_picks` with the checks of section 8. The fixed pipeline goes away.
 4. `read_reviews`, `find_missing`, `summarize_reviews` as tools, with the floors.
 5. The web page and `scout chat` on the new graph: streaming of tool reports and the login pause.
-6. eval-chat scripts for outcomes, and the comparison of section 10 (paid, with her OK).
+6. eval-chat scripts for outcomes, the hidden-target test, and the comparison of section 10 (paid, with her OK). Then set the limits of section 4 from the numbers.
 7. `search_web` and `read_page` when the Tavily key is there (Task 9).
 
 Each step is committed, reviewed and pushed. The tests use a fake LLM that returns planned tool calls.
@@ -155,9 +156,10 @@ Each step is committed, reviewed and pushed. The tests use a fake LLM that retur
 | The free fallback model (Gemini) uses tools less well | Measure it in the comparison. The fallback can stay on a simpler path |
 | The login pause in the middle of a tool | It works as now: the tool waits for Done or Skip. Skip ends that tool with a report to Luna |
 
-## 13. Open questions for Zheyun
+## 13. Decisions of Zheyun (2026-10-06)
 
-1. Does "price is a budget filter, never a ranking factor" stay, or may Luna weigh price when the shopper asks?
-2. Remove the word rules for actions (section 8)?
-3. The limits for each turn in section 4: are 25 tool calls, 30 product pages, 30 review pages and 20 web pages right?
-4. May Luna show fewer than 5 picks when fewer fit well?
+1. Price: Luna can weigh the price when the shopper asks for it. A budget stays a hard limit.
+2. The word rules for actions go.
+3. The limits for each turn: start with the values of section 4, then set them from the hidden-target test.
+4. Luna can show fewer than 5 picks when fewer fit well, and says why.
+5. The gate before a reply keeps only three checks: numbers have a source, citations exist, the floors.
