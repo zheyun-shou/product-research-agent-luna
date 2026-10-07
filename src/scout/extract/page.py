@@ -7,9 +7,10 @@ from pydantic import BaseModel
 from scout.extract.verify import normalise, verify_raw
 from scout.profiles import CategoryProfile, ProfileAttribute
 from scout.sources.amazon_se.numbers import NUMBER, parse_price, to_decimal
+from scout.sources.amazon_se.urls import SOURCE
 from scout.sources.base import ProductRecord
 
-SYSTEM = """You read one product page from amazon.se and pull out the requested fields.
+SYSTEM = """You read one product page of a shop and pull out the requested fields.
 Rules:
 - Use only the page text you are given. Never guess.
 - For each field, copy into "raw" the exact short piece of page text the value comes from, character for character.
@@ -24,7 +25,7 @@ CORE = {
     "title": "the product title",
     "brand": "the brand name",
     "model": "the manufacturer's model number",
-    "price": "the price you pay now for this item, in SEK, as a number",
+    "price": "the price you pay now for this item, as a number, in the currency of the page",
 }
 
 
@@ -116,9 +117,14 @@ def enrich_record(rec: ProductRecord, profile: CategoryProfile, llm) -> tuple[Pr
         if item.name in core:
             if item.name == "price":
                 price = to_decimal(item.value)
-                if price is None or parse_price(item.raw)[0] != price:
+                shown, currency = parse_price(item.raw)
+                # amazon.se and the other Swedish shops use SEK. "kr" is also the Danish and the Norwegian crown,
+                # so another shop needs the currency of its page data, or a euro sign
+                swedish = rec.source == SOURCE or rec.source.endswith(".se")
+                currency = rec.currency or ("SEK" if swedish else currency if currency == "EUR" else None)
+                if price is None or shown != price or currency is None:
                     continue
-                updates.update(price=price, currency="SEK")
+                updates.update(price=price, currency=currency)
             else:
                 if normalise(item.value) not in normalise(item.raw):
                     continue

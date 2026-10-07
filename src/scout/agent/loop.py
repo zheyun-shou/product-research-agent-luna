@@ -50,6 +50,9 @@ How to work:
   review. A long question in a sentence finds manuals and shops. Put what you want to learn in want (for example
   "is it quiet"): it chooses the parts of the pages that you get. Without ids, search_web finds which models testers
   recommend; then look for them with search_shop.
+- read_page reads the product page of another shop (for example one that search_web found) and stores the product.
+  It can be a pick. It joins the same product of amazon.se when the GTIN, or the brand and the model, are the same.
+  Its reviews are the ones that its page shows.
 - Say clearly when data is missing, doubtful or in conflict, and what you did about it. You can leave out a
   candidate whose data cannot be right; say why.
 - show_picks gives the final picks, best first. Usually 5. Fewer when fewer fit well; then say why.
@@ -65,8 +68,8 @@ Rules:
   "page" for a number that the stored page text of that product shows (read_product), or the field "web" for a
   number in the web pages about that product (search_web). Put each calculated number in derived with how you
   got it. Say when a number comes from a test or a forum, and name the site.
-- Before show_picks, Python checks: each pick was searched for in a shop in this conversation, its reviews were
-  read (good and bad), and it had a web search for tests (in the last 7 days), unless the shopper does not want
+- Before show_picks, Python checks: a shop was searched or a shop page was read in this conversation, the reviews
+  of each pick were read (good and bad, or the reviews on the page of another shop), and it had a web search for tests (in the last 7 days), unless the shopper does not want
   that (update_needs with web_tests false). Python opens each pick again for the price and the stock now.
 - Reply in the shopper's language."""
 
@@ -103,6 +106,12 @@ class SearchWeb(BaseModel):
     want: str = Field("", description="What you want to learn from the pages, for example 'is it quiet' or "
                                       "'problems after a year'. It ranks the parts of the text. Empty: the search "
                                       "words without the brand and the model")
+
+
+class ReadPage(BaseModel):
+    """Read the product page of a shop that is not amazon.se, for example a shop page that search_web found. Stores
+    the product with its price, stock, specifications and the reviews that the page shows, and gives its id."""
+    url: str = Field(description="The address of one product page")
 
 
 class FindProducts(BaseModel):
@@ -189,7 +198,7 @@ class Reply(BaseModel):
     derived: list[Derived] = Field(default_factory=list)
 
 
-WORK_TOOLS = [UpdateNeeds, SearchShop, SearchWeb, FindProducts, ReadProduct, SearchText, ReadImages, FindMissing, ReadReviews,
+WORK_TOOLS = [UpdateNeeds, SearchShop, SearchWeb, ReadPage, FindProducts, ReadProduct, SearchText, ReadImages, FindMissing, ReadReviews,
               SummarizeReviews, RemoveProducts, RestoreProducts]
 FINAL_TOOLS = [ShowPicks, Reply]
 BY_NAME = {tool_name(t): t for t in WORK_TOOLS + FINAL_TOOLS}
@@ -231,6 +240,8 @@ class LoopDeps:
     search_web: Callable[[str, list[int], int, str], tuple[str, int]] | None = None
     web_searched: Callable[[list[int]], set[int]] = lambda ids: set()  # listings with a web search, last 7 days
     web_texts: Callable[[list[int]], dict[int, str]] | None = None  # the stored web pages of each product
+    # (url, profile) -> (report, pages loaded, the listing id or None); stores the product of another shop
+    read_page: Callable[[str, CategoryProfile], tuple[str, int, int | None]] | None = None
     say: Callable[[str], None] = print
     tracer: Any = field(default_factory=NoTracer)
 
@@ -261,6 +272,9 @@ def context_text(state: dict, deps: LoopDeps, thread: str) -> str:
                                                                for r in removed) or "none"))
     lines.append("Shop searches in this conversation: " + (", ".join(f"'{w}' up to page {s['page']}"
                                                                      for w, s in searches.items()) or "none"))
+    pages = state.get("pages_read") or []
+    if pages:
+        lines.append("Shop pages read in this conversation: " + ", ".join(pages))
     web = state.get("web_searches") or []
     if web:
         lines.append("Web searches in this conversation: " + ", ".join(f"'{q}'" for q in web))
@@ -392,8 +406,8 @@ def check_final(call: BaseModel, state: dict, deps: LoopDeps, thread: str, used:
     if errors:
         return errors
     # The floors (design section 5)
-    if not state.get("searches"):
-        errors.append("no shop search in this conversation yet. Call search_shop first")
+    if not state.get("searches") and not state.get("pages_read"):
+        errors.append("no shop search in this conversation yet. Call search_shop (or read_page) first")
     if deps.read_reviews is not None:
         read = deps.reviews_read(ids)
         skipped = set(used.get("reviews_skipped", []))
@@ -549,6 +563,22 @@ class Toolbox:
         done = self.current("web_searches")
         self.update["web_searches"] = done + ([call.question] if call.question not in done else [])
         return report + "".join(f" There is no product with id {i}." for i in unknown)
+
+    def read_page(self, call: ReadPage) -> str:
+        profile = self.profile()
+        if self.deps.read_page is None:
+            return "not available."
+        if profile is None:
+            return "record the category with update_needs first."
+        if self.used.get("product_pages", 0) >= MAX_PRODUCT_PAGES:
+            return "the product pages of this turn are used up."
+        self.deps.say(f"Reading {call.url}")
+        report, pages, listing_id = self.deps.read_page(call.url, profile)
+        self.used["product_pages"] = self.used.get("product_pages", 0) + pages
+        if listing_id is not None:
+            done = self.current("pages_read")
+            self.update["pages_read"] = done + ([call.url] if call.url not in done else [])
+        return report
 
     def find_products(self, call: FindProducts) -> str:
         profile = self.profile()

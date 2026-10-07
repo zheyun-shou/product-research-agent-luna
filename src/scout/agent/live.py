@@ -34,6 +34,11 @@ class LazyBrowser:
             self._adapter = AmazonSeAdapter(self._session, self._settings.snapshot_dir)
         return self._adapter
 
+    def fetch(self, url: str):
+        """A page of another shop in the same Chrome profile, when a plain request is refused (scout.fetch)."""
+        self.adapter()
+        return self._session.fetch(url)
+
     def close(self) -> None:
         if self._session is not None:
             self._session.__exit__(None, None, None)
@@ -155,6 +160,9 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
 
     from scout.agent.graph import crawl_text
     from scout.agent.loop import LoopDeps
+    from scout.fetch import PageFetcher, site_of
+    from scout.shops import read_page as read_shop_page
+    from scout.shops import refetch as refetch_shop_page
     from scout.extract.ondemand import fill_missing as fill
     from scout.picks.rank import Condition
 
@@ -201,6 +209,12 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
                      "words and page to read the next ones.")
         return text, report.detail_pages
 
+    fetcher = PageFetcher(browser=browser.fetch)
+
+    def read_page(url, profile):
+        got = read_shop_page(conn, fetcher.fetch, url, profile.category, lambda rec: enrich_record(rec, profile, llm))
+        return got.text, got.pages, got.listing_id
+
     def check_now(ids, needs):
         problems = {}
         budget = needs.budget_sek()
@@ -211,9 +225,13 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
         refetch = {}
         for card in cards:
             cat = category[card.product_id]
-            if cat not in refetch:
-                refetch[cat] = refetcher(browser.adapter(), conn, cat, on_problem)
-            rec = refetch[cat](card)
+            if site_of(card.url) != "amazon.se":  # a pick from another shop (read_page)
+                profile = load_profile(cat)
+                rec = refetch_shop_page(conn, fetcher.fetch, card.url, cat, lambda r: enrich_record(r, profile, llm))
+            else:
+                if cat not in refetch:
+                    refetch[cat] = refetcher(browser.adapter(), conn, cat, on_problem)
+                rec = refetch[cat](card)
             if rec is None:
                 problems[card.listing_id] = "the page did not load now, so the price and the stock are not known"
             elif rec.in_stock is False:
@@ -238,8 +256,8 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
         asins = listing_source_ids(conn, SOURCE, ids)
         missing = [i for i in ids if i not in asins]
         report = read_reviews(conn, browser.adapter, [(i, asins[i]) for i in ids if i in asins], on_problem, say=say)
-        text = report.text() + "".join(f" Id {i} is not an amazon.se product, so its reviews cannot be read."
-                                       for i in missing)
+        text = report.text() + "".join(f" Id {i} is from another shop: read_page stored the reviews that its "
+                                       "page shows." for i in missing)
         return text.strip(), report.pages, missing + ([i for i in ids if i in asins] if report.skipped else [])
 
     def reviews_read(ids):
@@ -298,7 +316,7 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
         search_shop=search_shop, check_now=check_now,
         page_texts=lambda ids: page_texts(conn, ids), search_text=search_text, read_images=image_reader(llm),
         find_missing=find_missing, read_reviews=reviews, reviews_read=reviews_read, summarize=summarize,
-        search_web=search_web if client is not None else None,
+        search_web=search_web if client is not None else None, read_page=read_page,
         web_searched=lambda ids: web_searched(conn, ids, datetime.now(timezone.utc) - week),
         web_texts=lambda ids: web_texts(conn, ids),
         say=say, tracer=tracer,

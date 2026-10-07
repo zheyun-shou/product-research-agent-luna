@@ -25,9 +25,9 @@ def save_record(conn: psycopg.Connection, rec: ProductRecord, category: str) -> 
             listing_id, product_id = listing["id"], listing["product_id"]
             conn.execute(
                 """UPDATE products SET brand = COALESCE(%s, brand), model = COALESCE(%s, model),
-                       attributes = attributes || %s::jsonb
+                       gtin = COALESCE(gtin, %s), attributes = attributes || %s::jsonb
                    WHERE id = %s""",
-                (rec.brand, rec.model, Jsonb(rec.attributes), product_id),
+                (rec.brand, rec.model, rec.gtin, Jsonb(rec.attributes), product_id),
             )
             conn.execute(
                 """UPDATE listings SET url = %s, title = COALESCE(%s, title), rating = COALESCE(%s, rating),
@@ -36,7 +36,7 @@ def save_record(conn: psycopg.Connection, rec: ProductRecord, category: str) -> 
                 (rec.url, rec.title, rec.rating, rec.review_count, rec.fetched_at, listing_id),
             )
         else:
-            product_id = _find_product(conn, rec, category) or _insert_product(conn, rec, category)
+            product_id = find_product(conn, rec, category) or _insert_product(conn, rec, category)
             listing_id = conn.execute(
                 """INSERT INTO listings (product_id, source, source_id, url, title, rating, review_count, fetched_at)
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
@@ -199,12 +199,21 @@ def page_texts(conn: psycopg.Connection, listing_ids: list[int]) -> dict[int, di
 GENERIC_BRANDS = {"generic", "generisk", "unbranded", "no brand", "okänt märke", "ingen märkning"}
 
 
-def _find_product(conn: psycopg.Connection, rec: ProductRecord, category: str) -> int | None:
+def find_product(conn: psycopg.Connection, rec: ProductRecord, category: str) -> int | None:
+    """The same product: the same GTIN, or the same brand and model. Spaces and hyphens in the model do not count,
+    because shops write "RK4182PS4" and "RK 4182 PS4"."""
+    if rec.gtin:
+        row = conn.execute("SELECT id FROM products WHERE category = %s AND gtin = %s ORDER BY id LIMIT 1",
+                           (category, rec.gtin)).fetchone()
+        if row:
+            return row["id"]
     if not (rec.brand and rec.model) or rec.brand.strip().lower() in GENERIC_BRANDS:
         return None
     row = conn.execute(
         """SELECT id FROM products
-           WHERE category = %s AND lower(brand) = lower(%s) AND lower(model) = lower(%s)
+           WHERE category = %s AND lower(brand) = lower(%s)
+             AND regexp_replace(lower(model), '[[:space:]-]', '', 'g')
+                 = regexp_replace(lower(%s), '[[:space:]-]', '', 'g')
            ORDER BY id LIMIT 1""",
         (category, rec.brand, rec.model),
     ).fetchone()
@@ -213,10 +222,25 @@ def _find_product(conn: psycopg.Connection, rec: ProductRecord, category: str) -
 
 def _insert_product(conn: psycopg.Connection, rec: ProductRecord, category: str) -> int:
     return conn.execute(
-        """INSERT INTO products (category, brand, model, name, attributes)
-           VALUES (%s, %s, %s, %s, %s::jsonb) RETURNING id""",
-        (category, rec.brand, rec.model, rec.title or rec.source_id, Jsonb(rec.attributes)),
+        """INSERT INTO products (category, brand, model, gtin, name, attributes)
+           VALUES (%s, %s, %s, %s, %s, %s::jsonb) RETURNING id""",
+        (category, rec.brand, rec.model, rec.gtin, rec.title or rec.source_id, Jsonb(rec.attributes)),
     ).fetchone()["id"]
+
+
+def product_review_texts(conn: psycopg.Connection, product_id: int, but: int | None = None) -> set[str]:
+    """The normalised texts of the stored reviews of a product, in all its listings but one. Brands copy the same
+    reviews to several shops (design section 1a)."""
+    from scout.extract.verify import normalise
+    rows = conn.execute(
+        """SELECT r.text FROM shop_reviews r JOIN listings l ON l.id = r.listing_id
+           WHERE l.product_id = %(p)s AND l.id IS DISTINCT FROM %(but)s
+           UNION ALL
+           SELECT e->>'text' FROM page_texts t JOIN listings l ON l.id = t.listing_id,
+                  jsonb_array_elements(t.reviews) e
+           WHERE l.product_id = %(p)s AND l.id IS DISTINCT FROM %(but)s""",
+        {"p": product_id, "but": but}).fetchall()
+    return {normalise(r["text"] or "") for r in rows} - {""}
 
 
 def log_fetch(

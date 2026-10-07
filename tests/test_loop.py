@@ -325,3 +325,33 @@ def test_a_final_call_next_to_work_calls_waits_and_gets_a_result():
     state = run(build_agent_graph(shop.deps(llm), InMemorySaver()), "A fridge at most 180 cm")
     assert "not run: other tools ran in the same step" in llm.requests[1][1]
     assert all(answered(h) for h in llm.histories) and [p["listing_id"] for p in state["picks"]] == [2, 1]
+
+
+def test_a_page_of_another_shop_meets_the_shop_floor_and_can_be_a_pick():
+    from scout.agent.loop import ReadPage
+    shop = Shop()
+    shop.reviewed = {4}
+    read = []
+
+    def read_page(url, profile):
+        read.append((url, profile.category))
+        return "id 4: Fridge 4 (elgiganten.se) | price=400 SEK", 1, 4
+    deps = shop.deps(llm := FakeLLM([[NEEDS, ReadPage(url="https://www.elgiganten.se/product/4")],
+                                     [ShowPicks(picks=[Pick(id=4, text="From Elgiganten.")])]]))
+    deps.read_page = read_page
+    state = run(build_agent_graph(deps, InMemorySaver()), "A fridge at most 180 cm")
+    assert read == [("https://www.elgiganten.se/product/4", "fridge")]
+    assert state["pages_read"] == ["https://www.elgiganten.se/product/4"]
+    assert [p["listing_id"] for p in state["picks"]] == [4] and shop.checked == [[4]]
+    assert "read_page: id 4: Fridge 4 (elgiganten.se)" in llm.requests[1][1]
+
+
+def test_a_page_that_was_not_read_does_not_count_for_the_floor():
+    from scout.agent.loop import ReadPage
+    shop = Shop()
+    deps = shop.deps(llm := FakeLLM([[ReadPage(url="https://shop.se/x")], [NEEDS, ReadPage(url="https://shop.se/x")],
+                                     "Ok."]))
+    deps.read_page = lambda url, profile: (f"{url}: not read, the site shows a captcha.", 1, None)
+    state = run(build_agent_graph(deps, InMemorySaver()), "A fridge at most 180 cm")
+    assert "read_page: record the category with update_needs first." in llm.requests[1][1]
+    assert not state.get("pages_read")

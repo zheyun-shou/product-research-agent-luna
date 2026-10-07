@@ -44,6 +44,7 @@ class ProductRecord(BaseModel):
     title: str | None = None
     brand: str | None = None
     model: str | None = None
+    gtin: str | None = None  # 14 digits; EAN-13 and UPC-A get leading zeros
     price: Decimal | None = None
     currency: str | None = None
     rating: Decimal | None = None
