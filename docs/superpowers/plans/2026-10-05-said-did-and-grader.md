@@ -1,6 +1,6 @@
 # Said Equals Did, Free Calculations and a Reply Grader
 
-> **How to use this plan.** Zheyun agreed to this plan on 2026-10-05. Do the tasks in order and commit at the end of each task. Do not run `scout eval-chat` with a paid model until she says so.
+> **How to use this plan.** I agreed to this plan on 2026-10-05. Do the tasks in order and commit at the end of each task. Do not run `scout eval-chat` with a paid model until I say so.
 
 **Goal:** Give the chat model more freedom, and measure the quality of its replies with a second model. Python keeps the checks that a rule can do well: the facts in each reply agree with the records, and each action that a reply states has a tool call. The model calculates by itself. A grader model scores each reply against a rubric. A test set of replies with known faults shows how far the grader is correct.
 
@@ -11,19 +11,19 @@
 3. "Remove the red one" removed all red picks.
 4. An off-topic question started a search.
 
-The number rule ("each new number must come from a claim, the shopper or Python") is too strict for calculations. A rule cannot list all the correct ways to calculate. Zheyun decided: the model calculates, and a grader with a rubric checks the quality.
+The number rule ("each new number must come from a claim, the shopper or Python") is too strict for calculations. A rule cannot list all the correct ways to calculate. I decided: the model calculates, and a grader with a rubric checks the quality.
 
-**Spec changes (for Zheyun to agree).** Task 4 changes these principles of the design spec and of `CLAUDE.md`:
+**Spec changes (for me to agree).** Task 4 changes these principles of the design spec and of `CLAUDE.md`:
 
 - "Python calculates only what the user specifies." This becomes: "The model calculates. It uses only the costs and rates that the user gives. The grader checks the arithmetic."
 - Spec section 4.7 table, the `calculate` row, and section 6, "Calculation correctness".
 - Not changed: there is still no default conversion, shipping or duty. Facts (price, rating, sizes) are still checked by Python against the records.
 
-## Decisions for Zheyun
+## Decisions to make
 
-1. **The calculation tool (decided).** Zheyun agreed on 2026-10-05: remove `calculate` from `next_step`, so the model answers calculations in its reply. Keep `agent/calc.py` until Task 7 shows the grader results for arithmetic, then delete it. Other choice: keep the tool for long rules ("25% moms and 499 SEK shipping"), and let the model calculate only short sums.
-2. **The judge model (decided).** Zheyun decided on 2026-10-05: use `deepseek/deepseek-v4-flash` on OpenRouter (0.03 USD input and 1.28 USD output per million tokens, about 0.03 USD for one graded run of 48 turns). It is not an OpenAI model, so it has no reason to prefer the replies of Luna. Zheyun does not label replies. Task 6 checks the grader with replies whose faults are known.
-3. **When the grader is good enough (decided).** Zheyun agreed on 2026-10-05: on the test set of Task 6, the grader finds 9 of 10 planted faults or more for each criterion, and it says "fail" for at most 1 in 10 of the correct replies. If DeepSeek does not meet this, try `anthropic/claude-haiku-4.5` (about 0.27 USD a run).
+1. **The calculation tool (decided).** I agreed on 2026-10-05: remove `calculate` from `next_step`, so the model answers calculations in its reply. Keep `agent/calc.py` until Task 7 shows the grader results for arithmetic, then delete it. Other choice: keep the tool for long rules ("25% moms and 499 SEK shipping"), and let the model calculate only short sums.
+2. **The judge model (decided).** I decided on 2026-10-05: use `deepseek/deepseek-v4-flash` on OpenRouter (0.03 USD input and 1.28 USD output per million tokens, about 0.03 USD for one graded run of 48 turns). It is not an OpenAI model, so it has no reason to prefer the replies of Luna. I do not label replies. Task 6 checks the grader with replies whose faults are known.
+3. **When the grader is good enough (decided).** I agreed on 2026-10-05: on the test set of Task 6, the grader finds 9 of 10 planted faults or more for each criterion, and it says "fail" for at most 1 in 10 of the correct replies. If DeepSeek does not meet this, try `anthropic/claude-haiku-4.5` (about 0.27 USD a run).
 
 ## Global Constraints
 
@@ -193,7 +193,7 @@ When the shopper answers "all", the model calls `remove_picks` again, and `ALL_W
 
 ### Task 4: The model calculates by itself
 
-**Files:** `src/scout/agent/followup.py`, `src/scout/agent/graph.py`, `tests/test_followup.py`, `tests/test_graph.py`, the spec and `CLAUDE.md` (after Zheyun agrees).
+**Files:** `src/scout/agent/followup.py`, `src/scout/agent/graph.py`, `tests/test_followup.py`, `tests/test_graph.py`, the spec and `CLAUDE.md` (after I agree).
 
 - [x] **Step 1: Write the failing tests.** A reply "Pick 1 with shipping costs 6147.51 SEK" with a claim for the price of pick 1 and a derived number 6147.51 passes. The same reply without the derived number gives the problem "the number 6147.51 ...". A wrong claim (price 5000 when the card says 5648.51) still gives a problem.
 
@@ -278,26 +278,26 @@ In the repository, `Grade` has one field for each criterion in place of a list, 
 
 ### Task 6: Check the grader with known faults
 
-Zheyun does not label replies. Claude makes a test set where the right grade is known, because Claude plants the faults.
+I do not label replies. An LLM makes a test set where the right grade is known, because it plants the faults.
 
-- [x] **Step 1: Take correct replies** from the results of Task 7 Step 1 or of the run of 2026-10-05: replies that passed all Python checks and that Claude reads and finds correct. About 20.
+- [x] **Step 1: Take correct replies** from the results of Task 7 Step 1 or of the run of 2026-10-05: replies that passed all Python checks and that I read and find correct. About 20.
 - [x] **Step 2: Plant one fault in each copy.** About 40 copies, at least 5 for each criterion: a wrong price or size (`facts`), a wrong sum or an added shipping cost that the shopper did not give (`arithmetic`), "I'll recheck" with no recheck (`said_did`), an invented review (`honest`), an answer to another question (`answers`), a long reply with unneeded text (`plain`). The set goes to `eval/grader/known_faults.yaml`. Each item has the turn, the reply and the expected grade.
-- [x] **Step 3: `scout check-grader`.** Grades the set and prints, for each criterion, how many planted faults the grader found and how many correct replies it failed. One run costs less than 0.05 USD. Ask Zheyun before it.
+- [x] **Step 3: `scout check-grader`.** Grades the set and prints, for each criterion, how many planted faults the grader found and how many correct replies it failed. One run costs less than 0.05 USD. Ask me before it.
 - [x] **Step 4:** If the grader does not meet decision 3, change the rubric text once and run again. If it still does not meet it, try Haiku. Write the numbers into this plan.
 - [x] **Step 5: Commit.**
 
-The limit of this test: planted faults are clearer than real faults. So Task 7 also lists each real reply that the grader failed, and Claude reads them and a sample of the passed replies. When Claude and the grader often disagree, change the rubric. Claude is not the grader: the grader must run without a person, give the same kind of result each time, and not be the author of the agent.
+The limit of this test: planted faults are clearer than real faults. So Task 7 also lists each real reply that the grader failed, and I read them and a sample of the passed replies. When the grader and I often disagree, change the rubric. I am not the grader: the grader must run without a person, give the same kind of result each time, and not be the author of the agent.
 
 ---
 
-### Task 7: Run and grade (after Zheyun agrees)
+### Task 7: Run and grade (after I agree)
 
-- [x] **Step 1:** Ask Zheyun. Then run all 24 scripts with Luna on the code of Tasks 1 to 4 (about 0.07 USD), and grade the results with the chosen judge.
+- [x] **Step 1:** Ask me. Then run all 24 scripts with Luna on the code of Tasks 1 to 4 (about 0.07 USD), and grade the results with the chosen judge.
 - [x] **Step 2:** Write the results into this plan: the expected values, the rounds that Python rejected and why, and the pass rate of each criterion. Compare with the run of 2026-10-05.
 
 **Results, 2026-10-05.**
 
-The grader check (`scout check-grader`, 42 items, `deepseek/deepseek-v4-flash`). Claude changed the inputs of the grader three times. Each change came from the reasons that the grader wrote:
+The grader check (`scout check-grader`, 42 items, `deepseek/deepseek-v4-flash`). I changed the inputs of the grader three times. Each change came from the reasons that the grader wrote:
 
 | Run | Problem found | Faults found | Correct replies failed |
 |---|---|---|---|
@@ -306,7 +306,7 @@ The grader check (`scout check-grader`, 42 items, `deepseek/deepseek-v4-flash`).
 | 3 | each message now has its author; the cards show the stock; the prompt says that the evaluation uses stored data; one test item fixed | 28 of 31 (the 3 replies not in English) | 0 of 66 |
 | 4 | the rubric says that English is a rule of this version | 31 of 31 | 1 of 66 |
 
-The one "correct" reply that run 4 failed had a real fault that Claude missed: a summary calls the FOHERE (energy class E) "energy-efficient". With this label corrected, run 4 found 32 of 32 faults and failed 0 of 65 correct grades. All six criteria meet decision 3. The test set is small (5 to 7 faults for each criterion), and planted faults are clearer than real faults. The cost of run 4 was 0.022 USD, as OpenRouter reported it.
+The one "correct" reply that run 4 failed had a real fault that I missed: a summary calls the FOHERE (energy class E) "energy-efficient". With this label corrected, run 4 found 32 of 32 faults and failed 0 of 65 correct grades. All six criteria meet decision 3. The test set is small (5 to 7 faults for each criterion), and planted faults are clearer than real faults. The cost of run 4 was 0.022 USD, as OpenRouter reported it.
 
 The Luna run on the code of Tasks 1 to 5 (`eval/results/chat-openai_gpt-5.6-luna-20261005-2230.json`, 48 turns, 0.066 USD). Expected values: route 19 of 20, pick numbers 9 of 9, searched 8 of 8, says 6 of 6, not says 10 of 10, phase 23 of 24. Actions passed in round 1 in 22 of 23 turns. The calculation turn ("pick 1 plus 499 SEK shipping") gave 5137.18 + 499 = 5636.18 SEK, which is correct, in round 1. The unclear removals ("Remove the Bomann", "去掉红色那个") got a question.
 
@@ -321,16 +321,16 @@ The grades of this run (`...-2230-graded.json`, 0.035 USD):
 | honest | 43 of 46 |
 | plain | 42 of 46 |
 
-Claude read each of the 9 turns with a fail. Claude agrees with 8:
+I read each of the 9 turns with a fail. I agree with 8:
 
 - 3 replies in Chinese to Chinese messages (`plain`).
-- "I’m rechecking the current prices and stock" with no recheck (`said_did`). The Python check of Task 2 did not find it: it did not know the curly apostrophe and the present tense. Claude fixed this after the run.
+- "I’m rechecking the current prices and stock" with no recheck (`said_did`). The Python check of Task 2 did not find it: it did not know the curly apostrophe and the present tense. I fixed this after the run.
 - "酒柜" (wine cooler) got the question "which category", in 2 of 3 runs. A wine cooler is a kind of the fridge category.
 - 3 summaries of the picks: 2 call the FOHERE energy-efficient, and 1 says that a pick has no rating, but the card has one. Python checks only the numbers in the summaries.
 
-Claude does not agree with 1: the grader failed "What is your budget in SEK?" for a budget in euro. The question is correct, because the system never converts a currency by default.
+I do not agree with 1: the grader failed "What is your budget in SEK?" for a budget in euro. The question is correct, because the system never converts a currency by default.
 
-- [x] **Step 3:** The arithmetic passed in 6 of 6 graded turns, so Claude deleted `agent/calc.py` and its tests (decision 1).
+- [x] **Step 3:** The arithmetic passed in 6 of 6 graded turns, so I deleted `agent/calc.py` and its tests (decision 1).
 - [x] **Step 4: Commit.**
 
 ## Open after this plan

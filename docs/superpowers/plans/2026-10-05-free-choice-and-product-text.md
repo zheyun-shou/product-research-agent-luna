@@ -1,6 +1,6 @@
 # Free Choice, Product Text and More Tools
 
-> **How to use this plan.** Zheyun asked for this on 2026-10-05: make the strict rules less strict, add the missing tools, and let the model answer without a tool when it chooses. Do not run `scout eval-chat` or `scout check-grader` until she asks. Commit at the end of each task.
+> **How to use this plan.** I asked for this on 2026-10-05: make the strict rules less strict, add the missing tools, and let the model answer without a tool when it chooses. Do not run `scout eval-chat` or `scout check-grader` until I ask. Commit at the end of each task.
 
 **Goal:** The chat model decides more by itself and can read more. It can answer in text or call tools. It can read the full text, the reviews and the images of a product, and query all stored products. When no category fits, it drafts a new one.
 
@@ -8,7 +8,7 @@
 
 **Order of the spec.** These parts are in phases 3 and 4 of the spec. This plan builds the long-context version first: the full text of one product goes into the prompt. The spec names this version as the baseline for the retrieval evaluation. bge-m3, BM25 and RRF come later, and the evaluation compares them with this baseline.
 
-## Decisions of Zheyun (2026-10-05)
+## My decisions (2026-10-05)
 
 - The model can answer without a tool. `tool_choice` is `auto`.
 - The model can convert a currency. It tells the shopper the rate that it used.

@@ -21,8 +21,8 @@ class AmazonSeAdapter:
     kind = "product"
     access = "user_browser"
     terms_check = (
-        "2026-10-03: Zheyun accepts personal, low-volume fetching of amazon.se "
-        "in her own browser profile (spec section 8)."
+        "2026-10-03: I accept personal, low-volume fetching of amazon.se "
+        "in my own browser profile (spec section 8)."
     )
 
     def __init__(self, browser: Browser, snapshot_dir: Path, screenshots: bool = False):

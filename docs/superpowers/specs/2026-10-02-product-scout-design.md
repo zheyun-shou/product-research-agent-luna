@@ -10,8 +10,8 @@ Flowcharts: https://claude.ai/artifact/4jJqCkVudUFU24kTyXsiqZ
 product-scout is a conversational agent. It helps the user pick products in any category. Two examples are a buyer who selects a fridge and a seller who selects incense to sell.
 
 The project has two purposes. They are equally important.
-- Practical use. Zheyun uses the agent for her own purchases and to select incense.
-- CV. The project supports her applications for AI Engineer jobs. Thus it must be real, measured and deployable.
+- Practical use. I use the agent for my own purchases and to select incense.
+- CV. The project supports my applications for AI Engineer jobs. Thus it must be real, measured and deployable.
 
 The system makes the list of candidates smaller. The user makes the final selection.
 
@@ -363,7 +363,7 @@ Make a labelled set of about 50 amazon.se product pages across the four categori
 | Search efficiency | How many fewer pages the Threshold Algorithm stop rule fetches, compared with all pages |
 | Run metrics | Cost and latency of each search (Langfuse) |
 
-| Baseline: a general assistant with web search | Give the same needs to Claude with web search and to product-scout. For each pick, check by hand or with Python against the shop page: does it meet the conditions, is the price correct now, can the user buy it in Sweden. This costs money or manual work, so it waits for the decision of Zheyun |
+| Baseline: a general assistant with web search | Give the same needs to Claude with web search and to product-scout. For each pick, check by hand or with Python against the shop page: does it meet the conditions, is the price correct now, can the user buy it in Sweden. This costs money or manual work, so it waits for my decision |
 
 "Did it pick the right product" has no ground truth and is not a metric. The baseline above measures only facts that we can check.
 
@@ -371,11 +371,11 @@ Make a labelled set of about 50 amazon.se product pages across the four categori
 
 - Check the terms of each source before you enable it. Record the result in the adapter. Use official APIs when possible.
 - Fetches are for personal use only, at low volume and with rate limits. The user does the logins and the captchas.
-- The terms of Amazon restrict automated access. On 2026-10-03 Zheyun decided that personal, low-volume fetches of amazon.se in her own browser profile are acceptable to her. The Amazon adapter records this decision and its date. The terms of Taobao also restrict it. She decides before we build the Taobao adapter after v1.
-- On 2026-10-06 Zheyun decided the same for the other sources of 1a: personal, low-volume access to PriceRunner, to the allowed shops, to the official sites of brands and to the pages that web search finds is acceptable to her. Each adapter or reader records this decision and its date. Tavily is used through its official API.
+- The terms of Amazon restrict automated access. On 2026-10-03 I decided that personal, low-volume fetches of amazon.se in my own browser profile are acceptable to me. The Amazon adapter records this decision and its date. The terms of Taobao also restrict it. I decide before we build the Taobao adapter after v1.
+- On 2026-10-06 I decided the same for the other sources of 1a: personal, low-volume access to PriceRunner, to the allowed shops, to the official sites of brands and to the pages that web search finds is acceptable to me. Each adapter or reader records this decision and its date. Tavily is used through its official API.
 - The free Gemini tier can use requests to improve the products of Google. The requests contain public product pages and the shopping needs of the user.
 - Fetched pages, reviews, snapshots and the browser profile stay out of the public Git repository (they are already in `.gitignore`). The public repository contains only code and evaluation numbers.
-- Numbers in the CV must come from evaluations that we really did, and Zheyun must confirm them.
+- Numbers in the CV must come from evaluations that we really did, and I must confirm them.
 
 ## 9. Phases
 
@@ -396,7 +396,7 @@ Shop reviews (phase 2d in section 3) come in build phase 3. Taobao, external sou
 - The exact Gemini models and quotas. We check them when we make the key.
 - Which sort orders amazon.se has (build phase 5).
 - The order of the offers work (PriceRunner) and Taobao after v1.
-- Which large shops go on the first list of allowed shops. Zheyun edits the list.
+- Which large shops go on the first list of allowed shops. I edit the list.
 - Keep the filter fields twice in `chunks`, or join with `reviews` and `products` during the query.
 - Langfuse cloud, or Langfuse in Docker on our computer.
 - The CV line from before mentions "the Claude API". Change it when we select the model.

@@ -1,7 +1,7 @@
 """Web search (phase 3 Task 9): Tavily finds pages, the worker judges each one from its short part, and the chat
 model gets the parts of the relevant pages that answer the question.
 
-The steps (Zheyun, 2026-10-07):
+The steps (my choice, 2026-10-07):
 1. A Tavily search gives up to 20 pages, one credit. Some come with their text; most have only a short part.
 2. The worker judges each page from its title and short part, in parallel: the kind, relevant or not, and which of
    the given products it is about.
@@ -34,7 +34,7 @@ from scout.llm.client import LLMOutputError, LLMUnavailable
 from scout.text.chunks import Chunk, split_text
 
 API = "https://api.tavily.com"
-RESULTS = 20  # pages for each search (Zheyun, 2026-10-06); one credit for any number
+RESULTS = 20  # pages for each search (my choice, 2026-10-06); one credit for any number
 STORED_CHARS = 30_000  # of one page
 PART_TOKENS = 250  # the parts that the reranker scores, about 1,000 characters as in GPT Researcher
 PART_OVERLAP = 25

@@ -17,7 +17,7 @@ providers:
     api_key_env: OPENROUTER_API_KEY
 roles:
   chat:  # GPT-5.6 Luna was chosen on 2026-10-05 after eval-chat (24 scripts, about 0.07 USD a run). On 2026-10-06
-        # Zheyun chose the newer GPT-6 Luna (half the price) without a new eval-chat run.
+        # I chose the newer GPT-6 Luna (half the price) without a new eval-chat run.
     provider: openrouter
     model: openai/gpt-6-luna
     rpm: 60

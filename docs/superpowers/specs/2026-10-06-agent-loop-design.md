@@ -1,6 +1,6 @@
 # Agent loop design
 
-Date: 2026-10-06. Status: accepted by Zheyun on 2026-10-06, with her answers in section 13.
+Date: 2026-10-06. Status: accepted on 2026-10-06, with my answers in section 13.
 Extends: `2026-10-02-product-scout-design.md` (sections 1a, 3 and 4.8 change when this design is accepted).
 
 ## 1. Why
@@ -9,7 +9,7 @@ Today the chat model (GPT-6 Luna) works in fixed steps. Python decides when to s
 
 A test on 2026-10-06 showed the cost of this. Luna saw a fridge with a height of 1 cm (wrong seller data). It wrote "the unusually low height value may be a data issue", but it could not take the fridge out of the picks, because Python had already ranked it as a match.
 
-Zheyun wants Luna to be an intelligent assistant with the whole context. It calls tools freely, searches the web, reads the results and makes the overall judgement. Python must not hold it in tight limits.
+I want Luna to be an intelligent assistant with the whole context. It calls tools freely, searches the web, reads the results and makes the overall judgement. Python must not hold it in tight limits.
 
 ## 2. The principle
 
@@ -62,7 +62,7 @@ message →  │ compact (summary of old turns)│
 - **final checks.** The checks of section 7 on the reply or on `show_picks`. Problems go back to Luna with the values from the records, as now.
 - **Limits for each turn.** The first values are 25 tool calls, 30 product pages, 30 review pages and 20 web pages. At a limit, the tool says so, and Luna replies with what it has. The values are set again from the measurement of section 10 (the hidden-target test).
 
-## 5. The floors (decided by Zheyun on 2026-10-06)
+## 5. The floors (my decision on 2026-10-06)
 
 Luna can always do more. It cannot do less than this. Each floor is kept inside a tool where possible, and else by the check before the picks.
 
@@ -110,7 +110,7 @@ Most tools exist already as code. The table gives what changes.
 
 ## 8. Checks before the picks and the replies show
 
-Zheyun decided on 2026-10-06 to keep only three checks at this gate. The budget and the live check of the price moved into the tools (`query_products`, `check_now`, `show_picks`).
+I decided on 2026-10-06 to keep only three checks at this gate. The budget and the live check of the price moved into the tools (`query_products`, `check_now`, `show_picks`).
 
 1. **Numbers have a source.** Each number in a reply or in the picks is a value of a record, a number that the shopper wrote, a number in a cited review, or a calculation that the reply states. The claims cite the card field, or the stored page text of the product (specifications, bullets, description; not the reviews on the page). The page text was added after the first real turn (section 14).
 2. **Citations exist.** Each cited listing, review or chunk exists and belongs to the product that it is cited for.
@@ -118,7 +118,7 @@ Zheyun decided on 2026-10-06 to keep only three checks at this gate. The budget 
 
 A problem goes back to Luna with the values from the records, up to 3 rounds.
 
-**Changed on 2026-10-07 (Zheyun's decision).** Checks 1 and 2 no longer stop an answer. The answer shows, and the call record keeps the problems (`checked`, `problems`). `scout eval-hidden` counts them in `fact_problems` and lists them in `answers`. The reason: each problem that goes back costs one more call of Luna and more time, and we do not know yet how often Luna is wrong. We measure it during development. If Luna is right nearly always, the check goes away. If one kind of fact is often wrong (for example the price), only that kind stops the answer again. The floors (check 3) and the live check of the price and the stock still stop the picks, because picks without the research are hard to find later. When a floor stops the picks after 3 rounds, the shopper sees "I could not finish the research for these picks".
+**Changed on 2026-10-07 (my decision).** Checks 1 and 2 no longer stop an answer. The answer shows, and the call record keeps the problems (`checked`, `problems`). `scout eval-hidden` counts them in `fact_problems` and lists them in `answers`. The reason: each problem that goes back costs one more call of Luna and more time, and we do not know yet how often Luna is wrong. We measure it during development. If Luna is right nearly always, the check goes away. If one kind of fact is often wrong (for example the price), only that kind stops the answer again. The floors (check 3) and the live check of the price and the stock still stop the picks, because picks without the research are hard to find later. When a floor stops the picks after 3 rounds, the shopper sees "I could not finish the research for these picks".
 
 **Removed: the word rules for actions** (decided 2026-10-06). Python no longer reads the reply for words such as "removed" or "I will search" to require a tool call. In the loop, Luna can call the tool in the same turn.
 
@@ -130,21 +130,21 @@ A problem goes back to Luna with the values from the records, up to 3 rounds.
 
 ## 10. Evaluation
 
-- **Hidden-target test** (asked by Zheyun on 2026-10-06). Claude selects real products that are on amazon.se, for example 20 across the categories. For each, Claude writes the needs of a shopper from the facts of the product, without its name, brand or model. A simulated shopper (the planned Task 14) knows the hidden product and answers Luna's questions only from its facts. We measure: is the hidden product in the picks, at which place, how many tool calls, product pages, review pages and web pages, how many model calls, the cost and the time. The limits of section 4 are set from these numbers (for example from the run that needed the most, plus a margin). This is the idea of the Princeton WebShop benchmark (Yao et al., 2022), which Zheyun had in mind.
+- **Hidden-target test** (I asked for it on 2026-10-06). An LLM selects real products that are on amazon.se, for example 20 across the categories. For each, it writes the needs of a shopper from the facts of the product, without its name, brand or model. A simulated shopper (the planned Task 14) knows the hidden product and answers Luna's questions only from its facts. We measure: is the hidden product in the picks, at which place, how many tool calls, product pages, review pages and web pages, how many model calls, the cost and the time. The limits of section 4 are set from these numbers (for example from the run that needed the most, plus a margin). This is the idea of the Princeton WebShop benchmark (Yao et al., 2022), which I had in mind.
 - **Built on 2026-10-06** (no run yet). `scout eval-hidden` runs the targets of `eval/hidden/targets.yaml`: 12 products of the fridge category (7 fridge freezers, 2 mini fridges, a wine cooler, a cool box, a small fridge under a counter). Only this category has a full profile now. Each target has an opening message, the facts that the shopper knows, and its hidden words (brand and model). The shopper is a model of its own (role `shopper`, not an OpenAI model). It answers only from the facts. Python stops a run when the shopper writes a hidden word; that run is not measured. A run ends at the first picks, or after 4 shopper replies. The test uses its own database (`EVAL_DATABASE_URL`, `product_scout_eval`), which is emptied before each target. Thus each target starts with no stored products, which is the worst case for the limits. The results give, for each run, the place of the target in the picks, if it was stored but not picked, the totals, the most that one turn used, and the limits that a turn reached. A run that reached a limit only shows that the limit was too low for it.
 - `scout eval-chat` scripts check routes today (for example "remove pick 2"). In the loop there are no fixed routes. The scripts change to check outcomes: which picks are removed, which tools were called, what the reply must or must not say, and that the checks pass.
 - Compare the fixed pipeline (the code now, kept on a branch) with the loop on the same scripts: the share of turns that pass the checks in the first round, facts correct (grader), floors met, number of model calls, cost and time for each turn.
 - Later the baseline of the main design: Claude with web search on the same needs.
-- These runs cost money. Each waits for the OK of Zheyun.
+- These runs cost money. Each waits for my OK.
 
 ## 11. Steps
 
-1. Check the sort orders of amazon.se (one search page for each, with her browser).
+1. Check the sort orders of amazon.se (one search page for each, with my browser).
 2. The system prompt and the global context. The agent and tools nodes in LangGraph, with the existing lookup tools and `remove_picks` and `restore_picks`.
 3. `update_needs`, `search_shop`, `query_products`, `check_now`, `show_picks` with the checks of section 8. The fixed pipeline goes away.
 4. `read_reviews`, `find_missing`, `summarize_reviews` as tools, with the floors.
 5. The web page and `scout chat` on the new graph: streaming of tool reports and the login pause.
-6. eval-chat scripts for outcomes, the hidden-target test, and the comparison of section 10 (paid, with her OK). Then set the limits of section 4 from the numbers.
+6. eval-chat scripts for outcomes, the hidden-target test, and the comparison of section 10 (paid, with my OK). Then set the limits of section 4 from the numbers.
 7. `search_web` and `read_page` when the Tavily key is there (Task 9). `search_web` and its floor were built on 2026-10-06 (phase 3 plan, Task 9). `read_page` is not built yet.
 
 Each step is committed, reviewed and pushed. The tests use a fake LLM that returns planned tool calls.
@@ -159,7 +159,7 @@ Each step is committed, reviewed and pushed. The tests use a fake LLM that retur
 | The free fallback model (Gemini) uses tools less well | Measure it in the comparison. The fallback can stay on a simpler path |
 | The login pause in the middle of a tool | It works as now: the tool waits for Done or Skip. Skip ends that tool with a report to Luna |
 
-## 13. Decisions of Zheyun (2026-10-06)
+## 13. My decisions (2026-10-06)
 
 1. Price: Luna can weigh the price when the shopper asks for it. A budget stays a hard limit.
 2. The word rules for actions go.
@@ -183,13 +183,13 @@ Changes after this turn:
 - Each model call has a deadline in all: 180 seconds for chat, 60 for worker, 120 for judge (`deadline` in models.yaml can change it). A late call is tried one more time, then it raises `LLMTimeout`. It does not move the role to its fallback, and the crawl stores that page without extraction. The late request cannot be stopped; its thread ends by itself.
 - The crawl extracts pages in 4 worker threads while the browser loads the next pages.
 - `search_shop` opens up to 8 new product pages. The sort orders take turns in the list, so the best rated and the best selling results are in the first 8. The rest stay for the next call with the same words.
-- The polite gap between pages is now 4.5 to 5.5 seconds (Zheyun, 2026-10-06), not 4 to 9. A first try with 2.5 to 3.5 seconds gave 5 HTTP 503 in 13 pages.
+- The polite gap between pages is now 4.5 to 5.5 seconds (my choice, 2026-10-06), not 4 to 9. A first try with 2.5 to 3.5 seconds gave 5 HTTP 503 in 13 pages.
 - A claim can cite the page text of its product (field `page`), and a number of the page text is a source for the text of that pick. Prices in the page text ("299 kr") are not a source, and the price, the rating, the review count and the stock come only from the card.
 - `read_product` cuts each product at 5000 characters, and its report keeps all three. A product read in this turn is not given again.
 - The system prompt tells Luna to look at the stored products first.
 - The limit of 30 product pages for each turn stays.
 
-Goal from Zheyun: 3 to 4 minutes for a turn. A new category needs about 20 pages (3 search pages, 8 product pages, 9 review pages), so it is not sure that this goal can be met there. The next real turn measures it.
+My goal: 3 to 4 minutes for a turn. A new category needs about 20 pages (3 search pages, 8 product pages, 9 review pages), so it is not sure that this goal can be met there. The next real turn measures it.
 
 ## 15. The second real turn (2026-10-06)
 
@@ -205,8 +205,8 @@ Changes after this turn:
 - The model sees its own calls. A turn is now a chat history in the format of the API: the first message (the context and the conversation at the start of the turn), then each call of the model (role assistant) and its result (role tool). The first message stays the same in the whole turn, so the provider can cache it. The remaining limits are not in the context; a tool says when a limit is used up. The problems found by the gate come back as the result of the final call.
 - `update_needs` gives the names of the profile when the category is new.
 - A 503 (a server error) is fetched again without asking, after the polite gap. No answer (status 0, for example a closed browser window) and a 429 still ask the shopper.
-- The polite gap is 4.5 to 5.5 seconds (Zheyun).
-- An HTTP 402 raises `NoCredits` with a clear message. It does not move the role to its fallback. A limit on the output length is not set (Zheyun).
+- The polite gap is 4.5 to 5.5 seconds (my choice).
+- An HTTP 402 raises `NoCredits` with a clear message. It does not move the role to its fallback. A limit on the output length is not set (my choice).
 - Another status error of the provider (for example 400 or 413) is an `LLMOutputError`, so the turn ends with a message and does not crash.
 - The first message says that it shows the state at the start of the turn, and that the results of the tool calls are newer.
 

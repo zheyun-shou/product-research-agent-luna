@@ -1,6 +1,6 @@
 # Phase 3 Text and Retrieval
 
-> **How to use this plan.** Zheyun answered the questions on 2026-10-06 (see her decisions). Commit at the end of each task. Do not run a paid evaluation until she asks.
+> **How to use this plan.** I answered the questions on 2026-10-06 (see my decisions). Commit at the end of each task. Do not run a paid evaluation until I ask.
 
 **Goal:** The agent finds the right text of many products and many reviews, not only the full text of one product. It uses hybrid retrieval (bge-m3 vectors, BM25 and RRF). It reads the shop reviews behind the login, finds attribute values that the database does not have, and writes pros and complaints in the picks. An evaluation compares the retrieval methods with the long-context baseline.
 
@@ -16,13 +16,13 @@
 - The fridge profile has `complaint_types`: noise, frost, door seal, compressor life, after-sales service.
 - The GPU is an RTX 3060 Laptop with 6 GB. No torch and no embedding library are installed.
 
-## Decisions of Zheyun (2026-10-06)
+## My decisions (2026-10-06)
 
 1. **Local model and libraries: yes.** torch with CUDA, FlagEmbedding and bge-m3 (from Hugging Face) go into the conda env and the Hugging Face cache. FlagEmbedding gives the dense vector and the sparse weights of bge-m3 in one call.
 2. **Shop reviews: read the good and the bad ones.** The agent reads the positive and the critical review pages of each top pick (amazon.se has a star filter for each). When amazon.se is not logged in, the agent tells the shopper to log in in the dedicated browser window, and waits. Limits: the top 10 picks, at most 3 pages for each pick, at most 30 pages for each search.
-3. **Claude makes the evaluation set.** Claude writes about 30 questions from the stored text, marks the chunks that hold each answer and copies the exact words. Python checks that the words are in those chunks. The DeepSeek grader marks the answers of the chat model. The plan and any CV text say "made by Claude, checked by Python", not "labelled by hand".
+3. **An LLM makes the evaluation set.** It writes about 30 questions from the stored text, marks the chunks that hold each answer and copies the exact words. Python checks that the words are in those chunks. The DeepSeek grader marks the answers of the chat model. The plan and any CV text say "made by an LLM, checked by Python", not "labelled by hand".
 4. **Professional reviews: a free source for all categories.** She asked for a free source that covers all kinds of products, for example YouTube or a web search. See Task 9.
-5. **A web page for the chat.** At the end, the shopper talks to the agent on a web page. This comes into the schedule, so that Zheyun can test the agent herself.
+5. **A web page for the chat.** At the end, the shopper talks to the agent on a web page. This comes into the schedule, so that I can test the agent myself.
 
 ## Global constraints
 
@@ -48,7 +48,7 @@ On 2026-10-06 `scout backfill-text` made 181 chunks from the stored pages: 41 sp
 
 ### Task 2: Embeddings with bge-m3 (done)
 
-On 2026-10-06 Claude installed torch 2.6.0 (CUDA 12.4) and FlagEmbedding 1.4.2. The model download is about 4.3 GB, because the model repository also has an ONNX copy. `scout embed` gave the 181 chunks their vectors in 17.5 s on the RTX 3060. Chunk sizes are still counted as 4 characters for each token.
+On 2026-10-06 I installed torch 2.6.0 (CUDA 12.4) and FlagEmbedding 1.4.2. The model download is about 4.3 GB, because the model repository also has an ONNX copy. `scout embed` gave the 181 chunks their vectors in 17.5 s on the RTX 3060. Chunk sizes are still counted as 4 characters for each token.
 
 
 - `Embedder` protocol: `embed(texts) -> (dense, sparse)`. `BgeM3Embedder` uses FlagEmbedding on the GPU in fp16, with batches. `FakeEmbedder` for tests.
@@ -76,7 +76,7 @@ The bge-m3 model loads at the first `search_text` call in `scout chat`, and new 
 
 ### Task 5: Shop reviews behind the login (done)
 
-On 2026-10-06 Zheyun logged in, and Claude saved real review pages of the Bomann KG 320 outside Git. Findings:
+On 2026-10-06 I logged in, and I saved real review pages of the Bomann KG 320 outside Git. Findings:
 
 - The review pages show the reviews of all Amazon shops of the EU. "From Sweden" had 0 reviews for this fridge. The other reviews are in German, Spanish, French, Dutch and Italian. bge-m3 is multilingual, so this is not a problem for the search.
 - amazon.se ignores `pageNumber` in the URL. Page 2 gave the same 10 reviews as page 1. The "Show 10 more reviews" button loads more with a script. So the third page of a pick is the critical reviews sorted by `recent`. On the Bomann it gave 4 new reviews of 10.
@@ -89,14 +89,14 @@ What was built:
 - The graph has a new step `reviews` after `recommend`. It reads the reviews of the picks that are shown (default 5), not of the top 10 candidates, because the state keeps only the picks. The web page now sends the replies of each step when the step ends, so the picks show before the reviews are read.
 - `scout reviews ASIN...` and `scout parse-reviews PATH`. `scout chat` also prints the replies of each step when the step ends.
 
-First real run (2026-10-06, 3 fridges): 9 review pages, 75 reviews (30 positive, 45 critical). 22 of them were on the product pages too, so they got no second chunk. The other 53 gave 54 chunks (one long review has two). `scout embed` gave 67 chunks vectors in 7.3 s: these 54 and 13 product page chunks from the web test of Zheyun. A Chinese question about noise ("冰箱噪音大吗") found two German reviews about a loud fridge in its top 2.
+First real run (2026-10-06, 3 fridges): 9 review pages, 75 reviews (30 positive, 45 critical). 22 of them were on the product pages too, so they got no second chunk. The other 53 gave 54 chunks (one long review has two). `scout embed` gave 67 chunks vectors in 7.3 s: these 54 and 13 product page chunks from my web test. A Chinese question about noise ("冰箱噪音大吗") found two German reviews about a loud fridge in its top 2.
 
 Plan as written before the build:
 
 - Parser for the review pages of amazon.se: title, rating, date, verified purchase, variant, text. No author.
 - Login check on each review page, from the page that was just fetched (no extra request). When the login is gone or a captcha shows, the agent tells the shopper to log in or solve it in the dedicated browser window, and waits. It never types a password.
 - After the picks, the agent reads the positive and the critical review pages of the top 10, within the page limits. The reviews go into `page_texts` and into chunks. Each review keeps which filter found it.
-- Step that needs Zheyun: she logs in, and Claude saves one review page as a test fixture outside Git. The parser is written against that page.
+- Step that needs me: I log in, and I save one review page as a test fixture outside Git. The parser is written against that page.
 
 ### Task 6: On-demand attribute extraction (done)
 
@@ -107,7 +107,7 @@ Built on 2026-10-06. On that day the stored fridges had few values for the condi
 - The table `attribute_searches` records each search with an md5 hash of the text that it read, also when it found nothing. The same text is not searched again. A recheck of the same page and new review chunks do not change the hash. When the worker is not available, the values found before stay, and the note says that the search stopped early. An error of the text search does not stop the picks.
 - `scout eval-chat` does not use it (`find_missing=False`), so its runs stay comparable with the earlier runs.
 - Real run (2026-10-06, condition height up to 180 cm, Gemma 4 26B as the worker): 6 products searched, 3 values found, all raw texts in the cited chunks. Two were right (180 cm and 54 cm). The third was 1 cm, from "10D x 10B x 10H millimeter" on a 173 l Bomann. The page really says it, so the raw-text check passed.
-- Claude first added plausible ranges to the profile for such values. Zheyun decided against it: the chat model can see this itself, so no Python rule. The ranges were removed. Test (2026-10-06): GPT-6 Luna wrote the picks for this fridge (height 1 cm) and the Bomann French Door (180 cm), with the usual prompt and no hint. For the 1 cm fridge it wrote "the unusually low height value may be a data issue". It did not doubt the other fridge. The Python conditions still count 1 cm as up to 180 cm, so the pick stays, with the remark of the model. One call, 0.0002 USD. The older Python rule of phase 1 (ignore height, width and depth when the box cannot hold the stated volume) was removed too, on her decision. The worker size check on each pick (phase 2 Task 11) stays, because it is a model judgement.
+- I first added plausible ranges to the profile for such values. I decided against it: the chat model can see this itself, so no Python rule. The ranges were removed. Test (2026-10-06): GPT-6 Luna wrote the picks for this fridge (height 1 cm) and the Bomann French Door (180 cm), with the usual prompt and no hint. For the 1 cm fridge it wrote "the unusually low height value may be a data issue". It did not doubt the other fridge. The Python conditions still count 1 cm as up to 180 cm, so the pick stays, with the remark of the model. One call, 0.0002 USD. The older Python rule of phase 1 (ignore height, width and depth when the box cannot hold the stated volume) was removed too, on my decision. The worker size check on each pick (phase 2 Task 11) stays, because it is a model judgement.
 
 Plan as written before the build:
 
@@ -125,7 +125,7 @@ Built on 2026-10-06.
 - A pick with fewer than 3 review chunks gets "Too few reviews to summarize". The checked statements and their sources are kept with the picks in the state. An LLM outage keeps the picks and says that no summary was made.
 - The summaries are kept in the state by listing. A pick that stays from an earlier turn keeps its summary, so a removal does not write all summaries again. When the model is not available, the summaries written before stay. The text says if a summary failed the checks or if the model gave no usable reply. No message is sent when no pick has enough reviews.
 - `scout eval-chat` does not use it (`write_opinions=False`), because its scripts measure the conversation. The summaries need their own measurement: how many pass the checks, and a judge or a hand check of whether the statements agree with the cited reviews. This belongs with Task 8 or the full evaluation.
-- Real run (2026-10-06, the 3 fridges with shop reviews, GPT-6 Luna, summaries in Chinese): all 3 passed the checks in the first round. Each pick got two pros and three complaints, qualitative, with mixed views stated (for example on noise). Each statement cited 1 to 6 reviews. A spot check by Claude: "dented on delivery" cites review 226, which says "Beschädigt geliefert". 3 calls, 0.0017 USD, 51 s.
+- Real run (2026-10-06, the 3 fridges with shop reviews, GPT-6 Luna, summaries in Chinese): all 3 passed the checks in the first round. Each pick got two pros and three complaints, qualitative, with mixed views stated (for example on noise). Each statement cited 1 to 6 reviews. My spot check: "dented on delivery" cites review 226, which says "Beschädigt geliefert". 3 calls, 0.0017 USD, 51 s.
 
 Plan as written before the build:
 
@@ -138,14 +138,14 @@ Plan as written before the build:
 
 - `eval/retrieval/questions.yaml`: about 30 questions in Swedish, English and Chinese. Some are about one product, some are across products, some name a model number. Each has the gold chunk ids and the exact words.
 - `scout eval-retrieval`: for each method, recall@10, MRR, the tokens put into the prompt and the time. No API cost.
-- With Zheyun's permission: the chat model answers each question with the top 10 chunks of each method and with long context. The DeepSeek grader marks each answer. The report gives accuracy, tokens, cost and latency for each method.
+- With my permission: the chat model answers each question with the top 10 chunks of each method and with long context. The DeepSeek grader marks each answer. The report gives accuracy, tokens, cost and latency for each method.
 - The results go into this plan, with the size of the corpus. If the corpus is too small to show a difference, the plan says so.
 
 ### Task 9: Web search (decided 2026-10-06)
 
-Zheyun decided the positioning on 2026-10-06 (spec section 1a). Web search finds models, tests, forum views and product pages of other shops. amazon.se stays the deep source. Her terms decision covers the pages that web search finds.
+I decided the positioning on 2026-10-06 (spec section 1a). Web search finds models, tests, forum views and product pages of other shops. amazon.se stays the deep source. My terms decision covers the pages that web search finds.
 
-- Tavily through its official API (free plan, 1,000 searches each month, no card). Zheyun makes the account and puts `TAVILY_API_KEY` in `.env`.
+- Tavily through its official API (free plan, 1,000 searches each month, no card). I make the account and put `TAVILY_API_KEY` in `.env`.
 - Lookup tool `search_web(question)`. The searches use the model numbers of the picks and the needs of the shopper.
 - The agent reads the found pages in parallel with several worker calls. Pages of one shop are still one at a time.
 - Test articles and forum pages become chunks with the source `web`, the URL and the type (test or forum). Product pages of shops go through a generic reader: the schema.org `Product` JSON-LD first, then the worker with the raw-text check. They become listings, matched by GTIN when the page has one.
@@ -154,14 +154,14 @@ Zheyun decided the positioning on 2026-10-06 (spec section 1a). Web search finds
 
 **Part 1 built on 2026-10-06 and 2026-10-07: `search_web`.** `read_page` and the generic reader of shop pages are not built yet.
 
-- `scout.websearch.TavilyClient` calls the REST API: a basic search (1 credit) with 20 results (Zheyun, 2026-10-06; the credit is the same for any number), the page text when Tavily has it, and the date of each page (`include_published_date`). Extract gets the text of other pages (1 credit for each 5 pages that it gets). A status 401, 403, 429, 432 or 433 or no answer raises `WebSearchUnavailable`. Then the tool tells Luna, and the web floor is off for the rest of the turn.
-- The tool `search_web(question, ids, want)`, in the steps of Zheyun (2026-10-07):
+- `scout.websearch.TavilyClient` calls the REST API: a basic search (1 credit) with 20 results (my choice, 2026-10-06; the credit is the same for any number), the page text when Tavily has it, and the date of each page (`include_published_date`). Extract gets the text of other pages (1 credit for each 5 pages that it gets). A status 401, 403, 429, 432 or 433 or no answer raises `WebSearchUnavailable`. Then the tool tells Luna, and the web floor is off for the rest of the turn.
+- The tool `search_web(question, ids, want)`, in my steps (2026-10-07):
   1. Tavily gives up to 20 pages. In a test on 2026-10-07, only 4 of 20 came with their text; the others had a short part of about 150 characters.
   2. The worker judges each page from its title, address, date and short part, in parallel (10 threads): the kind (test, forum, shop, other), relevant or not, and which of the given products it is about.
   3. Extract gets the text of the relevant pages that came without it.
   4. The text is cut into parts of about 1,000 characters. The local reranker bge-reranker-v2-m3 scores each part against `want` (what Luna wants to learn, for example "is it quiet"), or else against the search words without the brands and the models of the given products. The 15 best parts go to Luna, each with the part before and the part after, at most 40 parts in all (about 10,000 tokens). Each page shows its site, kind, date and address. The other pages are listed with the reason of the worker.
   5. The relevant pages about a given product become chunks of that product, with the source `web`, the kind of the page, and the URL, the site, the title and the date in `meta`. Thus `search_text` finds them later. Pages that are not relevant keep only their title, address and short part.
-- Why the rank and not a score threshold (the context filter of GPT Researcher, which Zheyun asked to follow). The test of 2026-10-07 with 83 real parts: the cosine of bge-m3 was high for menus that repeat the model name, and low (0.37) for buyer reviews about the noise that do not name it. The reranker ordered the parts well, but its scores did not fit a threshold: with the model name in the question nearly all parts of a page about the product scored above 0.9; without it all scored below 0.07. Zheyun agreed to the rank on 2026-10-07.
+- Why the rank and not a score threshold (the context filter of GPT Researcher, which I asked to follow). The test of 2026-10-07 with 83 real parts: the cosine of bge-m3 was high for menus that repeat the model name, and low (0.37) for buyer reviews about the noise that do not name it. The reranker ordered the parts well, but its scores did not fit a threshold: with the model name in the question nearly all parts of a page about the product scored above 0.9; without it all scored below 0.07. I agreed to the rank on 2026-10-07.
 - The words of the search matter. A long English question ("Gorenje RK4182PS4 noise level, is it quiet? test and user reviews") found 13 manual and shop pages; 2 of 20 were relevant. "Gorenje RK4182PS4 test" found test sites in Germany, Slovakia and Denmark: 13 of 19 relevant. The system prompt now tells Luna to use short search words and to put the question in `want`.
 - Real run (2026-10-07, "Gorenje RK4182PS4 test", want "is it quiet or loud", the free Gemini worker): 19 pages judged, 13 relevant, 11 stored, 38 parts to Luna (38,324 characters), 1 credit, no cost. The best part was an otto.de buyer review; testbericht.de "Der Betrieb ist angenehm leise" was among the 15. It took 81 s, because the free Gemini key allows 15 calls a minute; the reranker loads in about 26 s, one time in a session.
 - The table `web_searches` keeps each question, the listings it was for, and the results (the relevant ones with their text, cut at 30,000 characters). The same question in the next 7 days uses them and costs no search credit. That use adds its products to the same row and does not change its date, so the results are not used after 7 days. A page that is stored again with the same text keeps its chunks and their embeddings.
@@ -174,11 +174,11 @@ Findings from before the decision (2026-10-06): a Google search by the program i
 
 ## Additions of 2026-10-06
 
-Zheyun read the comparison with two open-source agents and said to do all the proposals. The two agents are Microsoft InteRecAgent (a conversational recommender: query, retrieval and ranking tools, a plan made first, a critic, a user profile, a simulated user for evaluation) and LangChain open_deep_research (a supervisor with the tools think, conduct research and research complete; researchers that call tools by their own choice; limits on loops; a cheap model for summaries). We read their papers and documents only. We do not copy their code.
+I read the comparison with two open-source agents and said to do all the proposals. The two agents are Microsoft InteRecAgent (a conversational recommender: query, retrieval and ranking tools, a plan made first, a critic, a user profile, a simulated user for evaluation) and LangChain open_deep_research (a supervisor with the tools think, conduct research and research complete; researchers that call tools by their own choice; limits on loops; a cheap model for summaries). We read their papers and documents only. We do not copy their code.
 
 ### Worker model (done)
 
-On 2026-10-06 Claude tried 7 cheap OpenRouter models that read images and call tools. Task 1: keep the titles of the 24 stored listings that are a fridge with a freezer part (Claude labelled 23 titles from the titles; one is unclear and not scored). Task 2: the colour and the number of doors of the FOHERE BC-90 from its 6 product images (black, one door).
+On 2026-10-06 I tried 7 cheap OpenRouter models that read images and call tools. Task 1: keep the titles of the 24 stored listings that are a fridge with a freezer part (an LLM labelled 23 titles from the titles; one is unclear and not scored). Task 2: the colour and the number of doors of the FOHERE BC-90 from its 6 product images (black, one door).
 
 | Model | Titles right | Image right | Time (titles, image) | Cost of both |
 |---|---|---|---|---|
@@ -210,7 +210,7 @@ A profile of the shopper: likes, dislikes (with the reasons from removed picks) 
 
 ### Task 14: Evaluation with a simulated shopper
 
-Method of InteRecAgent: take one stored product as the hidden target. A cheap model plays a shopper whose wishes come from the attributes and reviews of that product. It talks with the agent for at most 5 turns. Metrics: hit@5 (the target is in the picks) and the mean number of turns. This measures if the agent finds a product that fits the wishes, not if the product is the best. The run uses paid models, so Zheyun says when.
+Method of InteRecAgent: take one stored product as the hidden target. A cheap model plays a shopper whose wishes come from the attributes and reviews of that product. It talks with the agent for at most 5 turns. Metrics: hit@5 (the target is in the picks) and the mean number of turns. This measures if the agent finds a product that fits the wishes, not if the product is the best. The run uses paid models, so I say when.
 
 ### Later, with Task 9
 
@@ -218,6 +218,6 @@ One researcher for each pick searches the web at the same time, and a cheap mode
 
 ## Not in this plan
 
-- The web page for the chat (decision 5). It gets its own plan, together with FastAPI from phase 7. It runs on Zheyun's computer (localhost) first, because the dedicated browser window for amazon.se is there.
+- The web page for the chat (decision 5). It gets its own plan, together with FastAPI from phase 7. It runs on my computer (localhost) first, because the dedicated browser window for amazon.se is there.
 - PaddleOCR-VL for images (phase 4). `read_images` with the worker stays.
 - Python's fixed messages in the shopper's language.

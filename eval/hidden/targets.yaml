@@ -1,5 +1,5 @@
 # Hidden targets for `scout eval-hidden` (agent-loop design, section 10). Each target is one real product of
-# amazon.se. Claude wrote the opening and the facts on 2026-10-06 from the stored page of the product, without its
+# amazon.se. An LLM wrote the opening and the facts on 2026-10-06 from the stored page of the product, without its
 # name, brand or model. The facts are true of the product; a few other products can also meet them. hidden_words
 # are the brand and the model: Python stops the run when the shopper writes one.
 # Prices are those of the first week of October 2026; a budget leaves a margin of 10 to 25 percent.

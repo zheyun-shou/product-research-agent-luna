@@ -6,15 +6,15 @@
 
 **Architecture:** A LangGraph `StateGraph` runs one turn for each user message. A Postgres checkpointer keeps the state of each thread. The state keeps only product IDs and the needs, never full records. Each node uses code from phase 1: the picks steps move into one module (`scout/picks/pipeline.py`) that the command and the graph share. Before the picks, the chat model fills the needs through structured output. After the picks, it acts through native tool calls: it can remove picks, bring them back, ask, answer, and start the next step, several of these in one reply. Python validates each call, does all filters and all arithmetic, and checks each number in each reply against the records. The worker model screens titles for the kind of product that the user wants and checks the sizes on each pick against the rest of the page.
 
-**Tech Stack:** Phase 1 stack, plus `langgraph` 1.2, `langgraph-checkpoint-postgres` 3.1 (`PostgresSaver`) and `langfuse` 4.16. Claude installed these three on Python 3.10 in a scratch environment on 2026-10-04 and checked the APIs that this plan uses: `StateGraph`, conditional edges, nodes that take `(state, config)`, `InMemorySaver`, `PostgresSaver(conn).setup()`, `Langfuse.start_as_current_observation`, `propagate_attributes(session_id=...)`.
+**Tech Stack:** Phase 1 stack, plus `langgraph` 1.2, `langgraph-checkpoint-postgres` 3.1 (`PostgresSaver`) and `langfuse` 4.16. I installed these three on Python 3.10 in a scratch environment on 2026-10-04 and checked the APIs that this plan uses: `StateGraph`, conditional edges, nodes that take `(state, config)`, `InMemorySaver`, `PostgresSaver(conn).setup()`, `Langfuse.start_as_current_observation`, `propagate_attributes(session_id=...)`.
 
 **Spec:** `docs/superpowers/specs/2026-10-02-product-scout-design.md`, sections 3, 4.7 to 4.10, and phase 2 in section 9.
 
 **Video:** a walkthrough of this plan, with captions and voice, is at https://claude.ai/artifact/BRmWUvhE8E82DBwQQYeLNx. Fig. 4 of the diagram (https://claude.ai/artifact/4jJqCkVudUFU24kTyXsiqZ) shows one turn of the conversation.
 
-**Done in the repository.** On 2026-10-05 Claude did Tasks 1 to 12 in the repository, one commit for each task, and 233 tests passed. The repository then had the same files as a fresh build from this plan, except the new dependencies in `pyproject.toml` and the order of the imports in `cli.py`. The steps "Run the tests to see them fail" stay open: the code and its tests came from the dry runs, so Claude added them together. Four steps stay open because they need a real browser or a chat quota: Task 3 Step 7, Task 10 Step 7, Task 11 Step 7 and Task 12 Step 7.
+**Done in the repository.** On 2026-10-05 I did Tasks 1 to 12 in the repository, one commit for each task, and 233 tests passed. The repository then had the same files as a fresh build from this plan, except the new dependencies in `pyproject.toml` and the order of the imports in `cli.py`. The steps "Run the tests to see them fail" stay open: the code and its tests came from the dry runs, so I added them together. Four steps stay open because they need a real browser or a chat quota: Task 3 Step 7, Task 10 Step 7, Task 11 Step 7 and Task 12 Step 7.
 
-**Code review.** After Task 12, a code review on 2026-10-05 found that some numbers of `scout eval-chat` were not correct. Claude changed the code after the commit of Task 12, so the code blocks of this plan show the earlier version of these parts. The changes are:
+**Code review.** After Task 12, a code review on 2026-10-05 found that some numbers of `scout eval-chat` were not correct. I changed the code after the commit of Task 12, so the code blocks of this plan show the earlier version of these parts. The changes are:
 
 - Each checked step (clarify, summaries, actions, calculations) marks its last call record as passed or not passed (`LLM.mark_checked`). The evaluation reads this mark. Before, it looked for one failure sentence in the replies, so a step that stopped with an exception counted as passed.
 - A model that gives no usable reply (`LLMOutputError`) now gets its own message. It is a model failure and counts in the score. An outage (quota, server) or a program error makes the turn "not measured". Its expected values and steps do not count. Calls, tokens and time still count.
@@ -24,7 +24,7 @@
 
 237 tests passed after these changes.
 
-**Dry run.** On 2026-10-04 Claude applied all code of this plan in a temporary Git worktree, on commit f676761. 204 tests passed: the 163 tests of phase 1 and 41 new ones. Then Claude ran one real clarify turn of `scout chat` in Chinese ("a fridge, 60 cm wide, 186 cm high, budget 9000 kronor"). The agent stored width<=60, height<=186 and budget 9000. It asked about the kind (with or without a freezer part), the depth and the noise. No browser opened. The chat role used 2 calls on Groq, because the Gemini chat quota was used up. Claude then deleted that thread and the worktree. Later on 2026-10-04, Zheyun added decisions 7 and 8. Claude applied the changed plan again in a new worktree: 207 tests passed (163 and 44 new). On 2026-10-05 Zheyun reviewed the plan. Decisions 9 to 13 and Task 12 come from that review. Claude applied the plan a third time: 220 tests passed (163 and 57 new), and Task 12 ran the 12 scripted conversations with Nemotron 3 Ultra. The Gemini chat quota ran out after the first script. The results are under Task 12. Later on 2026-10-05, the scripts showed that every tested model guesses or removes too much when the shopper's words do not name one pick. Zheyun then decided that the chat model acts through tool calls after the picks (decision 1), with the checks of decision 14 and an undo (decision 15). Claude applied the changed plan in a fourth worktree: 233 tests passed (163 and 70 new), and Task 12 ran 24 scripted conversations. Task 13 was not part of any run.
+**Dry run.** On 2026-10-04 I applied all code of this plan in a temporary Git worktree, on commit f676761. 204 tests passed: the 163 tests of phase 1 and 41 new ones. Then I ran one real clarify turn of `scout chat` in Chinese ("a fridge, 60 cm wide, 186 cm high, budget 9000 kronor"). The agent stored width<=60, height<=186 and budget 9000. It asked about the kind (with or without a freezer part), the depth and the noise. No browser opened. The chat role used 2 calls on Groq, because the Gemini chat quota was used up. I then deleted that thread and the worktree. Later on 2026-10-04, I added decisions 7 and 8. I applied the changed plan again in a new worktree: 207 tests passed (163 and 44 new). On 2026-10-05 I reviewed the plan. Decisions 9 to 13 and Task 12 come from that review. I applied the plan a third time: 220 tests passed (163 and 57 new), and Task 12 ran the 12 scripted conversations with Nemotron 3 Ultra. The Gemini chat quota ran out after the first script. The results are under Task 12. Later on 2026-10-05, the scripts showed that every tested model guesses or removes too much when the shopper's words do not name one pick. I then decided that the chat model acts through tool calls after the picks (decision 1), with the checks of decision 14 and an undo (decision 15). I applied the changed plan in a fourth worktree: 233 tests passed (163 and 70 new), and Task 12 ran 24 scripted conversations. Task 13 was not part of any run.
 
 ## Global Constraints
 
@@ -42,15 +42,15 @@
 
 These points differ from the spec or make it more exact. Task 15 writes them into the spec.
 
-1. **After the picks, the chat model acts through native tool calls.** Zheyun decided this on 2026-10-05, because shoppers write freely: two things in one message, an undo, a question about the order. One fixed action per turn (the first version of this plan) could not do these, and it made the model guess when it had to ask. The model gets four tools (Task 7): `remove_picks`, `restore_picks`, `next_step` and `reply`, and it sees the full cards. It can call several tools in one reply. Python checks each call before anything changes, and it writes the text about what changed. The clarify step stays structured output, because Python checks each field of the needs. The spec tools map as follows. `query_products`: `next_step` `change_needs`, then the SQL and Python filters. `exclude_and_rerank`: `remove_picks`. `fetch_more`: `next_step` `show_more`. `calculate`: `next_step` `calculate`. `recheck_availability`: `next_step` `recheck`. `search_text` and `extract_attribute` need chunks and come in phase 3. `update_profile` comes in phase 4, with profile generation.
+1. **After the picks, the chat model acts through native tool calls.** I decided this on 2026-10-05, because shoppers write freely: two things in one message, an undo, a question about the order. One fixed action per turn (the first version of this plan) could not do these, and it made the model guess when it had to ask. The model gets four tools (Task 7): `remove_picks`, `restore_picks`, `next_step` and `reply`, and it sees the full cards. It can call several tools in one reply. Python checks each call before anything changes, and it writes the text about what changed. The clarify step stays structured output, because Python checks each field of the needs. The spec tools map as follows. `query_products`: `next_step` `change_needs`, then the SQL and Python filters. `exclude_and_rerank`: `remove_picks`. `fetch_more`: `next_step` `show_more`. `calculate`: `next_step` `calculate`. `recheck_availability`: `next_step` `recheck`. `search_text` and `extract_attribute` need chunks and come in phase 3. `update_profile` comes in phase 4, with profile generation.
 2. **Login and captcha pauses stay a prompt in the terminal.** The graph runs in the same process as the terminal, so the crawl can wait for the user, as in phase 1. The LangGraph interrupt comes in phase 7, when a web page replaces the terminal.
 3. **Profiles get kinds.** The 5 l cosmetics cooler ranked second in the phase 1 runs, because "fridge" was too wide. A profile now lists kinds (for the fridge: with a freezer part, without one, mini fridge, wine cooler, cool box), each with Swedish search terms. The clarify step must know the kind before it searches. The title screening keeps only items of that kind.
 4. **The clarify step must not invent numbers.** Each condition and the budget must agree with a number that the user wrote, with a unit change of a power of ten at most (1,8 m is 180 cm). Otherwise the model must ask.
 5. **Size doubts are marked, never changed.** The worker compares the sizes on each pick with the title, the bullet points and the specifications. A doubtful size gets "(doubtful)" and a note. A quote in the note must be on the page.
-6. **A hidden price comes from one click on the page.** Zheyun found two cases in her label review on 2026-10-04 (5 of 38 labelled pages). On 4 pages, amazon.se shows no buy box, only "Priset är högre än vanligt" and the button "Visa alla köpalternativ". The program opens the offer panel and reads the lowest new offer that can go in the cart. On 1 page, the price shows only after a size is selected. The program opens each size by its own ASIN and stores it as its own listing, because each size has its own measurements and price. Each price keeps its source (`all_offers` or `size_choice`), and the picks show it.
-7. **Each thread searches one time before it uses the stored products.** Zheyun asked on 2026-10-04: stored data gets old. So the first search for a set of search terms in a thread always reads result page 1 on amazon.se. Products that are already stored get the rating and the review count of the result card, and the browser does not open them. Only new products get a product page. When all results are already stored, the search costs one page load. After that, the thread uses the stored products while 10 or more meet the needs. The thread also reads page 1 again when the budget is higher than in the earlier search for these words, because the crawl does not store results over the budget.
-8. **A failed check tells the model what is wrong and what is right.** Zheyun asked for this on 2026-10-04. The next round gets the last answer of the model and each problem with the value from the record, for example "height is 185, not 186", or the numbers on the card for a number that has no claim. After the last round, only the picks that still fail lose their summary. The calculation tool gets the same feedback.
-9. **The agent writes English.** Zheyun decided this on 2026-10-05. The shopper can write in Chinese, Swedish or English. The questions, the answers and the fixed texts are in English. The state has no language field.
+6. **A hidden price comes from one click on the page.** I found two cases in my label review on 2026-10-04 (5 of 38 labelled pages). On 4 pages, amazon.se shows no buy box, only "Priset är högre än vanligt" and the button "Visa alla köpalternativ". The program opens the offer panel and reads the lowest new offer that can go in the cart. On 1 page, the price shows only after a size is selected. The program opens each size by its own ASIN and stores it as its own listing, because each size has its own measurements and price. Each price keeps its source (`all_offers` or `size_choice`), and the picks show it.
+7. **Each thread searches one time before it uses the stored products.** I asked on 2026-10-04: stored data gets old. So the first search for a set of search terms in a thread always reads result page 1 on amazon.se. Products that are already stored get the rating and the review count of the result card, and the browser does not open them. Only new products get a product page. When all results are already stored, the search costs one page load. After that, the thread uses the stored products while 10 or more meet the needs. The thread also reads page 1 again when the budget is higher than in the earlier search for these words, because the crawl does not store results over the budget.
+8. **A failed check tells the model what is wrong and what is right.** I asked for this on 2026-10-04. The next round gets the last answer of the model and each problem with the value from the record, for example "height is 185, not 186", or the numbers on the card for a number that has no claim. After the last round, only the picks that still fail lose their summary. The calculation tool gets the same feedback.
+9. **The agent writes English.** I decided this on 2026-10-05. The shopper can write in Chinese, Swedish or English. The questions, the answers and the fixed texts are in English. The state has no language field.
 10. **A follow-up changes only what it must.** "More" leaves out the products that the thread showed since the needs last changed. "Exclude" keeps the other picks without a new page load and adds new ones. "Recheck" checks the shown picks first and replaces the ones that fail. A kept pick keeps its size doubt and its note.
 11. **Only lengths and weights can change unit.** 1,8 m is 180 cm, and 600 mm is 60 cm. The budget and the other attributes must use a number that the shopper wrote: "2 people" is not 200 l, and "60 cm" is not a budget of 6000. "9k", "9 tusen", "9千" and "1万" count as written numbers.
 12. **A problem in one step ends the turn, not the conversation.** Each node catches all errors and gives a short message. The chat loop catches the rest, closes the database transaction and waits for the next message.
@@ -1949,7 +1949,7 @@ Add this method at the end of `LLM`:
         raise LLMOutputError(f"{role_cfg.model} gave no valid tool calls after {self.MAX_ATTEMPTS} tries: {last_error}")
 ```
 
-`tool_choice="required"` makes the model call at least one tool. On 2026-10-05, Claude sent one message that needs two tools (`remove_picks` and `reply`) to each provider. Groq `openai/gpt-oss-120b`, Gemini `gemini-3.5-flash-lite` and Mistral `ministral-14b-latest` returned real tool calls. NVIDIA `nvidia/nemotron-3-ultra-550b-a55b` returned real tool calls in 1 of 2 tries, and the same calls as JSON text in the other. `gemini-3.8-flash` was busy (503) at that time.
+`tool_choice="required"` makes the model call at least one tool. On 2026-10-05, I sent one message that needs two tools (`remove_picks` and `reply`) to each provider. Groq `openai/gpt-oss-120b`, Gemini `gemini-3.5-flash-lite` and Mistral `ministral-14b-latest` returned real tool calls. NVIDIA `nvidia/nemotron-3-ultra-550b-a55b` returned real tool calls in 1 of 2 tries, and the same calls as JSON text in the other. `gemini-3.8-flash` was busy (503) at that time.
 
 Add this method to `FakeLLM` in `tests/fakes.py`, after `structured`:
 
@@ -3027,7 +3027,7 @@ def connect_checkpoints(url: str) -> psycopg.Connection:
     return psycopg.connect(url, autocommit=True, prepare_threshold=0, row_factory=dict_row)
 ```
 
-`end_transaction` runs after each turn. The connection of the agent is not in autocommit mode, so without it a read keeps a transaction open while the user types, and one failed statement blocks all later turns. A failed run leaves its step pending in the checkpoint. `update_state(..., as_node="calculate")` adds the message and ends that step, because `calculate` always leads to END. Claude checked this with `InMemorySaver` on 2026-10-05: a stopped search left `('search',)` pending, and after the update nothing was pending.
+`end_transaction` runs after each turn. The connection of the agent is not in autocommit mode, so without it a read keeps a transaction open while the user types, and one failed statement blocks all later turns. A failed run leaves its step pending in the checkpoint. `update_state(..., as_node="calculate")` adds the message and ends that step, because `calculate` always leads to END. I checked this with `InMemorySaver` on 2026-10-05: a stopped search left `('search',)` pending, and after the update nothing was pending.
 
 The checkpointer creates its own tables (`checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `checkpoint_migrations`) in the same database. `PostgresSaver.setup()` creates them when they do not exist.
 
@@ -3201,7 +3201,7 @@ git commit -m "scout chat and scout threads: the graph with live dependencies an
 
 ### Task 11: The worker checks the sizes of each pick
 
-The phase 1 check (`drop_implausible_sizes`) catches only sizes that cannot hold the volume. It did not catch the FOHERE 90 l fridge, whose page gives 48 cm height and 80 cm depth. Zheyun found this by hand on 2026-10-04. This task gives the worker the title, the bullet points and the specifications of each pick, in one call for all picks.
+The phase 1 check (`drop_implausible_sizes`) catches only sizes that cannot hold the volume. It did not catch the FOHERE 90 l fridge, whose page gives 48 cm height and 80 cm depth. I found this by hand on 2026-10-04. This task gives the worker the title, the bullet points and the specifications of each pick, in one call for all picks.
 
 **Files:**
 - Create: `src/scout/extract/doubt.py`
@@ -3407,7 +3407,7 @@ git commit -m "Worker size check on the picks: doubtful sizes are marked, quotes
 
 ### Task 12: Scripted conversations and the numbers
 
-Zheyun asked for this in her review on 2026-10-05: three real conversations (Task 15) give too few numbers for the CV. This task adds 24 scripted conversations. They run the real chat model through the graph over the stored products. No browser opens, and a search only records its words and page. Python compares the values after each turn with the values that the script expects, and it counts the check rounds of each step. The run also tests a new chat model before it goes into `config/models.yaml` (decision 13).
+I asked for this in my review on 2026-10-05: three real conversations (Task 15) give too few numbers for the CV. This task adds 24 scripted conversations. They run the real chat model through the graph over the stored products. No browser opens, and a search only records its words and page. Python compares the values after each turn with the values that the script expects, and it counts the check rounds of each step. The run also tests a new chat model before it goes into `config/models.yaml` (decision 13).
 
 **Files:**
 - Modify: `config/models.yaml` (the `nvidia` provider)
@@ -3701,7 +3701,7 @@ Create `eval/chat/conversations.yaml`:
 
 ```yaml
 # Scripted conversations for `scout eval-chat`. Each turn has the words of the shopper and the values that
-# Python expects after the turn. Zheyun checks the expected values before the first run.
+# Python expects after the turn. I check the expected values before the first run.
 # Expect keys: phase, category ("none" = no category), kind, budget, no_budget, conditions, route (the next step
 # after the follow-up tools, or answer), tools (the tools called, in order), pick_numbers (the removed picks),
 # searched (the turn started a search), says (a text in the replies), not_says (a text that no reply may have).
@@ -3898,7 +3898,7 @@ Create `eval/chat/conversations.yaml`:
       expect: {route: answer, not_says: Removed}
 ```
 
-Zheyun checks the expected values before the numbers go anywhere. A wrong expected value makes a correct agent look wrong.
+I check the expected values before the numbers go anywhere. A wrong expected value makes a correct agent look wrong.
 
 - [x] **Step 5: Add the command and the NVIDIA provider**
 
@@ -3910,7 +3910,7 @@ In `config/models.yaml`, add under `providers`:
     api_key_env: NVIDIA_API_KEY
 ```
 
-Zheyun made the free key on build.nvidia.com on 2026-10-05. It is `NVIDIA_API_KEY` in `.env`.
+I made the free key on build.nvidia.com on 2026-10-05. It is `NVIDIA_API_KEY` in `.env`.
 
 In `src/scout/cli.py`, add `import re`, import `load_scripts`, `offline_deps`, `run_scripts`, `summarize` and `summary_text` from `scout.eval.chat`, and `RoleConfig` from `scout.llm.config`. Then add:
 
@@ -3962,7 +3962,7 @@ Expected: all tests pass.
 Run: `scout eval-chat`, then `scout eval-chat --chat nvidia:nvidia/nemotron-3-ultra-550b-a55b --rpm 30`
 Expected: each run prints the values that did not agree, the summary, and the path of the JSON file in `eval/results/`. Write the numbers under this step.
 
-**Dry-run results, 2026-10-05.** Claude ran the scripts on the code that this plan makes, in a temporary worktree, over the 24 stored listings. The worker was `gemini-3.5-flash-lite`.
+**Dry-run results, 2026-10-05.** I ran the scripts on the code that this plan makes, in a temporary worktree, over the 24 stored listings. The worker was `gemini-3.5-flash-lite`.
 
 `nvidia/nemotron-3-ultra-550b-a55b` (NVIDIA free API), all 12 scripts, 22 turns, no turn with an error:
 
@@ -3977,14 +3977,14 @@ Expected: each run prints the values that did not agree, the summary, and the pa
 | Worker calls | 17, 10,016 tokens in, 1,232 out |
 | Seconds per turn | median 80.9, maximum 480.6 |
 
-The value that did not agree shows a real fault. The shopper wrote "Remove that one." The router chose `answer`, and the answer said "Removed Pick 5", but nothing was removed. Claude then changed two prompts in Task 7: the router chooses `exclude` also without a number, so Python asks which pick, and the answer step must never say that it changed the picks. After that change, this script passed (2 turns).
+The value that did not agree shows a real fault. The shopper wrote "Remove that one." The router chose `answer`, and the answer said "Removed Pick 5", but nothing was removed. I then changed two prompts in Task 7: the router chooses `exclude` also without a number, so Python asks which pick, and the answer step must never say that it changed the picks. After that change, this script passed (2 turns).
 
 Earlier runs on the same day found four faults that this plan now fixes:
 - The calculation tool had no retry. The model put a whole formula into one number field, and the shopper saw a raw error (Task 8).
 - The clarify step did not see that "a small fridge for my office desk" is a mini fridge, and it asked for the kind again (Task 6).
 - The clarify step chose its own search words ("kylfrys" in place of "kyl och frys") (Task 6).
 - One hung request held a run for many minutes, because the OpenAI library waits 600 seconds and tries 2 more times (Task 1).
-Two expected values in the scripts were wrong, and Claude changed them: after a lower budget the agent searches again when fewer than 10 stored products match, and that depends on the database; and the agent can ask "which pick" through the answer step. These are in the notes of the scripts.
+Two expected values in the scripts were wrong, and I changed them: after a lower budget the agent searches again when fewer than 10 stored products match, and that depends on the database; and the agent can ask "which pick" through the answer step. These are in the notes of the scripts.
 
 `gemini-3.8-flash`: the free daily quota of the chat model ran out after the first script. The first script (5 turns) gave 13 of 13 expected values, at 29 to 107 seconds a turn. The quota was already used on 2026-10-04, so this run says nothing about the daily limit. Run the full comparison on a day with a new quota.
 
@@ -4000,7 +4000,7 @@ The results above are for the router version of Task 7: the model chose one `Rou
 
 The misses of Nemotron and Qwen are the same kind: the words fit several picks ("the red one"), and the model guessed one or removed all. The Groq `openai/gpt-oss-120b` run of the tool-call version is not valid: the daily quota ran out, and the program of that time counted the failed turns as model faults.
 
-**Tool-call version in the repository, 2026-10-05.** Nemotron, 13 scripts (the 8 above and the 5 free-wording scripts), 28 turns. The first run found that Nemotron writes its tool calls as text with outer brackets that do not match, so 33 of 96 calls counted as "no tool call". Claude changed the client to read each JSON object on its own, and to show the model its last reply on a retry. The second run, on commit 9daab73 with the review fixes:
+**Tool-call version in the repository, 2026-10-05.** Nemotron, 13 scripts (the 8 above and the 5 free-wording scripts), 28 turns. The first run found that Nemotron writes its tool calls as text with outer brackets that do not match, so 33 of 96 calls counted as "no tool call". I changed the client to read each JSON object on its own, and to show the model its last reply on a retry. The second run, on commit 9daab73 with the review fixes:
 
 | Measure | Result |
 |---|---|
@@ -4015,9 +4015,9 @@ The 5 free-wording scripts all passed: "Drop the FOHERE and show me some more" r
 
 The 2 values that did not agree are the same fault in 2 scripts. "Remove the Bomann" (3 picks are Bomann) and "去掉红色那个" ("remove that red one", 2 picks are red) removed all picks that fit. The model set `one_pick` to false, so Python did not ask. The results file is `eval/results/chat-nvidia_nemotron-3-ultra-550b-a55b-20261005-0657.json`.
 
-**Decision for Zheyun.**
-1. The chat model. Nemotron has the best judgement of the free models, but a turn takes about 95 seconds. Zheyun brings a stronger API key on 2026-10-06. Run all 24 scripts with it and with `gemini-3.8-flash` after the quota resets, then choose the main model and the fallback in `config/models.yaml`.
-2. Removing several picks. When the model removes 2 or more picks and the shopper did not give their numbers, Python could ask first: "Do you mean all of these: pick 2, 3 and 5, or one of them?" This costs one more turn when the shopper meant all. Claude did not build this. Run the stronger model first: if it sets `one_pick` correctly, this check is not necessary.
+**Decisions to make.**
+1. The chat model. Nemotron has the best judgement of the free models, but a turn takes about 95 seconds. I bring a stronger API key on 2026-10-06. Run all 24 scripts with it and with `gemini-3.8-flash` after the quota resets, then choose the main model and the fallback in `config/models.yaml`.
+2. Removing several picks. When the model removes 2 or more picks and the shopper did not give their numbers, Python could ask first: "Do you mean all of these: pick 2, 3 and 5, or one of them?" This costs one more turn when the shopper meant all. I did not build this. Run the stronger model first: if it sets `one_pick` correctly, this check is not necessary.
 
 - [x] **Step 8: Commit**
 
@@ -4030,14 +4030,14 @@ git commit -m "Scripted conversations: eval-chat scores the needs, the tool call
 
 ### Task 13: Read the price when amazon.se hides it
 
-**Why:** Zheyun reviewed the 32 labels that Claude made, on 2026-10-04. 27 were correct. 5 were wrong, and in all 5 the page shows no single price:
+**Why:** I reviewed the 32 labels that an LLM made, on 2026-10-04. 27 were correct. 5 were wrong, and in all 5 the page shows no single price:
 
-1. **Offer panel (4 pages).** B07YKSGPV1, B093388SWG, B0B5LN7J3X and B0DRVXYFXD show no buy box. The page says "Priset är högre än vanligt" and shows the button "Visa alla köpalternativ". The offer panel behind the button has the prices. The panel does not show the stock. Zheyun's rule: an offer that you can add to the cart is in stock.
+1. **Offer panel (4 pages).** B07YKSGPV1, B093388SWG, B0B5LN7J3X and B0DRVXYFXD show no buy box. The page says "Priset är högre än vanligt" and shows the button "Visa alla köpalternativ". The offer panel behind the button has the prices. The panel does not show the stock. My rule: an offer that you can add to the cart is in stock.
 2. **Size choice (1 page).** B0H4YNM2BL shows a price range, 1809 to 1977 kr, and "Välj Storlek". The page shows a price and a stock only after a size is selected. The page has an ASIN for each colour and size (`dimensionValuesDisplayData`, here 4 ASINs for 2 colours and 2 sizes).
 
 Now these products have no price, so a budget removes them from the picks, although they can be bought. The labels and the parser both said "no price", so the evaluation counted them as correct.
 
-**Note.** The dry run did not include this task. The saved pages do not contain the offer panel: it loads only after a click (the saved pages have the class `aod-assets-not-loaded`). So the selectors and the test fixtures come from real pages that Step 1 saves. Claude writes the code of Steps 2 to 6 after Step 1, with the same rules as the other tasks: a test first, then the code.
+**Note.** The dry run did not include this task. The saved pages do not contain the offer panel: it loads only after a click (the saved pages have the class `aod-assets-not-loaded`). So the selectors and the test fixtures come from real pages that Step 1 saves. I write the code of Steps 2 to 6 after Step 1, with the same rules as the other tasks: a test first, then the code.
 
 **Files:**
 - Modify: `src/scout/sources/base.py`, `src/scout/sources/amazon_se/product.py`, `src/scout/sources/amazon_se/adapter.py`, `src/scout/sources/browser.py`
@@ -4050,7 +4050,7 @@ Add `--offers` and `--sizes` to `scout snap`.
 - With `--offers`, the browser opens the product page, clicks "Visa alla köpalternativ", waits up to 10 seconds for `#aod-container`, and saves the panel HTML and a screenshot in `snapshots/amazon_se/offers/<ASIN>/`.
 - With `--sizes`, the browser opens the page of each size option by its own ASIN (`/dp/<ASIN>?th=1&psc=1`, at most 4), and saves the page HTML and a screenshot in `snapshots/amazon_se/product/<ASIN>/`. Check on these pages that one size is selected and that the price and the stock show. If they do not show, the adapter clicks the option in the row "Storlek" instead, and this step saves the page after each click.
 
-Run `--offers` on the 4 offer-panel ASINs and `--sizes` on B0H4YNM2BL. Zheyun is at the computer, because a captcha can come. Copy reduced versions to `tests/fixtures/amazon_se/` (remove scripts and images, keep the offer blocks and the price blocks). One offer fixture must have a used offer, if a real panel has one.
+Run `--offers` on the 4 offer-panel ASINs and `--sizes` on B0H4YNM2BL. I am at the computer, because a captcha can come. Copy reduced versions to `tests/fixtures/amazon_se/` (remove scripts and images, keep the offer blocks and the price blocks). One offer fixture must have a used offer, if a real panel has one.
 
 - [ ] **Step 2: Detect a hidden price**
 
@@ -4077,9 +4077,9 @@ Test this on the 38 labelled pages: the 4 offer pages give `offers`, B0H4YNM2BL 
 
 `check_picks` accepts the price as before. Test with two cards in `tests/test_picks_write.py`.
 
-- [ ] **Step 6: New labels and a new evaluation run (Zheyun)**
+- [ ] **Step 6: New labels and a new evaluation run (by hand)**
 
-Zheyun labels the 4 offer panels (the cheapest new offer that can go in the cart, in kr) and each size of B0H4YNM2BL (price and stock), from the screenshots of Step 1. Add these rows to `data/eval/price_labels_all.csv` with the note "labelled by Zheyun after the click". Run `scout eval-prices`. Write the result under this step.
+I label the 4 offer panels (the cheapest new offer that can go in the cart, in kr) and each size of B0H4YNM2BL (price and stock), from the screenshots of Step 1. Add these rows to `data/eval/price_labels_all.csv` with the note "labelled by hand after the click". Run `scout eval-prices`. Write the result under this step.
 
 - [ ] **Step 7: Commit**
 
@@ -4090,11 +4090,11 @@ git commit -m "Read the price from the offer panel or the size choice when amazo
 
 ---
 
-### Task 14: Langfuse setup (Zheyun)
+### Task 14: Langfuse setup
 
 - [ ] **Step 1: Choose where the traces go**
 
-Claude recommends **Langfuse Cloud, EU region, free Hobby plan**. A self-hosted Langfuse (version 3 and later) needs Postgres, ClickHouse, Redis and S3-compatible storage, which is a heavy load on the laptop. The traces contain the conversation and the product facts. This is the same kind of data that already goes to Gemini and Groq. Check the limits of the Hobby plan on the pricing page on the day that you sign up, and write them here. Never add a payment card.
+I chose **Langfuse Cloud, EU region, free Hobby plan**. A self-hosted Langfuse (version 3 and later) needs Postgres, ClickHouse, Redis and S3-compatible storage, which is a heavy load on the laptop. The traces contain the conversation and the product facts. This is the same kind of data that already goes to Gemini and Groq. Check the limits of the Hobby plan on the pricing page on the day that you sign up, and write them here. Never add a payment card.
 
 - [ ] **Step 2: Create the keys**
 
@@ -4116,7 +4116,7 @@ Expected: `keys accepted: True`. In Langfuse, **Tracing** shows a trace named "c
 
 ---
 
-### Task 15: Real conversations (Zheyun) and the numbers
+### Task 15: Real conversations and the numbers
 
 - [ ] **Step 1: Conversation A, a fridge with a freezer part**
 
@@ -4143,16 +4143,16 @@ Run `scout chat` and ask for a small fridge for an office desk, budget 1500 kr. 
 
 Ask for headphones. Check: the agent says which categories it can search now.
 
-- [ ] **Step 5: Measure (Claude)**
+- [ ] **Step 5: Measure **
 
 Run `scout eval-chat` again with the chat model of `config/models.yaml`, and compare the numbers with Task 12. From the terminal output and from Langfuse, write a table for conversations A and B:
 - turns, and LLM calls and tokens for each model;
 - seconds for each turn (median and maximum), and which step took the most time;
 - product pages fetched;
 - answers and summaries that failed the number check in their first round, and how many passed later;
-- size doubts, and for each one whether Zheyun agrees after she looks at the page.
+- size doubts, and for each one whether I agree after I look at the page.
 
-Report only the real numbers. Nothing goes into the CV until Zheyun confirms it.
+Report only the real numbers. Nothing goes into the CV until I confirm it.
 
 - [ ] **Step 6: Update the documents**
 
@@ -4173,5 +4173,5 @@ git commit -m "Phase 2 real conversations: results, spec and plan notes"
 
 - Phase 3 (text and retrieval) has its own plan. It adds `search_text` and `extract_attribute`, so the agent can answer questions that the cards cannot answer.
 - Use the filters of amazon.se in the search (spec section 4.2, predicate pushdown). The saved "kylskåp" pages show these filters: price, 4 stars and up, condition, Konfiguration (with or without a freezer part, and where), Kapacitet, Höjd, Bredd and Djup in wide ranges, and the brand. Not done yet. A filter can hide a product that Amazon did not tag, so first measure how many of the products that meet the needs each filter keeps.
-- Measure how many result pages give good picks: after which page do the top 5 stop changing? Zheyun decided on 2026-10-04 to do this after the reviews are connected, because then the candidates come from the search and from professional reviews.
-- Store the title screening results, so that `--no-llm` runs and later searches do not screen the same titles again (Zheyun decided on 2026-10-04 to keep the LLM screening for now).
+- Measure how many result pages give good picks: after which page do the top 5 stop changing? I decided on 2026-10-04 to do this after the reviews are connected, because then the candidates come from the search and from professional reviews.
+- Store the title screening results, so that `--no-llm` runs and later searches do not screen the same titles again (I decided on 2026-10-04 to keep the LLM screening for now).

@@ -277,7 +277,7 @@ Expected: 3 passed.
 ```markdown
 # product-scout
 
-product-scout is a conversational agent. It helps to select products in any category. Two uses are the purchases of Zheyun and the selection of incense for a possible shop in Sweden. It is also a CV project for AI Engineer roles. Thus it must be real, measured and deployable.
+product-scout is a conversational agent. It helps to select products in any category. Two uses are my own purchases and the selection of incense for a possible shop in Sweden. It is also a CV project for AI Engineer roles. Thus it must be real, measured and deployable.
 
 - Design: `docs/superpowers/specs/2026-10-02-product-scout-design.md`
 - Plans: `docs/superpowers/plans/`
@@ -299,13 +299,13 @@ product-scout is a conversational agent. It helps to select products in any cate
 
 ## Rules
 
-- Write plainly. No em dashes or colons in anything Zheyun will send or sign.
-- Write all project documents in English, at about 80% ASD-STE100 (short sentences, active voice, simple words). Chat with Zheyun in Chinese.
-- Report only real numbers. Nothing goes into her CV until she confirms it.
+- Write plainly. No em dashes or colons in anything I will send or sign.
+- Write all project documents in English, at about 80% ASD-STE100 (short sentences, active voice, simple words). Chat with me in Chinese.
+- Report only real numbers. Nothing goes into my CV until I confirm it.
 - The user logs in and solves captchas herself. The program never types passwords and never bypasses captchas.
 - Fetched pages, snapshots, labels and the browser profile stay out of Git.
 - Do not fork or copy code from other people.
-- The repository stays private until she says otherwise.
+- The repository stays private until I say otherwise.
 ```
 
 - [x] **Step 8: Commit**
@@ -1222,13 +1222,13 @@ def snap(urls: List[str], screenshot: bool = True) -> None:
             typer.echo(f"{status.problem or 'ok':8} {path}")
 ```
 
-- [x] **Step 6: Manual check, set up the profile (Zheyun)**
+- [x] **Step 6: Manual check, set up the profile (by hand)**
 
 Run: `scout browser`
 Expected: a new Chrome window opens on amazon.se. It has no bookmarks or logins from your usual profile.
 In that window, decline the non-essential cookies on the cookie banner ("Avvisa"). Set the delivery address to your Swedish postcode, so that prices and stock are correct for Sweden. Then push Enter in the terminal. The window closes.
 
-- [x] **Step 7: Manual check, capture samples (Zheyun)**
+- [x] **Step 7: Manual check, capture samples (by hand)**
 
 Run `scout browser "https://www.amazon.se/s?k=kylsk%C3%A5p"`. From the results, copy the links of three product pages. Select one discounted product with an old price that has a line through it. If you see a product that is out of stock, select it too. Push Enter. Then run:
 
@@ -2183,8 +2183,8 @@ class AmazonSeAdapter:
     kind = "product"
     access = "user_browser"
     terms_check = (
-        "2026-10-03: Zheyun accepts personal, low-volume fetching of amazon.se "
-        "in her own browser profile (spec section 8)."
+        "2026-10-03: I accept personal, low-volume fetching of amazon.se "
+        "in my own browser profile (spec section 8)."
     )
 
     def __init__(self, browser: Browser, snapshot_dir: Path, screenshots: bool = False):
@@ -2379,7 +2379,7 @@ git add src/scout/sources/amazon_se/adapter.py src/scout/crawl.py src/scout/cli.
 git commit -m "amazon.se adapter and crawl with captcha pause, budget filter and fetch log"
 ```
 
-- [x] **Step 9: CHECKPOINT, real crawl (Zheyun and Claude together)**
+- [x] **Step 9: CHECKPOINT, real crawl **
 
 Run: `scout db-init` then `scout crawl fridge "kylskåp" --pages 1 --details 10`
 Expected: the browser window opens one search page and a maximum of 10 product pages, 4 to 9 seconds apart. The report shows `saved` near 10 and lists the fields that the selectors did not find.
@@ -2393,9 +2393,9 @@ docker compose exec db psql -U scout product_scout -c "SELECT status, count(*) F
 
 Open three of the products in a normal browser. Compare the price, the stock and the rating. If a value is different, go back to Task 6 or 7. Repair the selector, add a fixture case and run again.
 
-**Stop here and do a review with Zheyun.** Go to Task 10 only when she agrees that the fetch and the storage work on real pages.
+**Stop here and do a review.** Go to Task 10 only when I agree that the fetch and the storage work on real pages.
 
-Result on 2026-10-03: 11 pages fetched, all `ok`, no captcha. 10 listings saved, no missing fields. The three FOHERE BC-90 colours became one product. Zheyun checked three products in a normal browser. Price, stock and rating agreed. Finding: 4 of the 10 listings were not fridges (water filters, a freshness device), because the sponsored cards come first. The search also returns whiteboards and other items. The picks must keep only items of the target category and drop all other items, not only accessories.
+Result on 2026-10-03: 11 pages fetched, all `ok`, no captcha. 10 listings saved, no missing fields. The three FOHERE BC-90 colours became one product. I checked three products in a normal browser. Price, stock and rating agreed. Finding: 4 of the 10 listings were not fridges (water filters, a freshness device), because the sponsored cards come first. The search also returns whiteboards and other items. The picks must keep only items of the target category and drop all other items, not only accessories.
 
 ---
 
@@ -2663,7 +2663,7 @@ def eval_prices(labels: Path = Path("data/eval/price_labels.csv")) -> None:
 
 Create `eval/results/.gitkeep` (empty).
 
-- [x] **Step 6: Build the labelled set (Zheyun)**
+- [x] **Step 6: Build the labelled set (by hand)**
 
 Crawl about 25 fridge pages with screenshots. Use a few different searches, so that the set has variety (discounted, out of stock, several variants):
 
@@ -2688,13 +2688,13 @@ Run: `scout eval-prices`
 Expected: a JSON summary with real counts and accuracies, a list of wrong pages, and a results file under `eval/results/`. If a failure occurs on many pages, repair the selectors (with a new fixture case and test) and run again. Keep the two runs in `eval/results/`.
 
 Result on 2026-10-03 (`eval/results/prices-20261003-2320.json`): 26 pages, price 26 of 26, stock 25 of 25. Limits of this result:
-- Zheyun labelled 6 pages. Claude labelled 20 pages from the screenshots and marked them in the `note` column. Claude had seen the parser output for about 10 of these pages before it labelled them.
+- I labelled 6 pages. An LLM labelled 20 pages from the screenshots, marked in the `note` column. It had seen the parser output for about 10 of these pages before it labelled them.
 - All 25 stock labels are "in stock". The set has no out-of-stock page, so it does not test that case.
 - One page (B0H4YNM2BL) shows a price range and no buy box. Its price label is `none` and its stock is not labelled. The parser said in stock for this page, which is doubtful.
-- One category, one day, 26 pages. Do not use this number in the CV until a larger set with out-of-stock pages exists and Zheyun confirms it.
+- One category, one day, 26 pages. Do not use this number in the CV until a larger set with out-of-stock pages exists and I confirm it.
 
 Second run on 2026-10-03 (`eval/results/prices-20261003-2333.json`): 12 more pages, found with the search filter "Inkludera slut i lager" (`rh=p_n_availability:20692910031`) on result pages 3 to 5. Total 38 pages, price 38 of 38, stock 33 of 33. The stock set now has 7 out-of-stock pages ("För närvarande inte tillgänglig"), and the parser said out of stock for all 7.
-- Claude labelled the 12 new pages from the screenshots, without the parser output. Zheyun checked the stock of B0922FW198.
+- An LLM labelled the 12 new pages from the screenshots, without the parser output. I checked the stock of B0922FW198.
 - 4 pages show "Priset är högre än vanligt". Amazon hides the price and the buy box and shows only "Visa alla köpalternativ". Price is labelled `none`, and stock is not labelled. The parser gives no price and unknown stock for these pages, which is the correct behaviour for the picks.
 - The CV rule above still applies.
 
@@ -2722,7 +2722,7 @@ git commit -m "Price and stock extraction evaluation on hand-labelled amazon.se 
   - `QuotaExhausted` (the daily quota is finished, or the rate limit continues after all retries), `LLMOutputError`, `inline_refs(schema: dict) -> dict`, `strip_fences(text: str) -> str`
   - If the endpoint refuses the JSON schema (HTTP 400), the call tries again one time in JSON mode, with the schema in the system prompt.
 
-Prerequisite: Zheyun puts `GEMINI_API_KEY=...` in `.env` (a free key from https://aistudio.google.com/apikey, no billing).
+Prerequisite: I put `GEMINI_API_KEY=...` in `.env` (a free key from https://aistudio.google.com/apikey, no billing).
 
 - [x] **Step 1: Write the model config**
 
@@ -4472,12 +4472,12 @@ def picks(
 Run: `python -m pytest -v`
 Expected: all passed.
 
-- [x] **Step 11: Real run (Zheyun)**
+- [x] **Step 11: Real run (by hand)**
 
 Run: `scout picks fridge --budget 9000 --where "height<=186" --where "width<=60"`
 Expected: a maximum of 5 picks. The program checks each pick again a few seconds before it shows the pick. Each pick shows the price, rating, attributes, missing data, a short summary and a link. Open two links and make sure that the price and the stock are correct. Then run the same command with `--no-llm` and make sure that the facts are the same.
 
-Changes from the code above, made during Claude's test runs on 2026-10-04:
+Changes from the code above, made during my test runs on 2026-10-04:
 
 - The database had items outside the category, because the first crawl ran before the title screening existed (water filters, vacuum rolls). `picks` now screens the stored titles with the worker before the recheck. With `--no-llm` there is no screening, and the output says so. In that run a water filter came in at place 5.
 - `rank` keeps one card per product. The three FOHERE colours are three listings of one product.
@@ -4486,7 +4486,7 @@ Changes from the code above, made during Claude's test runs on 2026-10-04:
 - The LLM layer retries server errors (such as 503 "high demand") and connection errors. After 3 tries it raises `LLMUnavailable`. `QuotaExhausted` is now a kind of `LLMUnavailable`, so crawl and picks continue without the LLM in both cases.
 - `format_picks` reports failed summary checks only when summaries were written.
 
-Results of Claude's runs (`--budget 9000 --where "height<=186" --where "width<=60"`): 5 picks, each rechecked on amazon.se. The first run wrote summaries, and all of them passed the checks. On the second run, Gemini returned 503. On the third run, the free daily quota of `gemini-3.8-flash` was used up after only a few chat calls that day, so the free chat quota is small. With and without the LLM, the facts of picks 1 to 4 were the same. A 5 l cosmetics cooler ranks second, because the profile does not say what kind of fridge the user wants. The clarify step in phase 2 must ask this. Zheyun must still open two links and compare the price and the stock.
+Results of my runs (`--budget 9000 --where "height<=186" --where "width<=60"`): 5 picks, each rechecked on amazon.se. The first run wrote summaries, and all of them passed the checks. On the second run, Gemini returned 503. On the third run, the free daily quota of `gemini-3.8-flash` was used up after only a few chat calls that day, so the free chat quota is small. With and without the LLM, the facts of picks 1 to 4 were the same. A 5 l cosmetics cooler ranks second, because the profile does not say what kind of fridge the user wants. The clarify step in phase 2 must ask this. I must still open two links and compare the price and the stock.
 
 Later changes on 2026-10-04, after the Gemini chat quota ran out:
 
@@ -4497,7 +4497,7 @@ Later changes on 2026-10-04, after the Gemini chat quota ran out:
 
 With these changes, the run wrote summaries for all 5 picks in 1 Groq call (1189 tokens in, 2699 out), and they passed the checks.
 
-Zheyun's check on 2026-10-04: she ran the command with and without `--no-llm`. The facts of the 4 products in both runs were the same. Without the LLM, a water filter came first, because titles are not screened. She opened B08PL233S8 (Bomann 175 l, 5137.18 SEK) and B0F9Y2XN3J (FOHERE 90 l, 2199.99 SEK). The price and the stock were correct for both. The FOHERE page gives 48 cm height and 80 cm depth, and she thinks that the page is wrong. A worker check of sizes against the title, the description and the images is a task for later.
+My check on 2026-10-04: I ran the command with and without `--no-llm`. The facts of the 4 products in both runs were the same. Without the LLM, a water filter came first, because titles are not screened. She opened B08PL233S8 (Bomann 175 l, 5137.18 SEK) and B0F9Y2XN3J (FOHERE 90 l, 2199.99 SEK). The price and the stock were correct for both. The FOHERE page gives 48 cm height and 80 cm depth, and I think that the page is wrong. A worker check of sizes against the title, the description and the images is a task for later.
 
 - [x] **Step 12: Commit**
 
@@ -4510,5 +4510,5 @@ git commit -m "Command-line picks: SQL and Python filters, Bayesian ranking, rec
 
 ## After phase 1
 
-- Write the real numbers from `eval/results/` in the progress notes. Nothing goes into the CV until Zheyun confirms it.
+- Write the real numbers from `eval/results/` in the progress notes. Nothing goes into the CV until I confirm it.
 - Phase 2 (conversation, LangGraph, Langfuse) has its own plan.

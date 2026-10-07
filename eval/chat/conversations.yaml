@@ -1,5 +1,5 @@
 # Scripted conversations for `scout eval-chat`. Each turn has the words of the shopper and the values that
-# Python expects after the turn. Zheyun checks the expected values before the first run.
+# Python expects after the turn. I check the expected values before the first run.
 # Expect keys: phase, category ("none" = no category), kind, budget, no_budget, conditions, route (the next step
 # after the follow-up tools, or answer), tools (the tools called, in order), pick_numbers (the removed picks),
 # searched (the turn started a search), says (a text in the replies), not_says (a text that no reply may have).

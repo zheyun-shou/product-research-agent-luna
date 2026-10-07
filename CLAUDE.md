@@ -1,6 +1,6 @@
 # product-scout
 
-product-scout is a conversational agent. It helps to select products in any category. Two uses are the purchases of Zheyun and the selection of incense for a possible shop in Sweden. It is also a CV project for AI Engineer roles. Thus it must be real, measured and deployable.
+product-scout is a conversational agent. It helps to select products in any category. Two uses are my own purchases and the selection of incense for a possible shop in Sweden. It is also a CV project for AI Engineer roles. Thus it must be real, measured and deployable.
 
 - Design: `docs/superpowers/specs/2026-10-02-product-scout-design.md`
 - Plans: `docs/superpowers/plans/`
@@ -23,10 +23,10 @@ product-scout is a conversational agent. It helps to select products in any cate
 
 ## Rules
 
-- Write plainly. No em dashes or colons in anything Zheyun will send or sign.
-- Write all project documents in English, at about 80% ASD-STE100 (short sentences, active voice, simple words). Chat with Zheyun in Chinese.
-- Report only real numbers. Nothing goes into her CV until she confirms it.
-- The user logs in and solves captchas herself. The program never types passwords and never bypasses captchas.
+- Write plainly. No em dashes or colons in anything I will send or sign.
+- Write all project documents in English, at about 80% ASD-STE100 (short sentences, active voice, simple words). Chat with me in Chinese.
+- Report only real numbers. Nothing goes into my CV until I confirm it.
+- I log in and solve captchas myself. The program never types passwords and never bypasses captchas.
 - Fetched pages, snapshots, labels and the browser profile stay out of Git.
 - Do not fork or copy code from other people.
-- The repository stays private until she says otherwise.
+- The repository stays private until I say otherwise.
