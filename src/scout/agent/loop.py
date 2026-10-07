@@ -787,7 +787,9 @@ def build_agent_graph(deps: LoopDeps, checkpointer=None):
         call = from_state(state["final"])
         used = dict(state.get("used") or {})
         errors = check_final(call, state, deps, thread, used)
-        # The call record keeps only the fact checks; the floors that send Luna back are in gate_rounds
+        # The call record keeps only the fact checks; what the floors and the live check stopped is in used
+        if errors:
+            used["gate_stops"] = used.get("gate_stops", []) + errors
         if errors and state.get("gate_rounds", 0) + 1 < MAX_GATE_ROUNDS:
             feedback = ("Python checked this call and found problems. Fix them and call show_picks or reply "
                         "again:\n- " + "\n- ".join(errors))
@@ -797,7 +799,8 @@ def build_agent_graph(deps: LoopDeps, checkpointer=None):
             return {"gate_errors": errors, "gate_rounds": state.get("gate_rounds", 0) + 1, "final": None,
                     "used": used, "turn_messages": history}
         if errors:
-            return {"final": None, "gate_errors": [], "messages": [assistant(
+            used["gate_gave_up"] = 1
+            return {"final": None, "gate_errors": [], "used": used, "messages": [assistant(
                 "I could not finish the research for these picks, so I changed nothing. You can ask again.")]}
         # The fact checks do not stop the answer: the call record keeps them for the evaluation
         problems = check_facts(call, state, deps)

@@ -6,6 +6,7 @@ import re
 import statistics
 import time
 import traceback
+from collections import Counter
 from pathlib import Path
 from typing import Callable
 
@@ -19,7 +20,19 @@ MAX_SHOPPER_TURNS = 4  # the shopper messages after the first one; then the run 
 LIMITS = {"calls": MAX_TOOL_CALLS, "product_pages": MAX_PRODUCT_PAGES, "review_pages": MAX_REVIEW_PAGES,
           "web_pages": MAX_WEB_PAGES, "web_searches": MAX_WEB_SEARCHES}
 MEASURES = ("tool_calls", "product_pages", "review_pages", "web_pages", "web_searches", "web_credits", "model_calls",
-            "cost_usd", "seconds", "fact_problems")
+            "cost_usd", "seconds", "fact_problems", "gate_stops")
+# The kinds of the problems that the gate stopped (loop.check_final), from the start of their text
+STOP_KINDS = (("shop_floor", "no shop search"), ("reviews_floor", "the reviews of id"),
+              ("web_floor", "had no web search"), ("removed", "was removed by the shopper"),
+              ("no_pick", "show_picks has no pick"), ("no_product", "there is no product"))
+
+
+def stop_kind(problem: str) -> str:
+    """The kind of one gate problem. A problem of one id that is none of the floors comes from the live check."""
+    for kind, words in STOP_KINDS:
+        if words in problem:
+            return kind
+    return "live_check" if problem.startswith("id ") else "other"
 
 
 class Target(BaseModel):
@@ -150,7 +163,11 @@ def run_target(target: Target, graph, llm, source_ids: Callable[[list[int]], lis
             "shopper_cost_usd": round(sum(c.cost or 0 for c in calls if c.role == "shopper"), 6),
             "seconds": round(sum(t["seconds"] for t in turns), 1),
             "fact_problems": sum(len(c.problems or []) for c in answers),
+            "gate_stops": sum(len(t["used"].get("gate_stops", [])) for t in turns),
         },
+        "gate_stops": [{"turn": n, "kind": stop_kind(p), "problem": p}
+                       for n, t in enumerate(turns, 1) for p in t["used"].get("gate_stops", [])],
+        "gate_gave_up": sum(t["used"].get("gate_gave_up", 0) for t in turns),
         "answers": [{"passed": c.checked, "problems": list(c.problems or [])} for c in answers],
         "turn_max": {name: max((t["used"].get(name, 0) for t in turns), default=0) for name in LIMITS},
         "at_limit": sorted({name for t in turns for name in t["at_limit"]}),
@@ -181,6 +198,8 @@ def summarize(records: list[dict]) -> dict:
         "totals": {key: spread(records, key) for key in MEASURES if records},
         "turn_max_all": {name: max((r["turn_max"][name] for r in records), default=0) for name in LIMITS},
         "turn_max_found": {name: max((r["turn_max"][name] for r in found), default=0) for name in LIMITS},
+        "gate_stops": dict(Counter(s["kind"] for r in records for s in r.get("gate_stops", []))),
+        "gate_gave_up": sum(r.get("gate_gave_up", 0) for r in records),
     }
 
 
@@ -197,4 +216,7 @@ def summary_text(summary: dict) -> str:
     lines.append("the most in one turn, all runs: " + ", ".join(f"{k} {v}" for k, v in summary["turn_max_all"].items()))
     lines.append("the most in one turn, runs that found the product: "
                  + ", ".join(f"{k} {v}" for k, v in summary["turn_max_found"].items()))
+    stops = summary.get("gate_stops") or {}
+    lines.append("what the gate stopped: " + (", ".join(f"{k} {v}" for k, v in sorted(stops.items())) or "nothing")
+                 + f"; turns given up {summary.get('gate_gave_up', 0)}")
     return "\n".join(lines)

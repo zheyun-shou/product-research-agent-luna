@@ -113,3 +113,12 @@ def test_empty_tables_refuses_the_main_database():
 
     with pytest.raises(ValueError, match="will not empty"):
         empty_tables(Conn())
+
+
+def test_the_kinds_of_gate_stops():
+    from scout.eval.hidden import stop_kind
+    assert stop_kind("no shop search in this conversation yet. Call search_shop first") == "shop_floor"
+    assert stop_kind("the reviews of id 3 were not read. Call read_reviews") == "reviews_floor"
+    assert stop_kind("id 2 had no web search for tests yet. Call search_web with its id and its model") == "web_floor"
+    assert stop_kind("id 4: the price is now 6990 SEK, over the budget") == "live_check"
+    assert stop_kind("a product is in the picks more than one time") == "other"
