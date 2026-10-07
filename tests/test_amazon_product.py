@@ -82,6 +82,16 @@ def test_details_table_without_id_and_modell_key():
     assert rec.specs["Tillverkare"] == "Exempel AB"
 
 
+def test_the_english_page_gives_the_brand_and_the_model():
+    html = (
+        '<span id="productTitle">X</span><table id="productDetails_techSpec_section_1">'
+        "<tr><th>Brand Name</th><td>Amica</td></tr><tr><th>Model Name</th><td>Kylan</td></tr>"
+        "<tr><th>Model Number</th><td>AKG 3840 R</td></tr></table>"
+    )
+    rec = parse_product_page(html, "https://www.amazon.se/dp/B0AAAAAAA8", NOW)
+    assert (rec.brand, rec.model) == ("Amica", "AKG 3840 R")
+
+
 def test_variant_label_from_inline_twister():
     html = (
         '<span id="productTitle">X</span>'

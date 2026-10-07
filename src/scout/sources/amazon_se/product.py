@@ -9,7 +9,7 @@ from scout.sources.amazon_se.numbers import parse_count, parse_price, parse_rati
 from scout.sources.amazon_se.urls import SOURCE, asin_from_url, product_url
 from scout.sources.base import ProductRecord
 
-BRAND_KEYS = ("Märke", "Varumärke", "Brand")
+BRAND_KEYS = ("Märke", "Varumärke", "Brand", "Brand Name")
 # Modellnamn is left out. It is often a marketing name, and the store matches products on the model.
 MODEL_KEYS = ("Modellnummer", "Artikelns modellnummer", "Modell", "Item model number", "Model number")
 PRICE_AREAS = (
@@ -128,9 +128,12 @@ def _sizes(specs: dict[str, str], url: str) -> dict[str, dict]:
 
 
 def _first(specs: dict[str, str], keys: tuple[str, ...]) -> str | None:
+    """The value of the first key that the specs have. Case does not matter: the English pages of amazon.se write
+    "Model Number"."""
+    lower = {k.strip().lower(): v for k, v in specs.items() if v}
     for key in keys:
-        if specs.get(key):
-            return specs[key]
+        if lower.get(key.lower()):
+            return lower[key.lower()]
     return None
 
 
