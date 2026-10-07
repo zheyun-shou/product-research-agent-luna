@@ -68,8 +68,8 @@ Rules:
 - Each number that you write is a value from a tool result, a number that the shopper wrote, or your own
   calculation. Give claims for the facts of products: the product id, the card field and the value, or the field
   "page" for a number that the stored page text of that product shows (read_product), or the field "web" for a
-  number in the web pages about that product (search_web). Put each calculated number in derived with how you
-  got it. Say when a number comes from a test or a forum, and name the site.
+  number in the web pages about that product (search_web). The numbers of products that are not picks go in
+  note_claims. Put each calculated number in derived with how you got it. Say when a number comes from a test or a forum, and name the site.
 - Before show_picks, Python checks: a shop was searched or a shop page was read in this conversation, the reviews
   of each pick were read (good and bad, or the reviews on the page of another shop), and it had a web search for tests (in the last 7 days), unless the shopper does not want
   that (update_needs with web_tests false). Python opens each pick again for the price and the stock now.
@@ -190,6 +190,8 @@ class ShowPicks(BaseModel):
     """The final picks for the shopper, best first. Ends your work in this turn."""
     picks: list[Pick]
     note: str = Field("", description="What the shopper should know about all picks, for example why fewer than 5")
+    note_claims: list[Claim] = Field(default_factory=list, description="The sources of the numbers in the note, "
+                                     "also of products that are not picks")
     derived: list[Derived] = Field(default_factory=list)
 
 
@@ -341,7 +343,7 @@ def check_claims(claims: list[Claim], cards: dict[int, Card], pages: dict[int, s
                  web: dict[int, set[Decimal]] | None = None) -> tuple[list[str], set[Decimal]]:
     """A claim passes when the card has the value, or (not for the price, the rating, the review count and the
     stock) when the page text of the product shows its number. A claim with the field web passes when the stored
-    web pages about the product show its numbers."""
+    web pages about the product show its numbers; a number of the same claim can also come from its page or card."""
     errors, numbers, pages, web = [], set(), pages or {}, web or {}
     for claim in claims:
         card = cards.get(claim.id)
@@ -350,7 +352,8 @@ def check_claims(claims: list[Claim], cards: dict[int, Card], pages: dict[int, s
             continue
         shown = numbers_in(claim.value)
         if claim.field == "web":
-            if shown and shown <= web.get(claim.id, set()):
+            own = {v for v in card_facts(card).values() if isinstance(v, Decimal)} | pages.get(claim.id, set())
+            if shown and shown & web.get(claim.id, set()) and shown <= web.get(claim.id, set()) | own:
                 numbers |= shown
             else:
                 errors.append(f"id {claim.id}: the web pages about this product do not show {claim.value}")
@@ -465,7 +468,14 @@ def check_facts(call: BaseModel, state: dict, deps: LoopDeps) -> list[str]:
         own = {v for v in card_facts(cards[pick.id]).values() if isinstance(v, Decimal)} | pages.get(pick.id, set())
         errors += [f"pick id {pick.id}: {e}" for e in check_text(pick.text, claimed | own | said | derived,
                                                                 [cards[pick.id].model])]
-    errors += check_text(call.note, said | derived | {Decimal(len(ids))}, [])
+    # The note can compare the picks with other products: its claims, and the tool reports of this turn
+    note_ids = sorted({c.id for c in call.note_claims} - set(cards))
+    note_cards = {**cards, **{c.listing_id: c for c in deps.cards(note_ids)}} if note_ids else cards
+    note_errors, note_claimed = check_claims(call.note_claims, note_cards,
+                                             {**pages, **pages_of(deps, note_ids)}, web_of(deps, call.note_claims))
+    errors += [f"note: {e}" for e in note_errors]
+    errors += check_text(call.note, said | derived | {Decimal(len(ids))} | turn_numbers(state) | note_claimed,
+                         [c.model for c in note_cards.values()])
     return errors
 
 
