@@ -172,7 +172,7 @@ I decided the positioning on 2026-10-06 (spec section 1a). Web search finds mode
 
 Decisions of 2026-10-07 on the search back end:
 - Pages that are not relevant keep their title, address and short part. A later search with the same words for other products can judge them again.
-- I do not want to depend on Tavily. The search becomes a back end that can be replaced, as the LLM layer is. The fetcher of `read_page` (our own code) replaces Tavily Extract. A self-hosted SearXNG becomes a second search back end, and Tavily stays as the other one. `read_page` comes first, because both need its fetcher.
+- I do not want to depend on Tavily. The search becomes a back end that can be replaced, as the LLM layer is. The fetcher of `read_page` (our own code) replaces Tavily Extract. A self-hosted SearXNG becomes a second search back end, and Tavily stays as the other one. The program can search Google through SearXNG (my decision, 2026-10-07; this replaces the finding of 2026-10-06 below). A captcha still stops a search; the program never bypasses it. `read_page` comes first, because both need its fetcher.
 
 Findings from before the decision (2026-10-06): a Google search by the program is not an option (no automated searches, captchas). The YouTube Data API does not give transcripts. Brave Search needs a card.
 
