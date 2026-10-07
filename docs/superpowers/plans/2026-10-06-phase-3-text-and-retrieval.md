@@ -152,9 +152,9 @@ I decided the positioning on 2026-10-06 (spec section 1a). Web search finds mode
 - The reviews on these product pages are buyer reviews. Reviews with the same text are kept one time.
 - Tests: a fake Tavily client and saved pages; JSON-LD fixtures for the generic reader.
 
-**Part 1 built on 2026-10-06 and 2026-10-07: `search_web`.** `read_page` and the generic reader of shop pages are not built yet.
+**Part 1 built on 2026-10-06 and 2026-10-07: `search_web`.** Part 2, `read_page`, follows below.
 
-- `scout.websearch.TavilyClient` calls the REST API: a basic search (1 credit) with 20 results (my choice, 2026-10-06; the credit is the same for any number), the page text when Tavily has it, and the date of each page (`include_published_date`). Extract gets the text of other pages (1 credit for each 5 pages that it gets). A status 401, 403, 429, 432 or 433 or no answer raises `WebSearchUnavailable`. Then the tool tells Luna, and the web floor is off for the rest of the turn.
+- `scout.websearch.TavilyClient` calls the REST API: a basic search (1 credit) with 20 results (my choice, 2026-10-06; the credit is the same for any number), the page text when Tavily has it, and the date of each page (`include_published_date`). Extract got the text of other pages (1 credit for each 5 pages that it gets) until our own fetcher replaced it (part 2). A status 401, 403, 429, 432 or 433 or no answer raises `WebSearchUnavailable`. Then the tool tells Luna, and the web floor is off for the rest of the turn.
 - The tool `search_web(question, ids, want)`, in my steps (2026-10-07):
   1. Tavily gives up to 20 pages. In a test on 2026-10-07, only 4 of 20 came with their text; the others had a short part of about 150 characters.
   2. The worker judges each page from its title, address, date and short part, in parallel (10 threads): the kind (test, forum, shop, other), relevant or not, and which of the given products it is about.
@@ -173,6 +173,16 @@ I decided the positioning on 2026-10-06 (spec section 1a). Web search finds mode
 Decisions of 2026-10-07 on the search back end:
 - Pages that are not relevant keep their title, address and short part. A later search with the same words for other products can judge them again.
 - I do not want to depend on Tavily. The search becomes a back end that can be replaced, as the LLM layer is. The fetcher of `read_page` (our own code) replaces Tavily Extract. A self-hosted SearXNG becomes a second search back end, and Tavily stays as the other one. The program can search Google through SearXNG (my decision, 2026-10-07; this replaces the finding of 2026-10-06 below). A captcha still stops a search; the program never bypasses it. `read_page` comes first, because both need its fetcher.
+
+**Part 2 built on 2026-10-07: our own fetcher and `read_page`.**
+
+- `scout.fetch.PageFetcher` loads a page with a plain HTTP request first. Pages of one site load one at a time, 3 seconds apart; pages of different sites load in parallel. When the site refuses the request (401, 403, 405, 429, 503) or the page has less than 400 characters of visible text, the dedicated Chrome profile opens it. A captcha or a bot check, or a login page, stops the read. The program never bypasses it, and the tool tells Luna that the page was not read.
+- The fetcher replaces Tavily Extract in `search_web`. The text of web pages comes from trafilatura (an open source library, Apache 2.0). These pages load in worker threads, so they use plain requests only. Tavily Extract stays in the code as the fallback when no fetcher is given.
+- The tool `read_page(url)` reads one product page of a shop that is not amazon.se (`scout.shops`, `scout.sources.generic`). The schema.org `Product` data of the page (JSON-LD) gives the title, the brand, the model (`mpn`), the GTIN, the price, the currency, the stock, the rating and the reviews. Then the worker reads the page text for the missing core fields and for the attributes of the category, with the raw-text check. The page text is the visible text without the menus, the header and the footer, because the specifications of shops are in tables and lists that trafilatura drops.
+- The product joins a stored product with the same GTIN, or with the same brand and model. Spaces and hyphens in the model do not count. This also applies to amazon.se products now. A review with the same text as a stored review of the product in another shop is left out. The author of a review is never kept.
+- I decided on 2026-10-07 that a product from another shop can be a pick. Its floors: a shop page read with `read_page` counts as a shop search; the reviews on its page count as its reviews; the live check opens its page again.
+- Real check (2026-10-07, plain requests, no model, no cost). NetOnNet: title, brand, model, GTIN, price and stock from the page data; the price is in `priceSpecification`, next to the old price, which the reader leaves out. Elgiganten: the same fields; the specifications (height 192.1 cm, noise 41 dB) are in the page text. Power: the page data has the price and the rating, but the page is built with JavaScript, so the browser must open it for the specifications. The search pages of Elgiganten and Power need JavaScript; the product pages come from `search_web`.
+- Not done yet: a real `read_page` turn with the worker (it needs OpenRouter credit), and SearXNG.
 
 Findings from before the decision (2026-10-06): a Google search by the program is not an option (no automated searches, captchas). The YouTube Data API does not give transcripts. Brave Search needs a card.
 
