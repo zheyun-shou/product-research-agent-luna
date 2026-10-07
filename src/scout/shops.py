@@ -7,7 +7,8 @@ from typing import Callable
 
 import psycopg
 
-from scout.db.store import find_product, log_fetch, product_review_texts, save_record, save_review_read
+from scout.db.store import (find_product, log_fetch, product_review_texts, same_brand_listings, save_record,
+                             save_review_read)
 from scout.extract.verify import normalise
 from scout.fetch import Fetched, site_of
 from scout.sources.base import ProductRecord
@@ -82,7 +83,13 @@ def read_page(conn: psycopg.Connection, fetch: Callable[[str], Fetched], url: st
     save_review_read(conn, ids.listing_id, datetime.now(timezone.utc), complete=True)
     others = conn.execute("SELECT id, source FROM listings WHERE product_id = %s AND id <> %s ORDER BY id",
                           (ids.product_id, ids.listing_id)).fetchall()
-    return PageRead(report(ids.listing_id, rec, from_data, copies, others, fetched.via), 1, ids.listing_id)
+    text = report(ids.listing_id, rec, from_data, copies, others, fetched.via)
+    maybe = same_brand_listings(conn, ids.product_id) if not others else []
+    if maybe:
+        text += ("\nStored products of the same brand in other shops: "
+                 + "; ".join(f"id {m['id']} {m['title']} ({m['source']})" for m in maybe)
+                 + ". If one is the same product (the same model, written in another way), call same_product.")
+    return PageRead(text, 1, ids.listing_id)
 
 
 def report(listing_id: int, rec: ProductRecord, from_data: list[str], copies: int, others: list[dict],

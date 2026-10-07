@@ -228,6 +228,47 @@ def _insert_product(conn: psycopg.Connection, rec: ProductRecord, category: str)
     ).fetchone()["id"]
 
 
+def same_brand_listings(conn: psycopg.Connection, product_id: int, limit: int = 5) -> list[dict]:
+    """Listings of other products with the same brand and category, from other sources. Luna judges if one of them is
+    the same product, because shops write the model in different ways (KG 320.2, or an article number)."""
+    return conn.execute(
+        """SELECT l.id, l.source, l.title FROM listings l JOIN products p ON p.id = l.product_id
+           JOIN products me ON me.id = %(p)s
+           WHERE p.id <> me.id AND p.category = me.category AND lower(p.brand) = lower(me.brand)
+             AND l.source NOT IN (SELECT source FROM listings WHERE product_id = me.id)
+           ORDER BY l.id LIMIT %(n)s""", {"p": product_id, "n": limit}).fetchall()
+
+
+def join_products(conn: psycopg.Connection, listing_id: int, same_as: int) -> str | None:
+    """Make the product of listing_id the same product as the one of same_as: its listings, removals, GTIN, model
+    and attributes go to that product. The reviews of a moved shop page that the product has already are left out.
+    Gives the problem, or None."""
+    from scout.extract.verify import normalise
+    rows = {r["id"]: r for r in conn.execute("SELECT id, product_id FROM listings WHERE id = ANY(%s)",
+                                             ([listing_id, same_as],)).fetchall()}
+    missing = [i for i in (listing_id, same_as) if i not in rows]
+    if missing:
+        return f"there is no product with id {missing[0]}"
+    old, new = rows[listing_id]["product_id"], rows[same_as]["product_id"]
+    if old == new:
+        return None
+    moved = [r["id"] for r in conn.execute("SELECT id FROM listings WHERE product_id = %s", (old,)).fetchall()]
+    conn.execute("UPDATE listings SET product_id = %s WHERE product_id = %s", (new, old))
+    conn.execute("UPDATE eliminations SET product_id = %s WHERE product_id = %s", (new, old))
+    conn.execute(
+        """UPDATE products p SET gtin = COALESCE(p.gtin, o.gtin), model = COALESCE(p.model, o.model),
+                  attributes = o.attributes || p.attributes
+           FROM products o WHERE p.id = %s AND o.id = %s""", (new, old))
+    conn.execute("DELETE FROM products WHERE id = %s", (old,))  # its attribute searches go with it
+    for moved_id in moved:
+        known = product_review_texts(conn, new, but=moved_id)
+        row = conn.execute("SELECT reviews FROM page_texts WHERE listing_id = %s", (moved_id,)).fetchone()
+        if row and row["reviews"]:
+            kept = [r for r in row["reviews"] if normalise(r.get("text") or "") not in known]
+            conn.execute("UPDATE page_texts SET reviews = %s WHERE listing_id = %s", (Jsonb(kept), moved_id))
+    return None
+
+
 def product_review_texts(conn: psycopg.Connection, product_id: int, but: int | None = None) -> set[str]:
     """The normalised texts of the stored reviews of a product, in all its listings but one. Brands copy the same
     reviews to several shops (design section 1a)."""

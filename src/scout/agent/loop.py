@@ -54,7 +54,8 @@ How to work:
   Say when you could not find it in a shop.
 - read_page reads the product page of another shop (for example one that search_web found) and stores the product.
   It can be a pick. It joins the same product of amazon.se when the GTIN, or the brand and the model, are the same.
-  Its reviews are the ones that its page shows.
+  When it lists stored products of the same brand, judge from the titles and the models if one is the same
+  product, and then call same_product. Its reviews are the ones that its page shows.
 - Say clearly when data is missing, doubtful or in conflict, and what you did about it. You can leave out a
   candidate whose data cannot be right; say why.
 - show_picks gives the final picks, best first. Usually 5. Fewer when fewer fit well; then say why.
@@ -114,6 +115,13 @@ class ReadPage(BaseModel):
     """Read the product page of a shop that is not amazon.se, for example a shop page that search_web found. Stores
     the product with its price, stock, specifications and the reviews that the page shows, and gives its id."""
     url: str = Field(description="The address of one product page")
+
+
+class SameProduct(BaseModel):
+    """Two listings in different shops are the same product: the same maker and model, perhaps written in another
+    way. Python joins them, so the facts and the reviews of both belong to one product."""
+    id: int
+    same_as: int
 
 
 class FindProducts(BaseModel):
@@ -202,7 +210,7 @@ class Reply(BaseModel):
     derived: list[Derived] = Field(default_factory=list)
 
 
-WORK_TOOLS = [UpdateNeeds, SearchShop, SearchWeb, ReadPage, FindProducts, ReadProduct, SearchText, ReadImages, FindMissing, ReadReviews,
+WORK_TOOLS = [UpdateNeeds, SearchShop, SearchWeb, ReadPage, SameProduct, FindProducts, ReadProduct, SearchText, ReadImages, FindMissing, ReadReviews,
               SummarizeReviews, RemoveProducts, RestoreProducts]
 FINAL_TOOLS = [ShowPicks, Reply]
 BY_NAME = {tool_name(t): t for t in WORK_TOOLS + FINAL_TOOLS}
@@ -247,6 +255,7 @@ class LoopDeps:
     web_texts: Callable[[list[int]], dict[int, str]] | None = None  # the stored web pages of each product
     # (url, profile) -> (report, pages loaded, the listing id or None); stores the product of another shop
     read_page: Callable[[str, CategoryProfile], tuple[str, int, int | None]] | None = None
+    same_product: Callable[[int, int], str | None] | None = None  # (id, same as) -> the problem or None
     say: Callable[[str], None] = print
     tracer: Any = field(default_factory=NoTracer)
 
@@ -604,6 +613,12 @@ class Toolbox:
             done = [p for p in self.current("pages_read") if p["id"] != listing_id]
             self.update["pages_read"] = done + [{"id": listing_id, "url": call.url}]
         return report
+
+    def same_product(self, call: SameProduct) -> str:
+        if self.deps.same_product is None:
+            return "not available."
+        problem = self.deps.same_product(call.id, call.same_as)
+        return f"not joined: {problem}." if problem else f"id {call.id} and id {call.same_as} are now one product."
 
     def find_products(self, call: FindProducts) -> str:
         profile = self.profile()

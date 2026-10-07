@@ -232,6 +232,12 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
         got = read_shop_page(conn, fetcher.fetch, url, profile.category, lambda rec: enrich_record(rec, profile, llm))
         return got.text, got.pages, got.listing_id
 
+    def same_product(listing_id, same_as):
+        from scout.db.store import join_products
+        problem = join_products(conn, listing_id, same_as)
+        conn.commit()
+        return problem
+
     def check_now(ids, needs):
         problems = {}
         budget = needs.budget_sek()
@@ -342,7 +348,7 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
         search_shop=search_shop, check_now=check_now,
         page_texts=lambda ids: page_texts(conn, ids), search_text=search_text, read_images=image_reader(llm),
         find_missing=find_missing, read_reviews=reviews, reviews_read=reviews_read, summarize=summarize,
-        search_web=search_web if client is not None else None, read_page=read_page,
+        search_web=search_web if client is not None else None, read_page=read_page, same_product=same_product,
         web_searched=lambda ids: web_searched(conn, ids, datetime.now(timezone.utc) - week),
         web_texts=lambda ids: web_texts(conn, ids),
         say=say, tracer=tracer,

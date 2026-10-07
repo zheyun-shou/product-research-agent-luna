@@ -238,6 +238,14 @@ Method of InteRecAgent: take one stored product as the hidden target. A cheap mo
 
 On 2026-10-07 I removed `scout eval-chat` and its 24 scripts. They checked the routes of the fixed pipeline, and the agent loop has no fixed routes. `scout eval-hidden` replaces them. The grader (`scout grade`, `scout check-grader`) and the saved results of the earlier runs stay.
 
+**First run with free models (2026-10-08).** One target (red-bottom-freezer), chat nemotron-3-ultra, worker nemotron-3-nano-omni, shopper nemotron-3-super, all free on OpenRouter, web search through SearXNG only. The target was at place 2 of 2 picks, in 2 shopper turns and 1259 s, at no cost. One run is not a result: it only shows that the loop works from end to end. What I changed after it:
+
+- A reply without choices (OpenRouter gives status 200 with only an error when the model behind it fails) is retried like a busy server. The turn record of eval-hidden keeps the place in the code of an error.
+- The amazon.se reader finds the brand and the model also on the English pages ("Brand Name", "Model Number"). Before, 7 of 9 products had no model.
+- All 6 fact problems of the run were true values that the checks did not trace. Now the numbers of product codes (BC-46, KG 320) do not count, a rounded number counts (166 for 166.5), a web claim can take a number from the page of its product when the web pages show its other numbers, and the note of show_picks has its own claims (`note_claims`) for products that are not picks.
+- eval-hidden counts what the gate stopped, by kind (shop floor, reviews floor, web floor, live check), and the turns that the gate gave up.
+- I decided that Luna judges if two listings are the same product. The GTIN and the same model still join them without Luna. When read_page stores a product that matches nothing, its report lists the stored products of the same brand from other shops, and Luna can call `same_product`. Example: amazon.se gives Bomann KG 320.2 the model number 732025.
+
 ### Later, with Task 9
 
 One researcher for each pick searches the web at the same time, and a cheap model makes the found pages short, with their URLs. This is the "conduct research" tool of open_deep_research.

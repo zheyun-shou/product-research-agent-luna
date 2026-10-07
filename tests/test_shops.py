@@ -116,3 +116,22 @@ def test_the_live_check_calls_the_worker_only_for_a_missing_price_or_stock(db):
     enrich = lambda rec: (calls.append(rec.source_id) or rec, True)  # noqa: E731
     refetch(db, loaded(), URL, "fridge", enrich)
     assert calls == []
+
+
+def test_a_model_written_in_another_way_is_listed_and_luna_can_join_it(db):
+    from scout.db.store import join_products
+    first = save_record(db, amazon(model="732025", reviews=[{"text": "Mycket tyst och rymlig."}]), "fridge")
+    got = read_page(db, loaded(), URL, "fridge", None)
+    assert f"Stored products of the same brand in other shops: id {first.listing_id} Gorenje RK4182PS4 kyl/frys " \
+           "(amazon_se)." in got.text
+    db.execute("INSERT INTO eliminations (thread_id, product_id, removed_by) SELECT 't', product_id, 'user' "
+               "FROM listings WHERE id = %s", (got.listing_id,))
+    assert join_products(db, got.listing_id, first.listing_id) is None
+    rows = db.execute("SELECT product_id FROM listings ORDER BY id").fetchall()
+    assert {r["product_id"] for r in rows} == {first.product_id}
+    product = db.execute("SELECT gtin, model FROM products WHERE id = %s", (first.product_id,)).fetchone()
+    assert dict(product) == {"gtin": "03838782123456", "model": "732025"}
+    assert db.execute("SELECT product_id FROM eliminations").fetchone()["product_id"] == first.product_id
+    # The review that the amazon.se listing has already is left out of the shop page
+    assert [r["text"] for r in page_texts(db, [got.listing_id])[got.listing_id]["reviews"]] == ["Dörren slår i väggen."]
+    assert join_products(db, got.listing_id, 999999) == "there is no product with id 999999"
