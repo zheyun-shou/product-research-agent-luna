@@ -5,6 +5,7 @@ product-scout is a conversational agent. It helps to select products in any cate
 - Design: `docs/superpowers/specs/2026-10-02-product-scout-design.md`
 - Plans: `docs/superpowers/plans/`
 - Flowcharts: https://claude.ai/artifact/4jJqCkVudUFU24kTyXsiqZ
+- Overview for other people (one page): https://claude.ai/artifact/7Ziif9J3KUFYnLyDmLaP1B
 
 ## v1 in short
 
