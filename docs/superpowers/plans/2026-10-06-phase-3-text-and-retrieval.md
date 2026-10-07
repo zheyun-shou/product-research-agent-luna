@@ -166,9 +166,13 @@ I decided the positioning on 2026-10-06 (spec section 1a). Web search finds mode
 - Real run (2026-10-07, "Gorenje RK4182PS4 test", want "is it quiet or loud", the free Gemini worker): 19 pages judged, 13 relevant, 11 stored, 38 parts to Luna (38,324 characters), 1 credit, no cost. The best part was an otto.de buyer review; testbericht.de "Der Betrieb ist angenehm leise" was among the 15. It took 81 s, because the free Gemini key allows 15 calls a minute; the reranker loads in about 26 s, one time in a session.
 - The table `web_searches` keeps each question, the listings it was for, and the results (the relevant ones with their text, cut at 30,000 characters). The same question in the next 7 days uses them and costs no search credit. That use adds its products to the same row and does not change its date, so the results are not used after 7 days. A page that is stored again with the same text keeps its chunks and their embeddings.
 - The floor of the design (section 5): before `show_picks`, each pick must have a web search with its id in the last 7 days, by any listing of its product. The shopper can switch it off (`update_needs` with `web_tests` false). Without a Tavily key there is no tool and no floor.
-- A claim with the field `web` passes when the stored web pages about the product show its numbers. This check is weak: the pages are long, so a number can be found in a menu or a date. A better check would ask for the quote with the number. It is not built yet.
+- A claim with the field `web` passes when the stored web pages about the product show its numbers. This check is weak: the pages are long, so a number can be found in a menu or a date. I decided on 2026-10-07 not to add a check by quote. The fact checks only record problems now.
 - Limits for each turn: 120 web pages judged by the worker (6 searches of 20, so each of 5 picks can have its own search) and 10 web searches. The hidden-target test counts both.
 - Not done yet: `summarize_reviews` reads only the shop reviews, not the web pages, and the picks do not show the source type of each statement yet.
+
+Decisions of 2026-10-07 on the search back end:
+- Pages that are not relevant keep their title, address and short part. A later search with the same words for other products can judge them again.
+- I do not want to depend on Tavily. The search becomes a back end that can be replaced, as the LLM layer is. The fetcher of `read_page` (our own code) replaces Tavily Extract. A self-hosted SearXNG becomes a second search back end, and Tavily stays as the other one. `read_page` comes first, because both need its fetcher.
 
 Findings from before the decision (2026-10-06): a Google search by the program is not an option (no automated searches, captchas). The YouTube Data API does not give transcripts. Brave Search needs a card.
 
