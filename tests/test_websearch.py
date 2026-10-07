@@ -160,9 +160,9 @@ def test_want_ranks_the_parts_in_place_of_the_search_words():
     assert seen == ["is it quiet"]
 
 
-def test_a_relevant_page_whose_text_tavily_cannot_get():
+def test_a_relevant_page_whose_text_cannot_be_read():
     report, *_ = run_search([TEST, FORUM], {})
-    assert "relevant; Tavily could not get its text" in report.text and report.credits == 1
+    assert "relevant; its text could not be read" in report.text and report.credits == 1
 
 
 def test_stored_results_of_the_question_cost_no_credit():
@@ -317,3 +317,31 @@ def test_web_searches_count_for_the_product_and_web_text_loses_its_header(db):
     save_web_chunks(db, 1, url_ref(TEST.url), web_chunks("Fridge 2026\nmodel", finding), now)
     # without the two lines that name the product and the page; the chunks join the paragraphs with one newline
     assert web_texts(db, [2]) == {2: TEST_PAGE.replace("\n\n", "\n")}
+
+
+def test_our_own_fetcher_gets_the_texts_without_credits():
+    asked = []
+
+    def extract(urls):
+        asked.append(list(urls))
+        return {TEST.url: TEST_PAGE}
+    report, store, client, _ = run_search([SHOP, TEST, OTHER, FORUM], extract=extract)
+    assert asked == [[TEST.url]] and client.extracted == []
+    assert report.credits == 1  # only the search
+    assert {r.url: r.raw for r in store.searches[0][2]}[TEST.url] == TEST_PAGE
+
+
+def test_fetch_texts_keeps_the_pages_that_loaded():
+    from datetime import datetime, timezone
+
+    from scout.fetch import Fetched
+    from scout.sources.base import RawPage
+    from scout.websearch import fetch_texts
+    html = "<html><body><article>" + "<p>Kylen är mycket tyst i vårt test, 35 dB.</p>" * 20 + "</article></body></html>"
+
+    def fetch(url):
+        if "bad" in url:
+            return Fetched(None, "the page did not answer")
+        return Fetched(RawPage(url=url, final_url=url, status=200, html=html, fetched_at=datetime.now(timezone.utc)))
+    texts = fetch_texts(fetch, ["https://a.se/1", "https://bad.se/2"])
+    assert list(texts) == ["https://a.se/1"] and "35 dB" in texts["https://a.se/1"]

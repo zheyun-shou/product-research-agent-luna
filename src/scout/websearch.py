@@ -5,8 +5,8 @@ The steps (my choice, 2026-10-07):
 1. A Tavily search gives up to 20 pages, one credit. Some come with their text; most have only a short part.
 2. The worker judges each page from its title and short part, in parallel: the kind, relevant or not, and which of
    the given products it is about.
-3. The text of the relevant pages that came without text is fetched with Tavily Extract (one credit for each 5
-   pages that it gets).
+3. Our own fetcher (scout.fetch) gets the text of the relevant pages that came without text (since 2026-10-07;
+   before, Tavily Extract got it for one credit for each 5 pages).
 4. The text is cut into parts. A local reranker scores each part against the question without the brands and the
    models of the given products. The TOP_PARTS best parts go to the chat model, each with the part before and the
    part after, up to MAX_CHAT_PARTS.
@@ -24,7 +24,7 @@ import math
 import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
-from typing import Callable, Literal
+from typing import TYPE_CHECKING, Callable, Literal
 from urllib.parse import urlparse
 
 import httpx
@@ -32,6 +32,9 @@ from pydantic import BaseModel, Field
 
 from scout.llm.client import LLMOutputError, LLMUnavailable
 from scout.text.chunks import Chunk, split_text
+
+if TYPE_CHECKING:
+    from scout.fetch import Fetched
 
 API = "https://api.tavily.com"
 RESULTS = 20  # pages for each search (my choice, 2026-10-06); one credit for any number
@@ -115,6 +118,20 @@ def url_key(url: str) -> str:
 
 def extract_credits(pages: int) -> int:
     return math.ceil(pages / 5)
+
+
+def fetch_texts(fetch: Callable[[str], "Fetched"], urls: list[str], workers: int = READ_WORKERS) -> dict[str, str]:
+    """The main text of each page that our own fetcher could read (scout.fetch), in place of Tavily Extract
+    (decided 2026-10-07). Pages of different sites load in parallel; the fetcher keeps one page of a site at a
+    time."""
+    from scout.sources.generic import page_text
+
+    def one(url: str) -> str:
+        got = fetch(url)
+        return page_text(got.page.html, got.page.final_url)[:STORED_CHARS] if got.page is not None else ""
+    with ThreadPoolExecutor(workers) as pool:
+        texts = dict(zip(urls, pool.map(one, urls)))
+    return {url: text for url, text in texts.items() if text}
 
 
 # ---- the worker judges one page from its short part ----
@@ -286,7 +303,10 @@ def page_line(finding: Finding) -> str:
 
 def search_web(question: str, products: list[ProductRef], client: TavilyClient, llm, store: WebStore,
                rerank: Callable[[str, list[str]], list[float]], max_pages: int = RESULTS,
-               top: int = TOP_PARTS, want: str = "") -> WebReport:
+               top: int = TOP_PARTS, want: str = "",
+               extract: Callable[[list[str]], dict[str, str]] | None = None) -> WebReport:
+    """`extract(urls)` gets the text of the relevant pages that came without it: our own fetcher, free. Without it
+    Tavily Extract gets them, for credits."""
     results = store.stored(question)
     credits = 0
     if results is None:
@@ -302,10 +322,11 @@ def search_web(question: str, products: list[ProductRef], client: TavilyClient, 
     missing = [f.result.url for f in findings if f.relevant and not f.result.raw]
     extract_note = ""
     try:
-        texts = client.extract(missing) if missing else {}
+        texts = (extract or client.extract)(missing) if missing else {}
     except WebSearchUnavailable as exc:  # the search is paid: keep its results and go on without these texts
         texts, extract_note = {}, f"Tavily could not get the text of {len(missing)} relevant pages: {exc}."
-    credits += extract_credits(len(texts))
+    if extract is None:
+        credits += extract_credits(len(texts))
     texts = {url_key(url): text for url, text in texts.items()}
     findings = [replace(f, result=replace(f.result, raw=texts[url_key(f.result.url)]))
                 if url_key(f.result.url) in texts else f for f in findings]
@@ -345,7 +366,7 @@ def search_web(question: str, products: list[ProductRef], client: TavilyClient, 
         for i in others:
             f = findings[i]
             why = f.error or ("relevant; no part was among the best" if f.relevant and f.result.raw else
-                              "relevant; Tavily could not get its text" if f.relevant else
+                              "relevant; its text could not be read" if f.relevant else
                               "not relevant" + (f", {f.reason}" if f.reason else ""))
             lines.append(f"- {page_line(f)}: {why}")
     if stopped:

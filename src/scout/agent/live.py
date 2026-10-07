@@ -156,7 +156,8 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
     from datetime import datetime, timedelta, timezone
 
     from scout.db.store import save_web_chunks, save_web_search, stored_web_results, web_searched, web_texts
-    from scout.websearch import ProductRef, WebResult, WebStore, search_web as run_web_search, url_ref
+    from scout.websearch import ProductRef, WebResult, WebStore, fetch_texts, url_ref
+    from scout.websearch import search_web as run_web_search
 
     from scout.agent.graph import crawl_text
     from scout.agent.loop import LoopDeps
@@ -302,7 +303,9 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
     def search_web(question, ids, max_pages, want=""):
         cards = load_cards_by_ids(conn, ids)
         products = [ProductRef(c.listing_id, c.title, c.model, c.brand) for c in cards]
-        report = run_web_search(question, products, client, llm, web_store, reranker, max_pages, want=want)
+        # Plain requests only: the texts load in worker threads, where the browser cannot run
+        report = run_web_search(question, products, client, llm, web_store, reranker, max_pages, want=want,
+                                extract=lambda urls: fetch_texts(lambda u: fetcher.fetch(u, use_browser=False), urls))
         conn.commit()
         return report.text, report.pages
 
