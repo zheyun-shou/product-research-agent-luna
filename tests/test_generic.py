@@ -81,3 +81,17 @@ def test_a_price_specification_without_the_old_price():
         {"@type": "UnitPriceSpecification", "priceCurrency": "SEK", "price": "1190.00"}]}}</script>"""
     rec, _ = read_generic(page(html))
     assert (rec.price, rec.currency) == (Decimal("1190.00"), "SEK")
+
+
+def test_the_address_keeps_product_parameters_but_not_tracking():
+    rec, _ = read_generic(page("<html><p>x</p></html>", "https://shop.se/product.php?id=456&utm_source=x#top"))
+    assert rec.url == "https://shop.se/product.php?id=456" and rec.source_id == "/product.php?id=456"
+
+
+def test_a_product_group_gives_the_variant_of_the_address():
+    html = """<link rel="canonical" href="https://shop.de/p"><script type="application/ld+json">
+      {"@type": "ProductGroup", "name": "Shirt", "hasVariant": [
+        {"@type": "Product", "sku": "S1", "offers": {"price": 10, "priceCurrency": "EUR"}},
+        {"@type": "Product", "sku": "XL9", "offers": {"price": 12, "priceCurrency": "EUR"}}]}</script>"""
+    rec, _ = read_generic(page(html, "https://shop.de/p?variant=XL9"))
+    assert (rec.source_id, rec.price, rec.url) == ("XL9", Decimal("12"), "https://shop.de/p?variant=XL9")

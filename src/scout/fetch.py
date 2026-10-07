@@ -1,8 +1,8 @@
 """Our own page fetcher for the pages of other shops and of web search (decided 2026-10-07).
 
 A plain HTTP request comes first: it is fast, and pages of different sites can load in parallel. Pages of one site
-load one at a time, with a gap between them. When a site refuses the request, or the page needs JavaScript, the
-dedicated Chrome profile opens it. A captcha or a sign-in page stops the read: the program never bypasses it.
+load one at a time, with a gap between them. When the page needs JavaScript, the dedicated Chrome profile opens it.
+A captcha, a bot check, a refusal or a sign-in page stops the read: the browser is never used to get past them.
 """
 import re
 import threading
@@ -34,7 +34,10 @@ REFUSED = {401, 403, 405, 429, 503}
 
 
 def site_of(url: str) -> str:
-    host = urlparse(url).netloc.lower().split("@")[-1].split(":")[0]
+    try:
+        host = urlparse(url).netloc.lower().split("@")[-1].split(":")[0]
+    except ValueError:  # an address that is not valid
+        return ""
     return host[4:] if host.startswith("www.") else host
 
 
@@ -87,7 +90,7 @@ class PageFetcher:
         started = self._clock()
         try:
             response = self.client.get(url)
-        except httpx.HTTPError:
+        except (httpx.HTTPError, httpx.InvalidURL, ValueError):  # no answer, or an address that is not valid
             return None
         kind = response.headers.get("content-type", "")
         html = response.text if "html" in kind or "xml" in kind or not kind else ""
@@ -103,19 +106,19 @@ class PageFetcher:
             finally:
                 self._last[site] = self._clock()
             problem = self.problem(page)
-            # Shops that build the page with JavaScript give only the page data (Power, 2026-10-07), without the sizes
+            # Shops that build the page with JavaScript give only the page data (Power, 2026-10-07), without the sizes.
+            # Only such a page opens in the browser: a refusal or a bot check is the answer of the site
             weak = page is not None and not problem and len(visible_text(page.html)) < MIN_TEXT
-            if (problem and problem != GONE) or weak:
-                if use_browser and self.browser is not None:
-                    self._wait(site)
-                    try:
-                        page = self.browser(url)
-                    finally:
-                        self._last[site] = self._clock()
-                    problem = self.problem(page)
-                    return Fetched(None if problem else page, problem, "browser")
-                if weak:
-                    problem = "the page has almost no text without JavaScript"
+            if weak and use_browser and self.browser is not None:
+                self._wait(site)
+                try:
+                    page = self.browser(url)
+                finally:
+                    self._last[site] = self._clock()
+                problem = self.problem(page)
+                return Fetched(None if problem else page, problem, "browser")
+            if weak:
+                problem = "the page has almost no text without JavaScript"
             return Fetched(None if problem else page, problem)
 
     @staticmethod

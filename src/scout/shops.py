@@ -14,6 +14,7 @@ from scout.sources.base import ProductRecord
 from scout.sources.generic import read_generic
 
 AMAZON = "amazon.se"
+AMAZON_NOTE = "amazon.se pages come through search_shop"
 
 
 @dataclass
@@ -29,12 +30,20 @@ def read_record(fetched: Fetched, enrich: Callable[[ProductRecord], tuple[Produc
     for the missing core fields, and for the attributes of the profile unless `attributes` is False."""
     if fetched.page is None:
         return None, [], fetched.problem
+    if is_amazon(fetched.page.final_url):  # a short link or a "go to the shop" link
+        return None, [], f"the address leads to amazon.se, and {AMAZON_NOTE}"
     rec, from_data = read_generic(fetched.page)
-    if enrich is not None and (attributes or rec.missing_core()):
+    if enrich is not None and (attributes or rec.price is None or rec.in_stock is None):
         rec, _ = enrich(rec)
-    if not rec.title or (rec.price is None and "title" not in from_data):
+    # A test or a blog can have product data without an offer: only a page with a price, or sold out, is a shop page
+    if not rec.title or (rec.price is None and rec.in_stock is not False):
         return None, from_data, "the page shows no product with a price"
     return rec, from_data, ""
+
+
+def is_amazon(url: str) -> bool:
+    site = site_of(url)
+    return site == AMAZON or site.endswith("." + AMAZON)
 
 
 def known_reviews(conn: psycopg.Connection, rec: ProductRecord, category: str) -> set[str]:
@@ -59,8 +68,8 @@ def unique_reviews(rec: ProductRecord, known: set[str]) -> tuple[ProductRecord, 
 def read_page(conn: psycopg.Connection, fetch: Callable[[str], Fetched], url: str, category: str,
               enrich: Callable[[ProductRecord], tuple[ProductRecord, bool]] | None) -> PageRead:
     site = site_of(url)
-    if site == AMAZON or site.endswith(".amazon.se"):
-        return PageRead("amazon.se pages come through search_shop.", 0)
+    if is_amazon(url):
+        return PageRead(AMAZON_NOTE + ".", 0)
     fetched = fetch(url)
     page = fetched.page
     rec, from_data, problem = read_record(fetched, enrich)

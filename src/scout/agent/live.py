@@ -226,9 +226,11 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
         refetch = {}
         for card in cards:
             cat = category[card.product_id]
-            if site_of(card.url) != "amazon.se":  # a pick from another shop (read_page)
-                profile = load_profile(cat)
-                rec = refetch_shop_page(conn, fetcher.fetch, card.url, cat, lambda r: enrich_record(r, profile, llm))
+            other_shop = site_of(card.url) != "amazon.se"  # a pick from read_page
+            if other_shop:
+                # The worker reads only a missing price or stock, not the attributes again
+                core = load_profile(cat).model_copy(update={"attributes": []})
+                rec = refetch_shop_page(conn, fetcher.fetch, card.url, cat, lambda r: enrich_record(r, core, llm))
             else:
                 if cat not in refetch:
                     refetch[cat] = refetcher(browser.adapter(), conn, cat, on_problem)
@@ -239,6 +241,10 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
                 problems[card.listing_id] = "sold out now"
             elif budget is not None and rec.price is None:
                 problems[card.listing_id] = "shows no price now, so the budget cannot be checked"
+            elif budget is not None and other_shop and rec.currency != "SEK":  # a shop in another country
+                currency = rec.currency or "in a currency that the page does not name"
+                problems[card.listing_id] = (f"costs {rec.price} {currency}, and the budget is in SEK, so Python "
+                                             "cannot check it")
             elif budget is not None and rec.price > budget:
                 problems[card.listing_id] = f"costs {rec.price} {rec.currency} now, over the budget"
             else:

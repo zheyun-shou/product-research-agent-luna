@@ -44,12 +44,25 @@ def test_pages_of_one_site_wait_for_the_gap_and_other_sites_do_not():
     assert clock.slept == [3.0]
 
 
-def test_a_refused_request_opens_the_browser():
+def test_a_refused_request_does_not_open_the_browser():
     opened = []
     f = fetcher(lambda r: httpx.Response(403, html="<html>no</html>"),
                 browser=lambda url: opened.append(url) or browser_page(url))
     got = f.fetch("https://shop.se/1")
+    assert opened == [] and got.page is None and "403" in got.problem
+
+
+def test_a_page_that_needs_javascript_opens_the_browser():
+    opened = []
+    f = fetcher(lambda r: httpx.Response(200, html="<html><div id=app></div></html>"),
+                browser=lambda url: opened.append(url) or browser_page(url))
+    got = f.fetch("https://shop.se/1")
     assert opened == ["https://shop.se/1"] and got.via == "browser" and got.problem == ""
+
+
+def test_an_address_that_is_not_valid_is_a_problem():
+    got = fetcher(lambda r: httpx.Response(200, html=TEXT)).fetch("https://[::1/x")
+    assert got.page is None and got.problem == "the page did not answer"
 
 
 def test_a_page_without_text_opens_the_browser_also_with_product_data():
@@ -62,11 +75,11 @@ def test_a_page_without_text_opens_the_browser_also_with_product_data():
     assert opened == ["https://a.se/1", "https://b.se/1"]
 
 
-def test_a_captcha_stops_the_read():
+def test_a_captcha_stops_the_read_without_the_browser():
     captcha = '<html><title>Just a moment...</title><div class="cf-chl-widget"></div></html>'
-    got = fetcher(lambda r: httpx.Response(403, html=captcha),
-                  browser=lambda url: browser_page(url, captcha, 403)).fetch("https://shop.se/1")
-    assert got.page is None and "captcha" in got.problem and got.via == "browser"
+    opened = []
+    got = fetcher(lambda r: httpx.Response(403, html=captcha), browser=opened.append).fetch("https://shop.se/1")
+    assert got.page is None and "captcha" in got.problem and opened == []
 
 
 def test_a_captcha_script_on_a_normal_page_is_not_a_captcha():

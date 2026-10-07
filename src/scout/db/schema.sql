@@ -14,6 +14,9 @@ CREATE INDEX IF NOT EXISTS products_brand_model
 -- The GTIN (EAN) of a product page of another shop (read_page), 14 digits. It matches one product across shops.
 ALTER TABLE products ADD COLUMN IF NOT EXISTS gtin text;
 CREATE INDEX IF NOT EXISTS products_gtin ON products (gtin);
+-- find_product compares the models without spaces and hyphens
+CREATE INDEX IF NOT EXISTS products_brand_loose_model
+    ON products (category, lower(brand), regexp_replace(lower(model), '[[:space:]-]', '', 'g'));
 
 CREATE TABLE IF NOT EXISTS listings (
     id            bigserial PRIMARY KEY,

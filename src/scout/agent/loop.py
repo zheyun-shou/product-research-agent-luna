@@ -274,7 +274,7 @@ def context_text(state: dict, deps: LoopDeps, thread: str) -> str:
                                                                      for w, s in searches.items()) or "none"))
     pages = state.get("pages_read") or []
     if pages:
-        lines.append("Shop pages read in this conversation: " + ", ".join(pages))
+        lines.append("Shop pages read in this conversation: " + ", ".join(f"id {p['id']} {p['url']}" for p in pages))
     web = state.get("web_searches") or []
     if web:
         lines.append("Web searches in this conversation: " + ", ".join(f"'{q}'" for q in web))
@@ -406,8 +406,11 @@ def check_final(call: BaseModel, state: dict, deps: LoopDeps, thread: str, used:
     if errors:
         return errors
     # The floors (design section 5)
-    if not state.get("searches") and not state.get("pages_read"):
-        errors.append("no shop search in this conversation yet. Call search_shop (or read_page) first")
+    if not state.get("searches"):
+        # A pick from another shop has its own shop step: read_page in this conversation
+        read = {p["id"] for p in state.get("pages_read") or []}
+        if any(i not in read for i in ids):
+            errors.append("no shop search in this conversation yet. Call search_shop first")
     if deps.read_reviews is not None:
         read = deps.reviews_read(ids)
         skipped = set(used.get("reviews_skipped", []))
@@ -576,8 +579,8 @@ class Toolbox:
         report, pages, listing_id = self.deps.read_page(call.url, profile)
         self.used["product_pages"] = self.used.get("product_pages", 0) + pages
         if listing_id is not None:
-            done = self.current("pages_read")
-            self.update["pages_read"] = done + ([call.url] if call.url not in done else [])
+            done = [p for p in self.current("pages_read") if p["id"] != listing_id]
+            self.update["pages_read"] = done + [{"id": listing_id, "url": call.url}]
         return report
 
     def find_products(self, call: FindProducts) -> str:

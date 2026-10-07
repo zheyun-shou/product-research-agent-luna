@@ -47,8 +47,9 @@ def json_ld(html: str) -> list[dict]:
     return found
 
 
-def products_of(items: list[dict]) -> list[dict]:
-    """The Product objects. A ProductGroup gives its first variant, with the fields of the group as defaults."""
+def products_of(items: list[dict], url: str = "") -> list[dict]:
+    """The Product objects. A ProductGroup gives the variant of the page address (by its address or its sku), else
+    its first variant, with the fields of the group as defaults."""
     products = []
     for item in items:
         types = _types(item)
@@ -56,8 +57,21 @@ def products_of(items: list[dict]) -> list[dict]:
             products.append(item)
         elif "ProductGroup" in types:
             variants = [v for v in item.get("hasVariant") or [] if isinstance(v, dict)]
-            products.append({**item, **variants[0]} if variants else item)
+            chosen = next((v for v in variants if _is_variant_of(v, url)), variants[0] if variants else {})
+            products.append({**item, **chosen})
     return products
+
+
+def _is_variant_of(variant: dict, url: str) -> bool:
+    if not url:
+        return False
+    offer = variant.get("offers") if isinstance(variant.get("offers"), dict) else {}
+    own = _text(variant.get("url")) or _text(offer.get("url"))
+    if own and clean_url(own) == clean_url(url):
+        return True
+    sku = _text(variant.get("sku"))
+    return bool(sku) and re.search(rf"(?<![\w-]){re.escape(sku)}(?![\w-])", urlparse(url).path + "?" +
+                                   urlparse(url).query) is not None
 
 
 def _text(value) -> str | None:
@@ -201,27 +215,44 @@ def page_text(html: str, url: str) -> str:
     return (text or "")[:MAX_TEXT]
 
 
+TRACKING = re.compile(r"^(utm_\w+|gclid|fbclid|msclkid|ref|referrer|affiliate|aff_\w+|srsltid)$", re.IGNORECASE)
+
+
+def clean_url(url: str) -> str:
+    """The address without the tracking parameters and the fragment. Other parameters stay, because some shops
+    name the product or the variant in them (?id=123)."""
+    parts = urlparse(url)
+    query = "&".join(q for q in parts.query.split("&") if q and not TRACKING.match(q.split("=", 1)[0]))
+    return f"{parts.scheme}://{parts.netloc}{parts.path}" + (f"?{query}" if query else "")
+
+
+def _path(url: str) -> str:
+    parts = urlparse(url)
+    return (parts.path or "/") + (f"?{parts.query}" if parts.query else "")
+
+
 def canonical(page: RawPage) -> str:
     soup = BeautifulSoup(page.html, "lxml")
     link = soup.find("link", rel="canonical")
     href = link.get("href") if link else None
-    url = urljoin(page.final_url, href) if href else page.final_url
-    parts = urlparse(url)
-    return f"{parts.scheme}://{parts.netloc}{parts.path}"
+    return clean_url(urljoin(page.final_url, href) if href else page.final_url)
 
 
 def read_generic(page: RawPage) -> tuple[ProductRecord, list[str]]:
     """The record of one shop page, and the fields that came from its JSON-LD."""
     url = canonical(page)
-    products = products_of(json_ld(page.html))
+    items = json_ld(page.html)
+    products = products_of(items, page.final_url)
     product = products[0] if products else {}
+    if any("ProductGroup" in _types(i) for i in items):
+        url = clean_url(page.final_url)  # the canonical address of a group can name another variant
     offer = _offer(product)
     rating, count = _rating(product)
     sku = _text(product.get("sku")) or _text(offer.get("sku"))
     text = shop_text(page.html)
     description = _text(product.get("description")) or ""
     rec = ProductRecord(
-        source=site_of(url), source_id=sku or urlparse(url).path or url, url=url, fetched_at=page.fetched_at,
+        source=site_of(url), source_id=sku or _path(url), url=url, fetched_at=page.fetched_at,
         title=_text(product.get("name")), brand=_text(product.get("brand") or product.get("manufacturer")),
         model=_text(product.get("mpn") or product.get("model")), gtin=gtin_of(product) or gtin_of(offer),
         price=_number(offer.get("price")), currency=_text(offer.get("priceCurrency")),

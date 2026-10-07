@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -96,3 +97,22 @@ def test_the_live_check_reads_the_page_again(db):
     rec = refetch(db, loaded(sold_out), URL, "fridge", None)
     assert rec.in_stock is False
     assert db.execute("SELECT count(*) AS n FROM price_history").fetchone()["n"] == 2
+
+
+def test_a_link_that_leads_to_amazon_is_not_stored(db):
+    got = read_page(db, loaded(url="https://www.amazon.se/dp/B0X"), "https://amzn.to/abc", "fridge", None)
+    assert got.listing_id is None and "leads to amazon.se" in got.text
+
+
+def test_product_data_without_an_offer_is_not_a_shop_page(db):
+    html = re.sub(r'"offers": \{[^}]*\},', "", HTML)
+    assert '"offers"' not in html
+    got = read_page(db, loaded(html), URL, "fridge", None)
+    assert got.listing_id is None and "no product with a price" in got.text
+
+
+def test_the_live_check_calls_the_worker_only_for_a_missing_price_or_stock(db):
+    calls = []
+    enrich = lambda rec: (calls.append(rec.source_id) or rec, True)  # noqa: E731
+    refetch(db, loaded(), URL, "fridge", enrich)
+    assert calls == []
