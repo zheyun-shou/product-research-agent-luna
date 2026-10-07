@@ -23,7 +23,7 @@ MAX_TOOL_CALLS = 25  # for each turn; set again from the hidden-target test (des
 MAX_PRODUCT_PAGES = 30
 MAX_REVIEW_PAGES = 30
 MAX_WEB_PAGES = 120  # pages that the worker judges; a search gives up to 20, so 6 searches (5 picks and 1 more)
-MAX_WEB_SEARCHES = 10  # each new search costs one Tavily credit
+MAX_WEB_SEARCHES = 10  # a new search costs one Tavily credit; SearXNG is free but asks other engines
 MAX_GATE_ROUNDS = 3
 MAX_REPORT_CHARS = 6_000  # of one tool report in the prompt
 SEARCH_DETAILS = 8  # new product pages for each search_shop call
@@ -49,7 +49,9 @@ How to work:
   Use short search words: the brand and model and one word such as test, recension, Testbericht, anmeldelse or
   review. A long question in a sentence finds manuals and shops. Put what you want to learn in want (for example
   "is it quiet"): it chooses the parts of the pages that you get. Without ids, search_web finds which models testers
-  recommend; then look for them with search_shop.
+  recommend. A model that a test praises may not be sold in Sweden, but look for it: search_shop with its brand
+  and model, and search_web with the model and a word such as pris or köp for the pages of other shops (read_page).
+  Say when you could not find it in a shop.
 - read_page reads the product page of another shop (for example one that search_web found) and stores the product.
   It can be a pick. It joins the same product of amazon.se when the GTIN, or the brand and the model, are the same.
   Its reviews are the ones that its page shows.
@@ -97,7 +99,7 @@ class SearchShop(BaseModel):
 
 
 class SearchWeb(BaseModel):
-    """Search the web (Tavily). The worker judges each found page (test, forum, shop; relevant or not). You get the
+    """Search the web. The worker judges each found page (test, forum, shop; relevant or not). You get the
     parts of the relevant pages that answer the question best, with their address and date. The parts are ranked
     by the search words without the brand and the model. Give the ids of the products that the search is for: the
     relevant pages about them are stored, so search_text finds them later."""
@@ -544,7 +546,7 @@ class Toolbox:
     def search_web(self, call: SearchWeb) -> str:
         from scout.websearch import WebSearchUnavailable
         if self.deps.search_web is None:
-            return "not available: no Tavily key is set."
+            return "not available: no web search back end is set."
         if self.used.get("web_unavailable"):
             return f"not available in this turn: {self.used['web_unavailable']}."
         if self.used.get("web_searches", 0) >= MAX_WEB_SEARCHES:
@@ -554,7 +556,7 @@ class Toolbox:
             return "the web pages of this turn are used up."
         cards, unknown = self.cards(call.ids[:5])
         self.deps.say(f"Searching the web for '{call.question}'.")
-        # Counted before the call: a search that fails after Tavily answered can have used a credit
+        # Counted before the call: a search that fails after the back end answered can have used a credit
         self.used["web_searches"] = self.used.get("web_searches", 0) + 1
         try:
             report, pages = self.deps.search_web(call.question, [c.listing_id for c in cards], left, call.want)

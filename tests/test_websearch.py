@@ -278,11 +278,11 @@ def test_no_floor_when_the_shopper_does_not_want_it_or_tavily_is_down():
         assert [p["listing_id"] for p in state["picks"]] == [2], first
 
 
-def test_search_web_without_a_key():
+def test_search_web_without_a_back_end():
     shop = Shop()  # no search_web: no floor either
     llm = FakeLLM([[SearchWeb(question="q")], "No web search."])
     run(build_agent_graph(shop.deps(llm), InMemorySaver()), "a fridge")
-    assert "not available: no Tavily key is set." in llm.requests[1][1]
+    assert "not available: no web search back end is set." in llm.requests[1][1]
 
 
 # ---- the database ----
@@ -345,3 +345,68 @@ def test_fetch_texts_keeps_the_pages_that_loaded():
         return Fetched(RawPage(url=url, final_url=url, status=200, html=html, fetched_at=datetime.now(timezone.utc)))
     texts = fetch_texts(fetch, ["https://a.se/1", "https://bad.se/2"])
     assert list(texts) == ["https://a.se/1"] and "35 dB" in texts["https://a.se/1"]
+
+
+# ---- SearXNG ----
+
+def searx(handler):
+    from scout.websearch import SearxngClient
+    return SearxngClient("http://searx.local/", httpx.Client(transport=httpx.MockTransport(handler)))
+
+
+def test_searxng_results_without_copies():
+    def handler(request):
+        assert request.url.path == "/search" and request.url.params["format"] == "json"
+        return httpx.Response(200, json={"results": [
+            {"url": "https://www.test.se/a/", "title": "Test", "content": "Tyst kyl", "publishedDate": "2025-03-08T00:00:00"},
+            {"url": "https://test.se/a", "title": "Copy", "content": ""},
+            {"url": "https://forum.se/b", "title": "Forum", "content": "Bra"}], "unresponsive_engines": []})
+    results = searx(handler).search("Gorenje RK4182PS4 test")
+    assert [(r.url, r.published, r.raw) for r in results] == [("https://www.test.se/a/", "2025-03-08", ""),
+                                                             ("https://forum.se/b", None, "")]
+
+
+def test_searxng_engines_with_a_captcha_and_no_results_make_it_unavailable():
+    from scout.websearch import WebSearchUnavailable
+    client = searx(lambda r: httpx.Response(200, json={"results": [], "unresponsive_engines": [
+        ["duckduckgo", "CAPTCHA"], ["brave", "too many requests"]]}))
+    try:
+        client.search("q")
+    except WebSearchUnavailable as exc:
+        assert "duckduckgo (CAPTCHA), brave (too many requests)" in str(exc)
+    else:
+        raise AssertionError("no error")
+
+
+def test_searxng_that_does_not_run_is_unavailable():
+    from scout.websearch import WebSearchUnavailable
+
+    def handler(request):
+        raise httpx.ConnectError("refused")
+    try:
+        searx(handler).search("q")
+    except WebSearchUnavailable as exc:
+        assert "docker compose up -d searxng" in str(exc)
+    else:
+        raise AssertionError("no error")
+
+
+def test_the_next_back_end_searches_when_the_first_is_not_available():
+    from scout.websearch import FirstThatAnswers, WebSearchUnavailable
+
+    class Down:
+        def search(self, query, max_results=20):
+            raise WebSearchUnavailable("SearXNG does not answer")
+    client = FirstThatAnswers([Down(), Client([TEST])])
+    assert client.search("q") == [TEST] and client.search_credits == 1
+
+
+def test_a_searxng_search_costs_no_credit():
+    report, store, client, _ = run_search([SHOP, TEST, OTHER, FORUM], {TEST.url: TEST_PAGE}, extract=lambda urls: {})
+    assert report.credits == 1  # the fake client is Tavily
+    client.search_credits = 0
+    store2 = Store()
+    store2.results = None
+    from scout.websearch import search_web
+    report = search_web("q2", PRODUCTS, client, Worker(JUDGED), store2.web_store(), rerank, extract=lambda urls: {})
+    assert report.credits == 0 and "stored results" not in report.text

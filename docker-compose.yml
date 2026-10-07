@@ -11,5 +11,13 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d
+  # Web search without a paid API (decided 2026-10-07). It asks Google, Bing, DuckDuckGo and others for us.
+  searxng:
+    image: searxng/searxng:2026.9.23-783a09462
+    ports:
+      - "127.0.0.1:8888:8080"
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    restart: unless-stopped
 volumes:
   pgdata: {}

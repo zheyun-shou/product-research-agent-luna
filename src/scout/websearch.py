@@ -110,6 +110,69 @@ class TavilyClient:
         return texts
 
 
+class SearxngClient:
+    """Our own SearXNG in Docker (decided 2026-10-07): it asks Google, Bing, DuckDuckGo and other engines and gives
+    their results as JSON. No key and no credits. An engine that shows a captcha is left out by SearXNG; the
+    program never bypasses it. SearXNG gives no page texts: our own fetcher reads them."""
+    search_credits = 0
+
+    def __init__(self, url: str = "http://127.0.0.1:8888", http: httpx.Client | None = None, timeout: float = 30.0):
+        self.url, self.http = url.rstrip("/"), http or httpx.Client(timeout=timeout)
+
+    def search(self, query: str, max_results: int = RESULTS) -> list[WebResult]:
+        try:
+            response = self.http.get(f"{self.url}/search", params={"q": query, "format": "json"})
+        except httpx.HTTPError as exc:
+            raise WebSearchUnavailable(f"SearXNG does not answer ({type(exc).__name__}); start it with "
+                                       "docker compose up -d searxng") from exc
+        if response.status_code != 200:
+            raise WebSearchUnavailable(f"SearXNG gave status {response.status_code}")
+        data = response.json()
+        found, seen = [], set()
+        for r in data.get("results", []):
+            key = url_key(r.get("url") or "")
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            found.append(WebResult(r["url"], r.get("title") or "", r.get("content") or "", "",
+                                   (r.get("publishedDate") or "")[:10] or None))
+        if not found and data.get("unresponsive_engines"):
+            engines = ", ".join(f"{name} ({why})" for name, why in data["unresponsive_engines"])
+            raise WebSearchUnavailable(f"the search engines did not answer: {engines}")
+        return found[:max_results]
+
+    def extract(self, urls: list[str]) -> dict[str, str]:
+        raise WebSearchUnavailable("SearXNG gives no page texts")
+
+
+class FirstThatAnswers:
+    """The search back ends in order: the next one searches when one is not available."""
+
+    def __init__(self, clients: list):
+        self.clients = clients
+        self.search_credits = 0  # of the back end that gave the last results
+
+    def search(self, query: str, max_results: int = RESULTS) -> list[WebResult]:
+        problems = []
+        for client in self.clients:
+            try:
+                results = client.search(query, max_results)
+            except WebSearchUnavailable as exc:
+                problems.append(str(exc))
+                continue
+            self.search_credits = getattr(client, "search_credits", 1)
+            return results
+        raise WebSearchUnavailable("; ".join(problems) or "no search back end")
+
+    def extract(self, urls: list[str]) -> dict[str, str]:
+        for client in self.clients:
+            try:
+                return client.extract(urls)
+            except WebSearchUnavailable:
+                continue
+        raise WebSearchUnavailable("no back end gives page texts")
+
+
 def url_key(url: str) -> str:
     """The address without the scheme, "www." and the last slash: Tavily can give back the address in another form."""
     url = re.sub(r"^https?://(www\.)?", "", url.strip(), flags=re.IGNORECASE)
@@ -308,11 +371,11 @@ def search_web(question: str, products: list[ProductRef], client: TavilyClient, 
     """`extract(urls)` gets the text of the relevant pages that came without it: our own fetcher, free. Without it
     Tavily Extract gets them, for credits."""
     results = store.stored(question)
-    credits = 0
+    credits, stored = 0, results is not None
     if results is None:
         results = client.search(question)
-        credits = 1
-    head = f"Web search '{question}'" + (" (stored results of the last 7 days)" if not credits else "")
+        credits = getattr(client, "search_credits", 1)  # Tavily 1, SearXNG 0
+    head = f"Web search '{question}'" + (" (stored results of the last 7 days)" if stored else "")
     if not results:
         store.save_search(question, [p.listing_id for p in products], [])
         return WebReport(f"{head}: no pages found.", 0, credits)

@@ -182,7 +182,16 @@ Decisions of 2026-10-07 on the search back end:
 - The product joins a stored product with the same GTIN, or with the same brand and model. Spaces and hyphens in the model do not count. This also applies to amazon.se products now. A review with the same text as a stored review of the product in another shop is left out. The author of a review is never kept.
 - I decided on 2026-10-07 that a product from another shop can be a pick. Its floors: its own `read_page` in this conversation counts as its shop search (not for the amazon.se picks); the reviews on its page count as its reviews; the live check opens its page again. With a budget, its price must be in SEK, because Python does not convert currencies; Luna can tell the shopper the price with a stated rate. A page with product data but no price (a test or a blog) is not stored as a shop listing. A link that leads to amazon.se goes to `search_shop`.
 - Real check (2026-10-07, plain requests, no model, no cost). NetOnNet: title, brand, model, GTIN, price and stock from the page data; the price is in `priceSpecification`, next to the old price, which the reader leaves out. Elgiganten: the same fields; the specifications (height 192.1 cm, noise 41 dB) are in the page text. Power: the page data has the price and the rating, but the page is built with JavaScript, so the browser must open it for the specifications. The search pages of Elgiganten and Power need JavaScript; the product pages come from `search_web`.
-- Not done yet: a real `read_page` turn with the worker (it needs OpenRouter credit), and SearXNG.
+- Not done yet: a real `read_page` turn with the worker (it needs OpenRouter credit).
+
+**Part 3 built on 2026-10-07: SearXNG as the first search back end.**
+
+- SearXNG runs in Docker next to Postgres (`docker compose up -d searxng`), image `searxng/searxng:2026.9.23-783a09462`, settings in `searxng/settings.yml`. It listens only on 127.0.0.1:8888, with the JSON format on. It asks Google, Bing, DuckDuckGo, Brave and other engines and gives their results. No key and no credits.
+- `web_client()` gives the back ends in order: SearXNG first (`SEARXNG_URL`, by default the Docker service), then Tavily when `TAVILY_API_KEY` is set. When one is not available, the next one searches. `WEB_SEARCH=searxng`, `tavily` or `off` chooses.
+- An engine that shows a captcha or limits the requests is left out by SearXNG. The program never bypasses it. When no engine answers, the search is not available, and the tool tells Luna.
+- SearXNG gives only the short parts, so our own fetcher reads the text of every relevant page.
+- Real check (2026-10-07, no model): "Gorenje RK4182PS4 test" gave 20 results through Google (DuckDuckGo showed a captcha and Brave refused, so SearXNG left them out). Our fetcher read the text of 6 of 6 pages (testberichte.de, testbericht.de, testsieger.de, coolblue.de, tretti.se, appareils-menagers.net) in 2.6 s.
+- The system prompt now tells Luna to look for a model that a test praises: `search_shop` with its brand and model, and `search_web` with the model and a word such as pris or köp for the pages of other shops. Such a model may not be sold in Sweden; then Luna says so (my request, 2026-10-07).
 
 Findings from before the decision (2026-10-06): a Google search by the program is not an option (no automated searches, captchas). The YouTube Data API does not give transcripts. Brave Search needs a card.
 

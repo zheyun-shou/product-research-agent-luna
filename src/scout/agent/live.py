@@ -140,19 +140,31 @@ def live_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, k: int =
 
 
 def web_client():
-    """The Tavily client when TAVILY_API_KEY is set, else None (then the loop has no search_web)."""
+    """The web search back ends (decided 2026-10-07): our own SearXNG first (SEARXNG_URL, by default the Docker
+    service on this computer), then Tavily when TAVILY_API_KEY is set. WEB_SEARCH=tavily or WEB_SEARCH=searxng uses
+    only that one, WEB_SEARCH=off none."""
     import os
 
-    from scout.websearch import TavilyClient
+    from scout.websearch import FirstThatAnswers, SearxngClient, TavilyClient
+    choice = os.environ.get("WEB_SEARCH", "").strip().lower()
+    if choice == "off":
+        return None
+    clients = []
+    if choice in ("", "searxng"):
+        clients.append(SearxngClient(os.environ.get("SEARXNG_URL") or "http://127.0.0.1:8888"))
     key = os.environ.get("TAVILY_API_KEY")
-    return TavilyClient(key) if key else None
+    if key and choice in ("", "tavily"):
+        clients.append(TavilyClient(key))
+    if not clients:
+        return None
+    return clients[0] if len(clients) == 1 else FirstThatAnswers(clients)
 
 
 def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_embedder=BgeM3Embedder,
               web="env"):
     """The dependencies of the agent loop (agent/loop.py): the same stores, browser and checks as the pipeline.
     make_embedder: a run with many conversations gives one that returns the same embedder, so bge-m3 loads once.
-    web: a Tavily client, None for no web search, or "env" for the key in the environment."""
+    web: a search client, None for no web search, or "env" for the back ends of web_client()."""
     from datetime import datetime, timedelta, timezone
 
     from scout.db.store import save_web_chunks, save_web_search, stored_web_results, web_searched, web_texts

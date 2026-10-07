@@ -1,0 +1,18 @@
+# SearXNG for product-scout: a local search back end (decided 2026-10-07). Only this computer can reach it.
+use_default_settings: true
+
+server:
+  # The secret signs the cookies of the web page. The service listens only on 127.0.0.1.
+  secret_key: "product-scout-local-only"
+  limiter: false
+  image_proxy: false
+  public_instance: false
+
+search:
+  safe_search: 0
+  formats:
+    - html
+    - json
+
+general:
+  instance_name: "product-scout"

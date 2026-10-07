@@ -18,7 +18,7 @@ product-scout is a conversational agent. It helps to select products in any cate
 ## Environment
 
 - conda env `product-scout` (Python 3.10). Install with `uv pip install -e ".[dev]"`.
-- Postgres + pgvector in Docker. Start it with `docker compose up -d`.
+- Postgres + pgvector and SearXNG (web search) in Docker. Start them with `docker compose up -d`.
 - Run the tests with `python -m pytest`. Tests with the mark `db` need the container.
 
 ## Rules
