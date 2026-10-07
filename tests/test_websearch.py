@@ -8,7 +8,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from scout.agent.loop import Claim, Pick, ReadReviews, SearchWeb, ShowPicks, UpdateNeeds, build_agent_graph
 from scout.llm.client import LLMUnavailable
 from scout.websearch import (MAX_CHAT_PARTS, PageJudgement, Part, ProductRef, TavilyClient, WebResult,
-                             WebSearchUnavailable, WebStore, choose_parts, search_web, url_ref)
+                             WebSearchUnavailable, WebStore, choose_parts, search_web, topic_question, url_ref)
 from tests.fakes import FakeLLM
 from tests.test_loop import NEEDS, Shop, run
 
@@ -18,7 +18,7 @@ TEST = WebResult("https://www.testsite.se/kyl", "Test av kylskåp 2026", "Gorenj
 FORUM = WebResult("https://forum.example.com/t/1", "Vilken kyl?", "Tråd", "Min Gorenje RK4182PS4 är tyst.")
 SHOP = WebResult("https://www.elgiganten.se/product/1", "Gorenje RK4182PS4", "Köp", "Pris 5990 kr.")
 OTHER = WebResult("https://site.se/", "Recept", "Kakor", "Text om kakor.")
-PRODUCTS = [ProductRef(2, "Gorenje RK4182PS4 kyl/frys", "RK4182PS4"), ProductRef(3, "Bomann KG 320", "KG 320")]
+PRODUCTS = [ProductRef(2, "Gorenje RK4182PS4 kyl/frys", "RK4182PS4", "Gorenje"), ProductRef(3, "Bomann KG 320", "KG 320", "Bomann")]
 NOT = PageJudgement(kind="other", relevant=False, reason="about cakes")
 JUDGED = {
     TEST.url: PageJudgement(kind="test", relevant=True, about=[2, 3, 9]),
@@ -91,25 +91,48 @@ def test_the_worker_judges_the_short_parts_and_the_relevant_pages_are_extracted(
     assert chunk.kind == "test" and chunk.ref == url_ref(TEST.url) + " 1" and chunk.meta["published"] == "2025-03-08"
 
 
-def test_the_parts_above_the_threshold_go_to_the_chat_model_with_their_neighbours():
+def test_the_best_parts_go_to_the_chat_model_with_their_neighbours():
     page = "\n\n".join(["Gorenje RK4182PS4 i test.", FILLER, FILLER, "Vi mätte ljudnivån till 39 dB i vårt labb.",
                         FILLER, FILLER, "Bomann KG 320 är billigare men låter mer."])
-    report, *_ = run_search([TEST, FORUM, SHOP], {TEST.url: page})
+    report, *_ = run_search([TEST, FORUM, SHOP], {TEST.url: page}, top=2)
     text = report.text
     assert "[web page 1] testsite.se, test, about id 2, 3, published 2025-03-08" in text
-    assert "(score 0.90) Vi mätte ljudnivån till 39 dB i vårt labb." in text
-    assert "(score 0.90) Min Gorenje RK4182PS4 är tyst." in text
+    assert "(best part 1) Vi mätte ljudnivån till 39 dB i vårt labb." in text
+    assert "(best part 2) Min Gorenje RK4182PS4 är tyst." in text
     assert "Lorem ipsum" in text  # the parts before and after the hit
-    assert "Bomann KG 320 är billigare" not in text  # two parts away from the hit, and below the threshold
+    assert "Bomann KG 320 är billigare" not in text  # two parts away from the hit, and not among the best
+    assert "answer 'ljudnivå' best" in text  # the brand and the model are not in the question of the reranker
     assert "- elgiganten.se, shop, about id 2, published not known: Gorenje RK4182PS4" in text
     assert "not relevant, only a price" in text
 
 
-def test_choose_parts_stops_at_the_limit_and_keeps_the_page_order():
-    parts = [Part(0, n, f"p{n}", 0.9 if n in (1, 5) else 0.1) for n in range(8)]
-    assert [p.n for p in choose_parts(parts)] == [0, 1, 2, 4, 5, 6]
-    assert [p.n for p in choose_parts(parts, limit=4)] == [0, 1, 2]
+def test_choose_parts_takes_the_best_by_rank_until_the_limit_in_the_page_order():
+    parts = [Part(0, n, f"p{n}", {1: 0.9, 5: 0.8}.get(n, 0.1 - n / 100)) for n in range(8)]
+    chosen = choose_parts(parts, top=2)
+    assert [p.n for p in chosen] == [0, 1, 2, 4, 5, 6] and [p.rank for p in chosen] == [None, 1, None, None, 2, None]
+    assert [p.n for p in choose_parts(parts, top=2, limit=4)] == [0, 1, 2]
+    assert len(choose_parts(parts, top=1)) == 3
     assert MAX_CHAT_PARTS == 40
+
+
+def test_the_question_of_the_reranker_has_no_brand_and_no_model():
+    gorenje = [ProductRef(2, "Gorenje kyl", "RK4182PS4", "Gorenje")]
+    assert topic_question("Gorenje RK 4182 PS4 test buller", gorenje) == "test buller"
+    assert topic_question("gorenje rk4182ps4 är den tyst?", gorenje) == "är den tyst?"
+    assert topic_question("Bomann KG320XL ljud", []) == "Bomann ljud"  # a model number without a product
+    assert topic_question("RK4182PS4", gorenje) == "RK4182PS4"  # nothing left: the question as it is
+
+
+def test_want_ranks_the_parts_in_place_of_the_search_words():
+    seen = []
+
+    def spy(question, texts):
+        seen.append(question)
+        return rerank(question, texts)
+    store = Store()
+    search_web("Gorenje RK4182PS4 test", PRODUCTS, Client([FORUM]), Worker(JUDGED), store.web_store(), spy,
+               want="is it quiet")
+    assert seen == ["is it quiet"]
 
 
 def test_a_relevant_page_whose_text_tavily_cannot_get():
@@ -182,7 +205,7 @@ class WebShop(Shop):
         deps.web_texts = lambda ids: {i: self.quotes[i] for i in ids if i in self.quotes}
         return deps
 
-    def search_web(self, question, ids, max_pages):
+    def search_web(self, question, ids, max_pages, want=""):
         if self.down:
             raise WebSearchUnavailable(self.down)
         self.web_calls.append((question, ids, max_pages))

@@ -45,9 +45,11 @@ How to work:
   pages or search with other words when the stored and the new candidates are weak or too few.
 - Look things up before you guess: read_product, search_text, read_images, find_missing.
 - Read the buyers' reviews of the products that you want to recommend (read_reviews, then summarize_reviews).
-- Search the web for tests and forum views of the products that you want to recommend (search_web with their ids
-  and their model or name, and words such as test, recension, review). Without ids, search_web finds which models
-  testers recommend; then look for them with search_shop.
+- Search the web for tests and forum views of the products that you want to recommend (search_web with their ids).
+  Use short search words: the brand and model and one word such as test, recension, Testbericht, anmeldelse or
+  review. A long question in a sentence finds manuals and shops. Put what you want to learn in want (for example
+  "is it quiet"): it chooses the parts of the pages that you get. Without ids, search_web finds which models testers
+  recommend; then look for them with search_shop.
 - Say clearly when data is missing, doubtful or in conflict, and what you did about it. You can leave out a
   candidate whose data cannot be right; say why.
 - show_picks gives the final picks, best first. Usually 5. Fewer when fewer fit well; then say why.
@@ -93,11 +95,14 @@ class SearchShop(BaseModel):
 
 class SearchWeb(BaseModel):
     """Search the web (Tavily). The worker judges each found page (test, forum, shop; relevant or not). You get the
-    parts of the relevant pages that answer the question best, with their address and date. Ask a clear question:
-    the parts are chosen by it. Give the ids of the products that the search is for: the test and forum pages about
-    them are stored, so search_text finds them later."""
+    parts of the relevant pages that answer the question best, with their address and date. The parts are ranked
+    by the search words without the brand and the model. Give the ids of the products that the search is for: the
+    relevant pages about them are stored, so search_text finds them later."""
     question: str = Field(description="The search words, for example the model and 'test'. Any language")
     ids: list[int] = Field(default_factory=list, description="Product ids that the search is for, at most 5")
+    want: str = Field("", description="What you want to learn from the pages, for example 'is it quiet' or "
+                                      "'problems after a year'. It ranks the parts of the text. Empty: the search "
+                                      "words without the brand and the model")
 
 
 class FindProducts(BaseModel):
@@ -119,7 +124,8 @@ class SearchText(BaseModel):
     """Search the stored text of many products at once and give the 10 best matching parts."""
     question: str
     ids: list[int] = Field(default_factory=list, description="Product ids, or empty for all of the category")
-    kinds: list[Literal["specs", "description", "review", "test", "forum"]] = Field(default_factory=list)
+    kinds: list[Literal["specs", "description", "review", "test", "forum", "shop", "other"]] = Field(
+        default_factory=list, description="test, forum, shop and other are web pages")
 
 
 class ReadImages(BaseModel):
@@ -221,8 +227,8 @@ class LoopDeps:
     read_reviews: Callable[[list[int]], tuple[str, int, list[int]]] | None = None
     reviews_read: Callable[[list[int]], set[int]] = lambda ids: set()  # listings with a recent complete read
     summarize: Callable[[CategoryProfile, list[int], str], str] | None = None
-    # (question, listing ids, at most this many pages) -> (report, pages read); raises WebSearchUnavailable
-    search_web: Callable[[str, list[int], int], tuple[str, int]] | None = None
+    # (search words, listing ids, at most this many pages, what to learn) -> (report, pages); raises WebSearchUnavailable
+    search_web: Callable[[str, list[int], int, str], tuple[str, int]] | None = None
     web_searched: Callable[[list[int]], set[int]] = lambda ids: set()  # listings with a web search, last 7 days
     web_texts: Callable[[list[int]], dict[int, str]] | None = None  # the stored web pages of each product
     say: Callable[[str], None] = print
@@ -524,7 +530,8 @@ class Toolbox:
         cards, unknown = self.cards(call.ids[:5])
         self.deps.say(f"Searching the web for '{call.question}'.")
         try:
-            report, pages = self.deps.search_web(call.question, [c.listing_id for c in cards], max(left, 0))
+            report, pages = self.deps.search_web(call.question, [c.listing_id for c in cards], max(left, 0),
+                                                 call.want)
         except WebSearchUnavailable as exc:
             # The floor does not ask for web searches that cannot be made now
             self.used["web_unavailable"] = str(exc)

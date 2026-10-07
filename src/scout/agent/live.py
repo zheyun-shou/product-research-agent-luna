@@ -281,10 +281,10 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
             loaded_reranker.append(BgeReranker())
         return loaded_reranker[0](question, texts)
 
-    def search_web(question, ids, max_pages):
+    def search_web(question, ids, max_pages, want=""):
         cards = load_cards_by_ids(conn, ids)
-        products = [ProductRef(c.listing_id, c.title, c.model) for c in cards]
-        report = run_web_search(question, products, client, llm, web_store, reranker, max_pages)
+        products = [ProductRef(c.listing_id, c.title, c.model, c.brand) for c in cards]
+        report = run_web_search(question, products, client, llm, web_store, reranker, max_pages, want=want)
         conn.commit()
         return report.text, report.pages
 

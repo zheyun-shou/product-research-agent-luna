@@ -7,17 +7,21 @@ The steps (Zheyun, 2026-10-07):
    the given products it is about.
 3. The text of the relevant pages that came without text is fetched with Tavily Extract (one credit for each 5
    pages that it gets).
-4. The text is cut into parts. A local reranker scores each part against the question. The parts above THRESHOLD
-   go to the chat model, best first, with the part before and the part after, up to MAX_CHAT_PARTS.
-5. The relevant test and forum pages about a given product are stored as chunks of that product. Pages that are
-   not relevant keep only their title, address and short part.
+4. The text is cut into parts. A local reranker scores each part against the question without the brands and the
+   models of the given products. The TOP_PARTS best parts go to the chat model, each with the part before and the
+   part after, up to MAX_CHAT_PARTS.
+5. The relevant pages about a given product are stored as chunks of that product. Pages that are not relevant keep
+   only their title, address and short part.
 
-The idea of a score threshold on the parts comes from GPT Researcher (its context filter); the cross-encoder in place
-of the cosine of an embedding comes from a test on 2026-10-07 (scout.text.rerank).
+Why the rank and not a score threshold (the context filter of GPT Researcher): in a test on 2026-10-07, with the
+model name in the question nearly all parts of a page about the product scored above 0.9, menus too. Without it all
+scores were below 0.07, but the order was good (buyer reviews that say "very loud" and "very quiet" came first). The
+cross-encoder in place of the cosine of an embedding comes from the same test (scout.text.rerank).
 """
 import contextvars
 import hashlib
 import math
+import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from typing import Callable, Literal
@@ -34,10 +38,9 @@ RESULTS = 20  # pages for each search (Zheyun, 2026-10-06); one credit for any n
 STORED_CHARS = 30_000  # of one page
 PART_TOKENS = 250  # the parts that the reranker scores, about 1,000 characters as in GPT Researcher
 PART_OVERLAP = 25
-THRESHOLD = 0.5  # reranker score from 0 to 1; first value from the test of 2026-10-07
+TOP_PARTS = 15  # the best parts of one search, by the rank of the reranker
 MAX_CHAT_PARTS = 40  # parts for the chat model in one search, the parts before and after included (~10,000 tokens)
 READ_WORKERS = 10
-WEB_KINDS = ("test", "forum")
 
 
 class WebSearchUnavailable(RuntimeError):
@@ -132,10 +135,25 @@ class PageJudgement(BaseModel):
 
 @dataclass
 class ProductRef:
-    """A product that a search is about: its listing id, the title and the model."""
+    """A product that a search is about: its listing id, the title, the model and the brand."""
     listing_id: int
     title: str
     model: str | None = None
+    brand: str | None = None
+
+
+def topic_question(question: str, products: list[ProductRef]) -> str:
+    """The question without the brands and the models of the products, for the reranker: the pages are already
+    judged to be about these products, so the parts must be scored by what they say. A model can be written with
+    spaces or hyphens ("RK 4182 PS4"). Model numbers that the question names are taken out too."""
+    from scout.text.embed import model_numbers
+    names = {n for p in products for n in (p.model, p.brand) if n} | set(model_numbers(question))
+    text = question
+    for name in sorted(names, key=len, reverse=True):
+        letters = [re.escape(c) for c in name if not c.isspace() and c != "-"]
+        text = re.sub(r"(?<!\w)" + r"[\s-]?".join(letters) + r"(?!\w)", " ", text, flags=re.IGNORECASE)
+    text = " ".join(text.split())
+    return text if len(text) >= 3 else question
 
 
 @dataclass
@@ -193,6 +211,7 @@ class Part:
     n: int  # place in the page
     text: str
     score: float = 0.0
+    rank: int | None = None  # 1 for the best part; None for a part that comes only as a neighbour
 
 
 def page_parts(findings: list[Finding]) -> list[Part]:
@@ -204,12 +223,13 @@ def page_parts(findings: list[Finding]) -> list[Part]:
     return parts
 
 
-def choose_parts(parts: list[Part], limit: int = MAX_CHAT_PARTS) -> list[Part]:
-    """The parts above THRESHOLD, best first, each with the part before and after it, until the limit. Returned in
-    the order of the pages."""
+def choose_parts(parts: list[Part], top: int = TOP_PARTS, limit: int = MAX_CHAT_PARTS) -> list[Part]:
+    """The top best parts, each with the part before and after it, until the limit. Returned in the order of the
+    pages."""
     by_place = {(p.page, p.n): p for p in parts}
     chosen: dict[tuple[int, int], Part] = {}
-    for hit in sorted((p for p in parts if p.score >= THRESHOLD), key=lambda p: -p.score):
+    for rank, hit in enumerate(sorted(parts, key=lambda p: -p.score)[:top], 1):
+        hit.rank = rank
         group = [by_place[k] for k in ((hit.page, hit.n - 1), (hit.page, hit.n), (hit.page, hit.n + 1))
                  if k in by_place and k not in chosen]
         if len(chosen) + len(group) > limit:
@@ -225,7 +245,7 @@ def url_ref(url: str) -> str:
 
 
 def web_chunks(product_title: str, finding: Finding) -> list[Chunk]:
-    """The text of one test or forum page, in chunks, for one product that it is about."""
+    """The text of one relevant page, in chunks, for one product that it is about."""
     r = finding.result
     meta = {"url": r.url, "title": r.title[:300], "site": r.site, "type": finding.kind, "published": r.published}
     head = f"Product: {product_title}\nWeb {finding.kind}, {r.site}, {r.published or 'date not known'}: {r.title[:200]}\n"
@@ -257,7 +277,8 @@ def page_line(finding: Finding) -> str:
 
 
 def search_web(question: str, products: list[ProductRef], client: TavilyClient, llm, store: WebStore,
-               rerank: Callable[[str, list[str]], list[float]], max_pages: int = RESULTS) -> WebReport:
+               rerank: Callable[[str, list[str]], list[float]], max_pages: int = RESULTS,
+               top: int = TOP_PARTS, want: str = "") -> WebReport:
     results = store.stored(question)
     credits = 0
     if results is None:
@@ -281,35 +302,36 @@ def search_web(question: str, products: list[ProductRef], client: TavilyClient, 
                       + results[len(todo):])
     titles = {p.listing_id: p.title for p in products}
     for f in findings:
-        if f.relevant and f.result.raw and f.kind in WEB_KINDS:
+        if f.relevant and f.result.raw:
             for listing_id in f.about:
                 store.save_chunks(listing_id, f.result.url, web_chunks(titles[listing_id], f))
     parts = page_parts(findings)
-    for part, score in zip(parts, rerank(question, [f"Page: {findings[p.page].result.title}\n{p.text}"
-                                                    for p in parts])):
+    topic = want.strip() or topic_question(question, products)
+    for part, score in zip(parts, rerank(topic, [f"Page: {findings[p.page].result.title}\n{p.text}" for p in parts])):
         part.score = score
-    chosen = choose_parts(parts)
+    chosen = choose_parts(parts, top)
     relevant = [i for i, f in enumerate(findings) if f.relevant]
     lines = [f"{head}: {len(results)} pages found, {len(todo)} judged by the worker, {len(relevant)} relevant. "
-             f"{len(chosen)} parts of their text answer the question best (a score from 0 to 1, above "
-             f"{THRESHOLD}; the parts before and after come with them)."]
-    best = {}
+             f"The {sum(p.rank is not None for p in chosen)} parts of their text that answer '{topic}' best, "
+             "ranked by a reranker, with the part before and after each."]
+    best: dict[int, int] = {}  # page -> the rank of its best part
     for p in chosen:
-        best[p.page] = max(best.get(p.page, 0.0), p.score)
-    for n, page in enumerate(sorted(best, key=lambda i: -best[i]), 1):
+        if p.rank is not None:
+            best[p.page] = min(best.get(p.page, p.rank), p.rank)
+    for n, page in enumerate(sorted(best, key=lambda i: best[i]), 1):
         lines += ["", f"[web page {n}] {page_line(findings[page])}"]
         last = None
         for p in (p for p in chosen if p.page == page):
             if last is not None and p.n != last + 1:
                 lines.append("[...]")
-            lines.append((f"(score {p.score:.2f}) " if p.score >= THRESHOLD else "") + p.text)
+            lines.append((f"(best part {p.rank}) " if p.rank is not None else "") + p.text)
             last = p.n
     others = [i for i in range(len(findings)) if i not in best]
     if others:
         lines += ["", "The other pages:"]
         for i in others:
             f = findings[i]
-            why = f.error or ("relevant; no part was above the threshold" if f.relevant and f.result.raw else
+            why = f.error or ("relevant; no part was among the best" if f.relevant and f.result.raw else
                               "relevant; Tavily could not get its text" if f.relevant else
                               "not relevant" + (f", {f.reason}" if f.reason else ""))
             lines.append(f"- {page_line(f)}: {why}")
