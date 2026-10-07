@@ -52,10 +52,6 @@ def challenge(page: RawPage) -> bool:
     return page.status in REFUSED or len(visible_text(page.html)) < 2_000
 
 
-def has_product_data(html: str) -> bool:
-    return bool(re.search(r"application/ld\+json", html, re.IGNORECASE))
-
-
 @dataclass
 class Fetched:
     page: RawPage | None
@@ -107,8 +103,8 @@ class PageFetcher:
             finally:
                 self._last[site] = self._clock()
             problem = self.problem(page)
-            weak = page is not None and not problem and len(visible_text(page.html)) < MIN_TEXT \
-                and not has_product_data(page.html)
+            # Shops that build the page with JavaScript give only the page data (Power, 2026-10-07), without the sizes
+            weak = page is not None and not problem and len(visible_text(page.html)) < MIN_TEXT
             if (problem and problem != GONE) or weak:
                 if use_browser and self.browser is not None:
                     self._wait(site)

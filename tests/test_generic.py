@@ -33,9 +33,10 @@ def test_the_reviews_never_keep_the_author():
     assert "Anna" not in str(rec.reviews) and "Bo" not in str(rec.reviews)
 
 
-def test_the_page_text_has_the_main_text_and_the_table():
+def test_the_page_text_has_the_main_text_and_the_table_but_not_the_menu():
     rec, _ = read_generic(page(HTML))
-    assert "NoFrost" in rec.text and "180 cm" in rec.text and "60 cm" in rec.text
+    assert "NoFrost" in rec.text and "Höjd\n180 cm" in rec.text and "Bredd\n60 cm" in rec.text
+    assert "Meny" not in rec.text and "application/ld+json" not in rec.text
 
 
 def test_a_page_without_product_data():
@@ -70,3 +71,13 @@ def test_gtin_forms():
     assert gtin_of({"gtin": "3838782123456"}) == "03838782123456"
     assert gtin_of({"gtin12": "012345678905"}) == "00012345678905"
     assert gtin_of({"gtin13": "12-34"}) is None
+
+
+def test_a_price_specification_without_the_old_price():
+    html = """<script type="application/ld+json">{"@type": "Product", "name": "X", "offers": {"@type": "Offer",
+      "availability": "InStock", "priceSpecification": [
+        {"@type": "UnitPriceSpecification", "priceType": "https://schema.org/StrikethroughPrice", "price": "1499.00",
+         "priceCurrency": "SEK"},
+        {"@type": "UnitPriceSpecification", "priceCurrency": "SEK", "price": "1190.00"}]}}</script>"""
+    rec, _ = read_generic(page(html))
+    assert (rec.price, rec.currency) == (Decimal("1190.00"), "SEK")

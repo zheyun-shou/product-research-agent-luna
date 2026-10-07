@@ -52,13 +52,14 @@ def test_a_refused_request_opens_the_browser():
     assert opened == ["https://shop.se/1"] and got.via == "browser" and got.problem == ""
 
 
-def test_a_page_without_text_opens_the_browser_but_a_page_with_product_data_does_not():
+def test_a_page_without_text_opens_the_browser_also_with_product_data():
     opened = []
     browser = lambda url: opened.append(url) or browser_page(url)  # noqa: E731
     fetcher(lambda r: httpx.Response(200, html="<html><div id=app></div></html>"), browser).fetch("https://a.se/1")
     data = '<html><script type="application/ld+json">{"@type": "Product"}</script></html>'
     fetcher(lambda r: httpx.Response(200, html=data), browser).fetch("https://b.se/1")
-    assert opened == ["https://a.se/1"]
+    fetcher(lambda r: httpx.Response(200, html=TEXT), browser).fetch("https://c.se/1")
+    assert opened == ["https://a.se/1", "https://b.se/1"]
 
 
 def test_a_captcha_stops_the_read():

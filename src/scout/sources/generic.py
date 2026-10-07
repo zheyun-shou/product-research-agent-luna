@@ -13,6 +13,7 @@ from scout.sources.base import ProductRecord, RawPage
 
 MAX_REVIEWS = 30
 MAX_TEXT = 30_000
+OLD_PRICES = {"StrikethroughPrice", "ListPrice", "SRP", "MSRP"}  # schema.org price types that are not the price now
 
 
 def _types(item: dict) -> set[str]:
@@ -87,6 +88,14 @@ def _offer(product: dict) -> dict:
                       offers[0] if offers else {})
     if not isinstance(offers, dict):
         return {}
+    specs = offers.get("priceSpecification") or []
+    specs = specs if isinstance(specs, list) else [specs]
+    if offers.get("price") in (None, "") and specs:  # NetOnNet: the price now, and the old price struck through
+        now = [s for s in specs if isinstance(s, dict) and s.get("price") not in (None, "")
+               and (_text(s.get("priceType")) or "").rsplit("/", 1)[-1] not in OLD_PRICES]
+        if now:
+            return {**offers, "price": now[0]["price"],
+                    "priceCurrency": offers.get("priceCurrency") or now[0].get("priceCurrency")}
     if "AggregateOffer" in _types(offers) and offers.get("price") in (None, ""):
         inner = offers.get("offers")
         if isinstance(inner, list) and inner and isinstance(inner[0], dict):
@@ -167,8 +176,26 @@ def gtin_of(product: dict) -> str | None:
     return None
 
 
+NOT_CONTENT = ["script", "style", "noscript", "template", "svg", "nav", "header", "footer", "aside", "iframe"]
+
+
+def shop_text(html: str) -> str:
+    """The visible text of a shop page without the menus, the header and the footer, one block on a line. The
+    specifications of shops are in tables and lists that an article extractor drops (Elgiganten, 2026-10-07)."""
+    soup = BeautifulSoup(html, "lxml")
+    for tag in soup(NOT_CONTENT):
+        tag.decompose()
+    lines, last = [], None
+    for line in soup.get_text("\n").splitlines():
+        line = " ".join(line.split())
+        if line and line != last:
+            lines.append(line)
+            last = line
+    return "\n".join(lines)[:MAX_TEXT]
+
+
 def page_text(html: str, url: str) -> str:
-    """The main text of a page, without the menus. trafilatura keeps the tables (the specifications)."""
+    """The main text of an article (a test, a forum page), without the menus, through trafilatura."""
     import trafilatura
     text = trafilatura.extract(html, url=url, include_tables=True, include_comments=False, favor_recall=True)
     return (text or "")[:MAX_TEXT]
@@ -191,7 +218,7 @@ def read_generic(page: RawPage) -> tuple[ProductRecord, list[str]]:
     offer = _offer(product)
     rating, count = _rating(product)
     sku = _text(product.get("sku")) or _text(offer.get("sku"))
-    text = page_text(page.html, page.final_url)
+    text = shop_text(page.html)
     description = _text(product.get("description")) or ""
     rec = ProductRecord(
         source=site_of(url), source_id=sku or urlparse(url).path or url, url=url, fetched_at=page.fetched_at,
