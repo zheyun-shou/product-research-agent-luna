@@ -47,7 +47,7 @@ class LazyBrowser:
 
 def shared_deps(conn, llm, crawl, refetch, k: int = 5, size_check: bool = True, find_missing: bool = True,
                 write_opinions: bool = True, **rest) -> Deps:
-    """The parts of the dependencies that scout chat and scout eval-chat share, so both run the same picks.
+    """The parts of the dependencies of the picks pipeline (scout chat --pipeline).
 
     `refetch(profile)` gives the function that rechecks one card. `rest` holds the elimination store, say and tracer.
     Without `find_missing`, the picks do not look for missing condition values in the stored text. Without

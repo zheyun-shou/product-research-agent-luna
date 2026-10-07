@@ -236,6 +236,8 @@ A profile of the shopper: likes, dislikes (with the reasons from removed picks) 
 
 Method of InteRecAgent: take one stored product as the hidden target. A cheap model plays a shopper whose wishes come from the attributes and reviews of that product. It talks with the agent for at most 5 turns. Metrics: hit@5 (the target is in the picks) and the mean number of turns. This measures if the agent finds a product that fits the wishes, not if the product is the best. The run uses paid models, so I say when.
 
+On 2026-10-07 I removed `scout eval-chat` and its 24 scripts. They checked the routes of the fixed pipeline, and the agent loop has no fixed routes. `scout eval-hidden` replaces them. The grader (`scout grade`, `scout check-grader`) and the saved results of the earlier runs stay.
+
 ### Later, with Task 9
 
 One researcher for each pick searches the web at the same time, and a cheap model makes the found pages short, with their URLs. This is the "conduct research" tool of open_deep_research.

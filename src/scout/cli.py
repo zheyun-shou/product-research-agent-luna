@@ -25,7 +25,6 @@ from scout.db.conn import connect, connect_checkpoints, empty_tables, end_transa
 from scout.db.store import save_page_text, save_record
 from scout.extract.page import enrich_record
 from scout.extract.screen import screen_titles
-from scout.eval.chat import load_scripts, offline_deps, run_scripts, summarize, summary_text
 from scout.eval.grade import check_grader, good_enough, grade_results, grade_turn, grades_text
 from scout.eval.hidden import LIMITS, MAX_SHOPPER_TURNS, load_targets, run_target
 from scout.eval.hidden import summarize as summarize_hidden
@@ -485,54 +484,6 @@ def threads(limit: int = 20) -> None:
         typer.echo(f"{row['thread_id']}  last turn {row['last'][:16]} UTC")
 
 
-@app.command("eval-chat")
-def eval_chat(
-    scripts: Path = ROOT / "eval" / "chat" / "conversations.yaml",
-    chat: Optional[str] = typer.Option(None, help="provider:model for the chat role, for example "
-                                                  "nvidia:nvidia/nemotron-3-ultra-550b-a55b"),
-    rpm: int = 10,
-    only: Optional[str] = typer.Option(None, help="run only the scripts with these ids, separated by commas"),
-    k: int = 5,
-) -> None:
-    """Run the scripted conversations over the stored products, and save the numbers. No browser opens."""
-    settings = load_settings()
-    config = load_llm_config()
-    if chat:
-        provider, model = chat.split(":", 1)
-        config.roles["chat"] = RoleConfig(provider=provider, model=model, rpm=rpm)
-    config.roles["chat"].fallback = None  # one chat model for each run, so the numbers belong to it
-    all_scripts = load_scripts(scripts)
-    unknown = set(only.split(",")) - {s.id for s in all_scripts} if only else set()
-    try:  # a wrong provider, a missing key or a wrong script id must stop the run before it saves numbers
-        config = LLMConfig.model_validate(config.model_dump())
-        llm = LLM(config)
-        for role in ("chat", "worker"):
-            llm.client(config.roles[role].provider)
-        if unknown:
-            raise ValueError(f"no scripts with the ids {sorted(unknown)}")
-    except (ValueError, RuntimeError) as exc:
-        typer.echo(f"Cannot run: {exc}")
-        raise typer.Exit(1)
-    todo = [s for s in all_scripts if only is None or s.id in only.split(",")]
-    with connect(settings.database_url) as conn:
-        deps, searches = offline_deps(conn, llm, k)
-        records = run_scripts(todo, deps, searches, llm, typer.echo, after_turn=lambda: end_transaction(conn))
-    summary = {"chat_model": llm.model_for("chat"), "worker_model": llm.model_for("worker"),
-               "run_at": datetime.now(timezone.utc).isoformat(), **summarize(records)}
-    slug = re.sub(r"[^\w.-]", "_", llm.model_for("chat"))  # "a/b:free" is not a file name on Windows
-    out = ROOT / "eval" / "results" / f"chat-{slug}-{datetime.now():%Y%m%d-%H%M}.json"
-    out.write_text(json.dumps({"summary": summary, "turns": records}, indent=2, ensure_ascii=False), encoding="utf-8")
-    for record in records:
-        for check in record["checks"]:
-            if not check["ok"]:
-                typer.echo(f"{record['script']} turn {record['turn']}: {check['check']} expected "
-                           f"{check['expected']}, got {check['actual']}")
-        if record["error"]:
-            typer.echo(f"{record['script']} turn {record['turn']}: error {record['error']}")
-    typer.echo(summary_text(summary))
-    typer.echo(f"saved {out}")
-
-
 def judge_llm(judge: Optional[str]) -> LLM:
     """The LLM with the judge role from models.yaml, or from --judge provider:model. Stops when it cannot run."""
     load_settings()  # reads .env, which has the API keys
@@ -558,7 +509,7 @@ def grade(
     judge: Optional[str] = typer.Option(None, help="provider:model for the grader, for example "
                                                    "openrouter:deepseek/deepseek-v4-flash"),
 ) -> None:
-    """Grade the replies of a saved eval-chat results file. Writes <name>-graded.json next to it."""
+    """Grade the replies of a saved results file of scripted turns. Writes <name>-graded.json next to it."""
     llm = judge_llm(judge)
     data = grade_results(llm, json.loads(results.read_text(encoding="utf-8")), typer.echo)
     out = results.with_name(f"{results.stem}-graded.json")
