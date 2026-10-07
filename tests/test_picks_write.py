@@ -117,8 +117,10 @@ def test_product_codes_are_names_not_claims():
     from decimal import Decimal
 
     from scout.picks.write import unchecked_numbers
-    text = "The Bomann KG 320 and the FOHERE BC-46 or RCD93BL2 are 50 cm wide; it costs SEK 5990."
-    assert unchecked_numbers(text, {Decimal("50")}) == ["5990"]
+    text = "The Bomann KG 320 and the FOHERE BC-46 or RCD93BL2 are 50 cm wide; it costs SEK 5990 or SEK5990."
+    assert unchecked_numbers(text, {Decimal("50")}, titles=["Bomann Kyl KG 320 Röd"]) == ["5990", "5990"]
+    # A spaced code that no title has is a claim: LED 300 lumen
+    assert unchecked_numbers("LED 300 lumen and IP 44", set(), titles=["Bomann Kyl KG 320 Röd"]) == ["300", "44"]
 
 
 def test_a_rounded_number_counts():

@@ -234,7 +234,11 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
 
     def same_product(listing_id, same_as):
         from scout.db.store import join_products
-        problem = join_products(conn, listing_id, same_as)
+        try:
+            problem = join_products(conn, listing_id, same_as)
+        except Exception:
+            conn.rollback()
+            raise
         conn.commit()
         return problem
 

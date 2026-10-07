@@ -135,3 +135,14 @@ def test_a_model_written_in_another_way_is_listed_and_luna_can_join_it(db):
     # The review that the amazon.se listing has already is left out of the shop page
     assert [r["text"] for r in page_texts(db, [got.listing_id])[got.listing_id]["reviews"]] == ["Dörren slår i väggen."]
     assert join_products(db, got.listing_id, 999999) == "there is no product with id 999999"
+
+
+def test_listings_of_one_shop_or_of_two_categories_are_not_joined(db):
+    from scout.db.store import join_products
+    one = save_record(db, amazon(model="A1"), "fridge")
+    two = save_record(db, amazon(model="A2").model_copy(update={"source_id": "B0GORENJE2",
+                                                                "url": "https://www.amazon.se/dp/B0GORENJE2"}), "fridge")
+    assert join_products(db, two.listing_id, one.listing_id).startswith("both are listings of amazon_se")
+    got = read_page(db, loaded(), URL, "incense", None)
+    assert join_products(db, got.listing_id, one.listing_id) == "they are in different categories"
+    assert db.execute("SELECT count(*) AS n FROM products").fetchone()["n"] == 3

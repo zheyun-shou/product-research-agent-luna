@@ -22,9 +22,11 @@ Rules:
 - Write in {language}."""
 
 SUMMARY_NUMBER = re.compile(r"\d{1,3}(?:[\u00a0\u202f ]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?")
-# Product codes such as "BC-46", "RCD93BL2" or "KG 320": their numbers are names, not claims. A currency code before
-# a number ("SEK 5990") is a price, so it stays.
-CODE = re.compile(r"\b[A-Za-z]+(?:-?\d)[\w./-]*|\b(?!(?:SEK|EUR|USD|NOK|DKK|GBP|CHF|KR)\b)[A-Z]{2,5} \d+(?:[.,]\d+)?\b")
+# Product codes such as "BC-46" or "RCD93BL2": their numbers are names, not claims. A currency before the number
+# ("SEK5990") is a price, so it stays.
+CODE = re.compile(r"\b(?!(?:SEK|EUR|USD|NOK|DKK|GBP|CHF|KR)\d)[A-Za-z]+-?\d[\w./-]*", re.IGNORECASE)
+# A code with a space ("KG 320") counts only when a title of the products has it: "LED 300" or "IP 44" are claims
+SPACED_CODE = re.compile(r"\b[A-Z]{2,5} \d+(?:[.,]\d+)?\b")
 RATING_SCALE = re.compile(r"(?:/|\bout of|\bav|\bof)\s*5\b", re.IGNORECASE)  # the "5" in "4.5/5" is not a claim
 
 
@@ -102,14 +104,17 @@ def check_claim(facts: dict[str, Decimal | str], field: str, value: str) -> tupl
     return None, number
 
 
-def unchecked_numbers(text: str, allowed: set[Decimal], models: Sequence[str | None] = ()) -> list[str]:
+def unchecked_numbers(text: str, allowed: set[Decimal], models: Sequence[str | None] = (),
+                      titles: Sequence[str | None] = ()) -> list[str]:
     """Numbers in the text that are not allowed. Model numbers, product codes and the "/5" of a rating do not count.
-    A rounded number counts when it is less than one unit of its last digit from an allowed number with more
-    decimals: 166 for 166.5, 4.5 for 4.53."""
+    A rounded number counts when it is at most half a unit of its last digit from an allowed number with more
+    decimals: 166 or 167 for 166.5, 4.5 for 4.53."""
     text = RATING_SCALE.sub("", text)
     for model in models:
         if model:
             text = re.sub(re.escape(model), "", text, flags=re.IGNORECASE)
+    named = " ".join(t.lower() for t in titles if t)
+    text = SPACED_CODE.sub(lambda m: "" if m.group(0).lower() in named else m.group(0), text)
     text = CODE.sub("", text)
     return [raw for raw in SUMMARY_NUMBER.findall(text) if (n := to_decimal(raw)) is not None
             and not is_allowed(n, allowed)]
@@ -118,8 +123,8 @@ def unchecked_numbers(text: str, allowed: set[Decimal], models: Sequence[str | N
 def is_allowed(n: Decimal, allowed: set[Decimal]) -> bool:
     if n in allowed:
         return True
-    unit = Decimal(1).scaleb(n.as_tuple().exponent)
-    return any(a.as_tuple().exponent < n.as_tuple().exponent and abs(a - n) < unit for a in allowed)
+    half = Decimal(5).scaleb(n.as_tuple().exponent - 1)
+    return any(a.as_tuple().exponent < n.as_tuple().exponent and abs(a - n) <= half for a in allowed)
 
 
 def attribute_text(entry: dict) -> str:

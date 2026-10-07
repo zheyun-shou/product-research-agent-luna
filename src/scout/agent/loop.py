@@ -352,7 +352,8 @@ def check_claims(claims: list[Claim], cards: dict[int, Card], pages: dict[int, s
                  web: dict[int, set[Decimal]] | None = None) -> tuple[list[str], set[Decimal]]:
     """A claim passes when the card has the value, or (not for the price, the rating, the review count and the
     stock) when the page text of the product shows its number. A claim with the field web passes when the stored
-    web pages about the product show its numbers; a number of the same claim can also come from its page or card."""
+    web pages about the product show its numbers; a number of the same claim can also come from the page text of the
+    product."""
     errors, numbers, pages, web = [], set(), pages or {}, web or {}
     for claim in claims:
         card = cards.get(claim.id)
@@ -361,8 +362,8 @@ def check_claims(claims: list[Claim], cards: dict[int, Card], pages: dict[int, s
             continue
         shown = numbers_in(claim.value)
         if claim.field == "web":
-            own = {v for v in card_facts(card).values() if isinstance(v, Decimal)} | pages.get(claim.id, set())
-            if shown and shown & web.get(claim.id, set()) and shown <= web.get(claim.id, set()) | own:
+            on_web = web.get(claim.id, set())
+            if shown and shown & on_web and shown <= on_web | pages.get(claim.id, set()):
                 numbers |= shown
             else:
                 errors.append(f"id {claim.id}: the web pages about this product do not show {claim.value}")
@@ -395,9 +396,10 @@ def web_of(deps: "LoopDeps", claims: list[Claim]) -> dict[int, set[Decimal]]:
     return {i: numbers_in(text) for i, text in deps.web_texts(ids).items()}
 
 
-def check_text(text: str, known: set[Decimal], models: list[str | None]) -> list[str]:
+def check_text(text: str, known: set[Decimal], cards: list[Card]) -> list[str]:
     return [f"the number {raw} has no source. Give a claim with the product id and the card field (or page, or web), put "
-            "it in derived with how you calculated it, or remove it" for raw in unchecked_numbers(text, known, models)]
+            "it in derived with how you calculated it, or remove it"
+            for raw in unchecked_numbers(text, known, [c.model for c in cards], [c.title for c in cards])]
 
 
 def check_final(call: BaseModel, state: dict, deps: LoopDeps, thread: str, used: dict | None = None) -> list[str]:
@@ -458,8 +460,7 @@ def check_facts(call: BaseModel, state: dict, deps: LoopDeps) -> list[str]:
         on_cards = {v for c in cards.values() for v in card_facts(c).values() if isinstance(v, Decimal)}
         derived = set().union(set(), *(numbers_in(d.value) for d in call.derived))
         picks = {Decimal(n) for n in range(1, len(state.get("picks", [])) + 1)}
-        errors += check_text(call.text, claimed | allowed | on_cards | derived | picks,
-                             [c.model for c in cards.values()])
+        errors += check_text(call.text, claimed | allowed | on_cards | derived | picks, list(cards.values()))
         return errors
     errors: list[str] = []
     ids = [p.id for p in call.picks]
@@ -476,15 +477,14 @@ def check_facts(call: BaseModel, state: dict, deps: LoopDeps) -> list[str]:
         # Only the facts of this pick: its card and its page text
         own = {v for v in card_facts(cards[pick.id]).values() if isinstance(v, Decimal)} | pages.get(pick.id, set())
         errors += [f"pick id {pick.id}: {e}" for e in check_text(pick.text, claimed | own | said | derived,
-                                                                [cards[pick.id].model])]
-    # The note can compare the picks with other products: its claims, and the tool reports of this turn
+                                                                [cards[pick.id]])]
+    # The note can compare the picks with other products: note_claims give the sources
     note_ids = sorted({c.id for c in call.note_claims} - set(cards))
     note_cards = {**cards, **{c.listing_id: c for c in deps.cards(note_ids)}} if note_ids else cards
     note_errors, note_claimed = check_claims(call.note_claims, note_cards,
                                              {**pages, **pages_of(deps, note_ids)}, web_of(deps, call.note_claims))
     errors += [f"note: {e}" for e in note_errors]
-    errors += check_text(call.note, said | derived | {Decimal(len(ids))} | turn_numbers(state) | note_claimed,
-                         [c.model for c in note_cards.values()])
+    errors += check_text(call.note, said | derived | {Decimal(len(ids))} | note_claimed, list(note_cards.values()))
     return errors
 
 

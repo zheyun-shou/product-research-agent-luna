@@ -84,7 +84,7 @@ def read_page(conn: psycopg.Connection, fetch: Callable[[str], Fetched], url: st
     others = conn.execute("SELECT id, source FROM listings WHERE product_id = %s AND id <> %s ORDER BY id",
                           (ids.product_id, ids.listing_id)).fetchall()
     text = report(ids.listing_id, rec, from_data, copies, others, fetched.via)
-    maybe = same_brand_listings(conn, ids.product_id) if not others else []
+    maybe = same_brand_listings(conn, ids.product_id, f"{rec.title} {rec.model or ''}") if not others else []
     if maybe:
         text += ("\nStored products of the same brand in other shops: "
                  + "; ".join(f"id {m['id']} {m['title']} ({m['source']})" for m in maybe)

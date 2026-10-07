@@ -1,4 +1,5 @@
 """Write product records and fetch logs to Postgres."""
+import re
 from dataclasses import dataclass
 
 import psycopg
@@ -228,15 +229,19 @@ def _insert_product(conn: psycopg.Connection, rec: ProductRecord, category: str)
     ).fetchone()["id"]
 
 
-def same_brand_listings(conn: psycopg.Connection, product_id: int, limit: int = 5) -> list[dict]:
-    """Listings of other products with the same brand and category, from other sources. Luna judges if one of them is
-    the same product, because shops write the model in different ways (KG 320.2, or an article number)."""
-    return conn.execute(
-        """SELECT l.id, l.source, l.title FROM listings l JOIN products p ON p.id = l.product_id
+def same_brand_listings(conn: psycopg.Connection, product_id: int, words: str, limit: int = 5) -> list[dict]:
+    """Listings of other products with the same brand and category, from other sources, most words in common with
+    `words` (the title and the model) first. Luna judges if one of them is the same product, because shops write
+    the model in different ways (KG 320.2, or an article number)."""
+    rows = conn.execute(
+        """SELECT l.id, l.source, l.title, p.model FROM listings l JOIN products p ON p.id = l.product_id
            JOIN products me ON me.id = %(p)s
            WHERE p.id <> me.id AND p.category = me.category AND lower(p.brand) = lower(me.brand)
-             AND l.source NOT IN (SELECT source FROM listings WHERE product_id = me.id)
-           ORDER BY l.id LIMIT %(n)s""", {"p": product_id, "n": limit}).fetchall()
+             AND l.source NOT IN (SELECT source FROM listings WHERE product_id = me.id)""",
+        {"p": product_id}).fetchall()
+    mine = set(re.findall(r"\w+", words.lower()))
+    rows.sort(key=lambda r: (-len(mine & set(re.findall(r"\w+", f"{r['title']} {r['model']}".lower()))), r["id"]))
+    return rows[:limit]
 
 
 def join_products(conn: psycopg.Connection, listing_id: int, same_as: int) -> str | None:
@@ -252,6 +257,15 @@ def join_products(conn: psycopg.Connection, listing_id: int, same_as: int) -> st
     old, new = rows[listing_id]["product_id"], rows[same_as]["product_id"]
     if old == new:
         return None
+    products = {r["id"]: r for r in conn.execute("SELECT id, category FROM products WHERE id = ANY(%s)",
+                                                 ([old, new],)).fetchall()}
+    if products[old]["category"] != products[new]["category"]:
+        return "they are in different categories"
+    shared = conn.execute(
+        """SELECT a.source FROM listings a JOIN listings b ON a.source = b.source
+           WHERE a.product_id = %s AND b.product_id = %s LIMIT 1""", (old, new)).fetchone()
+    if shared:
+        return f"both are listings of {shared['source']}; one shop does not list one product two times"
     moved = [r["id"] for r in conn.execute("SELECT id FROM listings WHERE product_id = %s", (old,)).fetchall()]
     conn.execute("UPDATE listings SET product_id = %s WHERE product_id = %s", (new, old))
     conn.execute("UPDATE eliminations SET product_id = %s WHERE product_id = %s", (new, old))
@@ -260,12 +274,16 @@ def join_products(conn: psycopg.Connection, listing_id: int, same_as: int) -> st
                   attributes = o.attributes || p.attributes
            FROM products o WHERE p.id = %s AND o.id = %s""", (new, old))
     conn.execute("DELETE FROM products WHERE id = %s", (old,))  # its attribute searches go with it
-    for moved_id in moved:
-        known = product_review_texts(conn, new, but=moved_id)
-        row = conn.execute("SELECT reviews FROM page_texts WHERE listing_id = %s", (moved_id,)).fetchone()
-        if row and row["reviews"]:
+    # The page reviews that another listing of the product has: the newest page loses its copy, the review pages of
+    # amazon.se (shop_reviews) keep theirs
+    for row in conn.execute("""SELECT t.listing_id, t.reviews FROM page_texts t JOIN listings l ON l.id = t.listing_id
+                               WHERE l.product_id = %s ORDER BY t.listing_id DESC""", (new,)).fetchall():
+        if row["reviews"]:
+            known = product_review_texts(conn, new, but=row["listing_id"])
             kept = [r for r in row["reviews"] if normalise(r.get("text") or "") not in known]
-            conn.execute("UPDATE page_texts SET reviews = %s WHERE listing_id = %s", (Jsonb(kept), moved_id))
+            if len(kept) < len(row["reviews"]):
+                conn.execute("UPDATE page_texts SET reviews = %s WHERE listing_id = %s",
+                             (Jsonb(kept), row["listing_id"]))
     return None
 
 
