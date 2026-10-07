@@ -303,14 +303,30 @@ def stored_web_results(conn: psycopg.Connection, question: str, since) -> list[d
     return None if row is None else row["results"]
 
 
-def save_web_search(conn: psycopg.Connection, question: str, listing_ids: list[int], results: list[dict]) -> None:
-    conn.execute("INSERT INTO web_searches (question, listing_ids, results) VALUES (%s, %s, %s)",
-                 (question.strip(), listing_ids, Jsonb(results)))
+def save_web_search(conn: psycopg.Connection, question: str, listing_ids: list[int], results: list[dict],
+                    since) -> None:
+    """Add a search, or update the newest one with this question since the given time. Stored results keep their
+    first date, so they are not used after 7 days; the products of the new use are added to them."""
+    row = conn.execute(
+        """SELECT id FROM web_searches WHERE lower(question) = lower(%s) AND searched_at >= %s
+           ORDER BY searched_at DESC LIMIT 1""", (question.strip(), since)).fetchone()
+    if row is None:
+        conn.execute("INSERT INTO web_searches (question, listing_ids, results) VALUES (%s, %s, %s)",
+                     (question.strip(), listing_ids, Jsonb(results)))
+        return
+    conn.execute(
+        """UPDATE web_searches SET results = %s,
+               listing_ids = ARRAY(SELECT DISTINCT unnest(listing_ids || %s::bigint[]))
+           WHERE id = %s""", (Jsonb(results), listing_ids, row["id"]))
 
 
 def save_web_chunks(conn: psycopg.Connection, listing_id: int, ref_prefix: str, chunks: list[Chunk],
                     fetched_at) -> None:
-    """Replace the chunks of one web page for one listing."""
+    """Replace the chunks of one web page for one listing. The same text stays, with its embeddings."""
+    old = conn.execute("SELECT text FROM chunks WHERE listing_id = %s AND source = 'web' AND ref LIKE %s",
+                       (listing_id, ref_prefix + " %")).fetchall()
+    if sorted(r["text"] for r in old) == sorted(c.text for c in chunks):
+        return
     conn.execute("DELETE FROM chunks WHERE listing_id = %s AND source = 'web' AND ref LIKE %s",
                  (listing_id, ref_prefix + " %"))
     for c in chunks:

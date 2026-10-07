@@ -91,6 +91,28 @@ def test_the_worker_judges_the_short_parts_and_the_relevant_pages_are_extracted(
     assert chunk.kind == "test" and chunk.ref == url_ref(TEST.url) + " 1" and chunk.meta["published"] == "2025-03-08"
 
 
+def test_extract_finds_an_address_in_another_form_and_its_error_keeps_the_paid_search():
+    class OtherForm(Client):  # Tavily can give back the address in another form
+        def extract(self, urls):
+            return {"http://testsite.se/kyl/": TEST_PAGE}
+
+    store = Store()
+    report = search_web("Gorenje RK4182PS4 ljudnivå", PRODUCTS, OtherForm([TEST, FORUM]), Worker(JUDGED),
+                        store.web_store(), rerank)
+    assert "Vi mätte" in report.text and {r.url: r.raw for r in store.searches[0][2]}[TEST.url] == TEST_PAGE
+
+    class Broken(Client):
+        def extract(self, urls):
+            raise WebSearchUnavailable("Tavily answered 432")
+
+    store = Store()
+    report = search_web("Gorenje RK4182PS4 ljudnivå", PRODUCTS, Broken([TEST, FORUM]), Worker(JUDGED),
+                        store.web_store(), rerank)
+    assert report.credits == 1 and len(store.searches) == 1  # the results are kept, so no new search is paid
+    assert "Min Gorenje RK4182PS4 är tyst." in report.text
+    assert "Tavily could not get the text of 1 relevant pages: Tavily answered 432." in report.text
+
+
 def test_the_best_parts_go_to_the_chat_model_with_their_neighbours():
     page = "\n\n".join(["Gorenje RK4182PS4 i test.", FILLER, FILLER, "Vi mätte ljudnivån till 39 dB i vårt labb.",
                         FILLER, FILLER, "Bomann KG 320 är billigare men låter mer."])
@@ -113,6 +135,9 @@ def test_choose_parts_takes_the_best_by_rank_until_the_limit_in_the_page_order()
     assert [p.n for p in choose_parts(parts, top=2, limit=4)] == [0, 1, 2]
     assert len(choose_parts(parts, top=1)) == 3
     assert MAX_CHAT_PARTS == 40
+    # A hit that does not fit is skipped, and a later hit next to the chosen parts still comes in
+    parts = [Part(0, n, f"p{n}", {1: 0.9, 5: 0.8, 2: 0.7}.get(n, 0.1 - n / 100)) for n in range(8)]
+    assert [p.n for p in choose_parts(parts, top=3, limit=4)] == [0, 1, 2, 3]
 
 
 def test_the_question_of_the_reranker_has_no_brand_and_no_model():
@@ -223,7 +248,7 @@ def test_the_picks_wait_for_a_web_search_of_each_pick():
     state = graph.invoke({"messages": [{"role": "user", "content": "A fridge, at most 180 cm"}], "searches": {"x": {"page": 1}}},
                          {"configurable": {"thread_id": "t"}})
     assert "id 2 had no web search for tests yet" in llm.requests[2][1]
-    assert shop.web_calls == [("RK4182 test", [2], 60)]
+    assert shop.web_calls == [("RK4182 test", [2], 120)]
     assert [p["listing_id"] for p in state["picks"]] == [2]
     assert state["web_searches"] == ["RK4182 test"] and state["used"]["web_pages"] == 3
 
@@ -270,14 +295,25 @@ def test_web_searches_count_for_the_product_and_web_text_loses_its_header(db):
     db.execute("""INSERT INTO listings (product_id, source, source_id, url, fetched_at) VALUES
                   (1, 'amazon.se', 'A', 'u1', now()), (1, 'other', 'B', 'u2', now()), (2, 'amazon.se', 'C', 'u3', now())""")
     now = datetime.now(timezone.utc)
-    save_web_search(db, " Gorenje test ", [2], [vars(TEST)])
-    assert web_searched(db, [1, 2, 3], now - timedelta(days=7)) == {1, 2}  # listing 1 is the same product
+    week = now - timedelta(days=7)
+    save_web_search(db, " Gorenje test ", [2], [vars(TEST)], week)
+    first = db.execute("SELECT searched_at FROM web_searches").fetchone()["searched_at"]
+    save_web_search(db, "gorenje test", [3, 2], [vars(TEST)], week)  # stored results used again: no new row
+    rows = db.execute("SELECT listing_ids, searched_at FROM web_searches").fetchall()
+    assert len(rows) == 1 and sorted(rows[0]["listing_ids"]) == [2, 3] and rows[0]["searched_at"] == first
+    assert web_searched(db, [1, 2, 3], week) == {1, 2, 3}  # listing 1 is the same product as 2
     assert web_searched(db, [1], now + timedelta(minutes=1)) == set()
     assert stored_web_results(db, "gorenje TEST", now - timedelta(days=7))[0]["url"] == TEST.url
     assert stored_web_results(db, "other", now - timedelta(days=7)) is None
     finding = Finding(WebResult(**{**vars(TEST), "raw": TEST_PAGE}), "test", True, [1])
-    for _ in range(2):  # a second read of the page replaces its chunks
-        save_web_chunks(db, 1, url_ref(TEST.url), web_chunks("Fridge 2026 model", finding), now)
-    assert db.execute("SELECT count(*) AS n FROM chunks WHERE source = 'web'").fetchone()["n"] == 1
+    ids = []
+    for _ in range(2):  # a second read of the same text keeps the chunks (and their embeddings)
+        save_web_chunks(db, 1, url_ref(TEST.url), web_chunks("Fridge 2026\nmodel", finding), now)
+        ids.append([r["id"] for r in db.execute("SELECT id FROM chunks WHERE source = 'web'").fetchall()])
+    assert len(ids[0]) == 1 and ids[0] == ids[1]
+    changed = Finding(WebResult(**{**vars(TEST), "raw": "New text."}), "test", True, [1])
+    save_web_chunks(db, 1, url_ref(TEST.url), web_chunks("Fridge", changed), now)  # new text replaces the old
+    assert [r["text"].split("\n")[-1] for r in db.execute("SELECT text FROM chunks").fetchall()] == ["New text."]
+    save_web_chunks(db, 1, url_ref(TEST.url), web_chunks("Fridge 2026\nmodel", finding), now)
     # without the two lines that name the product and the page; the chunks join the paragraphs with one newline
     assert web_texts(db, [2]) == {2: TEST_PAGE.replace("\n\n", "\n")}

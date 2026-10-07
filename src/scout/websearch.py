@@ -107,6 +107,12 @@ class TavilyClient:
         return texts
 
 
+def url_key(url: str) -> str:
+    """The address without the scheme, "www." and the last slash: Tavily can give back the address in another form."""
+    url = re.sub(r"^https?://(www\.)?", "", url.strip(), flags=re.IGNORECASE)
+    return url.rstrip("/").lower()
+
+
 def extract_credits(pages: int) -> int:
     return math.ceil(pages / 5)
 
@@ -233,7 +239,7 @@ def choose_parts(parts: list[Part], top: int = TOP_PARTS, limit: int = MAX_CHAT_
         group = [by_place[k] for k in ((hit.page, hit.n - 1), (hit.page, hit.n), (hit.page, hit.n + 1))
                  if k in by_place and k not in chosen]
         if len(chosen) + len(group) > limit:
-            break
+            continue  # a later hit can still fit when its neighbours are chosen already
         chosen |= {(p.page, p.n): p for p in group}
     return [chosen[k] for k in sorted(chosen)]
 
@@ -248,7 +254,9 @@ def web_chunks(product_title: str, finding: Finding) -> list[Chunk]:
     """The text of one relevant page, in chunks, for one product that it is about."""
     r = finding.result
     meta = {"url": r.url, "title": r.title[:300], "site": r.site, "type": finding.kind, "published": r.published}
-    head = f"Product: {product_title}\nWeb {finding.kind}, {r.site}, {r.published or 'date not known'}: {r.title[:200]}\n"
+    # The head is two lines: web_texts removes them, so the titles must not add a line
+    head = (f"Product: {' '.join(product_title.split())}\n"
+            f"Web {finding.kind}, {r.site}, {r.published or 'date not known'}: {' '.join(r.title[:200].split())}\n")
     return [Chunk(finding.kind, f"{url_ref(r.url)} {n}", head + part, meta)
             for n, part in enumerate(split_text(r.raw), 1)]
 
@@ -292,10 +300,15 @@ def search_web(question: str, products: list[ProductRef], client: TavilyClient, 
     findings, stopped = judge_pages(llm, question, todo, products)
     # The text of the relevant pages that came without it
     missing = [f.result.url for f in findings if f.relevant and not f.result.raw]
-    texts = client.extract(missing) if missing else {}
+    extract_note = ""
+    try:
+        texts = client.extract(missing) if missing else {}
+    except WebSearchUnavailable as exc:  # the search is paid: keep its results and go on without these texts
+        texts, extract_note = {}, f"Tavily could not get the text of {len(missing)} relevant pages: {exc}."
     credits += extract_credits(len(texts))
-    findings = [replace(f, result=replace(f.result, raw=texts[f.result.url])) if f.result.url in texts else f
-                for f in findings]
+    texts = {url_key(url): text for url, text in texts.items()}
+    findings = [replace(f, result=replace(f.result, raw=texts[url_key(f.result.url)]))
+                if url_key(f.result.url) in texts else f for f in findings]
     # Only the relevant pages keep their text
     store.save_search(question, [p.listing_id for p in products],
                       [f.result if f.relevant else replace(f.result, raw="") for f in findings]
@@ -337,6 +350,8 @@ def search_web(question: str, products: list[ProductRef], client: TavilyClient, 
             lines.append(f"- {page_line(f)}: {why}")
     if stopped:
         lines.append(stopped)
+    if extract_note:
+        lines.append(extract_note)
     if len(results) > len(todo):
         lines.append(f"{len(results) - len(todo)} more pages were found and not judged (the web pages of this turn "
                      "are used up).")

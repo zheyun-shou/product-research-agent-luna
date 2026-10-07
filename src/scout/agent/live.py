@@ -266,7 +266,7 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
     web_store = WebStore(
         stored=stored,
         save_search=lambda question, ids, results: save_web_search(
-            conn, question, ids, [vars(r) for r in results]),
+            conn, question, ids, [vars(r) for r in results], datetime.now(timezone.utc) - week),
         save_chunks=lambda listing_id, url, chunks: save_web_chunks(
             conn, listing_id, url_ref(url), chunks, datetime.now(timezone.utc)),
     )

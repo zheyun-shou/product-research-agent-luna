@@ -22,7 +22,7 @@ from scout.trace import NoTracer
 MAX_TOOL_CALLS = 25  # for each turn; set again from the hidden-target test (design section 10)
 MAX_PRODUCT_PAGES = 30
 MAX_REVIEW_PAGES = 30
-MAX_WEB_PAGES = 60  # pages that the worker judges; a search gives up to 20
+MAX_WEB_PAGES = 120  # pages that the worker judges; a search gives up to 20, so 6 searches (5 picks and 1 more)
 MAX_WEB_SEARCHES = 10  # each new search costs one Tavily credit
 MAX_GATE_ROUNDS = 3
 MAX_REPORT_CHARS = 6_000  # of one tool report in the prompt
@@ -367,7 +367,7 @@ def web_of(deps: "LoopDeps", claims: list[Claim]) -> dict[int, set[Decimal]]:
 
 
 def check_text(text: str, known: set[Decimal], models: list[str | None]) -> list[str]:
-    return [f"the number {raw} has no source. Give a claim with the product id and the card field (or page), put "
+    return [f"the number {raw} has no source. Give a claim with the product id and the card field (or page, or web), put "
             "it in derived with how you calculated it, or remove it" for raw in unchecked_numbers(text, known, models)]
 
 
@@ -529,14 +529,14 @@ class Toolbox:
             return "the web pages of this turn are used up."
         cards, unknown = self.cards(call.ids[:5])
         self.deps.say(f"Searching the web for '{call.question}'.")
+        # Counted before the call: a search that fails after Tavily answered can have used a credit
+        self.used["web_searches"] = self.used.get("web_searches", 0) + 1
         try:
-            report, pages = self.deps.search_web(call.question, [c.listing_id for c in cards], max(left, 0),
-                                                 call.want)
+            report, pages = self.deps.search_web(call.question, [c.listing_id for c in cards], left, call.want)
         except WebSearchUnavailable as exc:
             # The floor does not ask for web searches that cannot be made now
             self.used["web_unavailable"] = str(exc)
             return f"not available: {exc}. Tell the shopper that the picks have no web tests."
-        self.used["web_searches"] = self.used.get("web_searches", 0) + 1
         self.used["web_pages"] = self.used.get("web_pages", 0) + pages
         done = self.current("web_searches")
         self.update["web_searches"] = done + ([call.question] if call.question not in done else [])
