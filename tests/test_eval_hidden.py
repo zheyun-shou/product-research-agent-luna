@@ -73,7 +73,7 @@ def record(found, rank, calls, seconds, measured=True, at_limit=()):
     return {"measured": measured, "found": found, "rank": rank, "seen": True, "error": None, "leaked": [],
             "at_limit": list(at_limit),
             "totals": {"tool_calls": calls, "product_pages": 8, "review_pages": 6, "web_pages": 0, "web_searches": 0,
-                       "model_calls": calls + 1, "cost_usd": 0.01, "seconds": seconds},
+                       "model_calls": calls + 1, "cost_usd": 0.01, "seconds": seconds, "fact_problems": 0},
             "turn_max": {"calls": calls, "product_pages": 8, "review_pages": 6, "web_pages": 0, "web_searches": 0}}
 
 

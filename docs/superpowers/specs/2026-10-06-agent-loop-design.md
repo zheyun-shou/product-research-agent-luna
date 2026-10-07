@@ -118,6 +118,8 @@ Zheyun decided on 2026-10-06 to keep only three checks at this gate. The budget 
 
 A problem goes back to Luna with the values from the records, up to 3 rounds.
 
+**Changed on 2026-10-07 (Zheyun's decision).** Checks 1 and 2 no longer stop an answer. The answer shows, and the call record keeps the problems (`checked`, `problems`). `scout eval-hidden` counts them in `fact_problems` and lists them in `answers`. The reason: each problem that goes back costs one more call of Luna and more time, and we do not know yet how often Luna is wrong. We measure it during development. If Luna is right nearly always, the check goes away. If one kind of fact is often wrong (for example the price), only that kind stops the answer again. The floors (check 3) and the live check of the price and the stock still stop the picks, because picks without the research are hard to find later. When a floor stops the picks after 3 rounds, the shopper sees "I could not finish the research for these picks".
+
 **Removed: the word rules for actions** (decided 2026-10-06). Python no longer reads the reply for words such as "removed" or "I will search" to require a tool call. In the loop, Luna can call the tool in the same turn.
 
 ## 9. What changes for the shopper

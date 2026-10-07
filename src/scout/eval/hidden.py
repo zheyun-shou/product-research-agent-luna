@@ -18,7 +18,7 @@ MAX_SHOPPER_TURNS = 4  # the shopper messages after the first one; then the run 
 LIMITS = {"calls": MAX_TOOL_CALLS, "product_pages": MAX_PRODUCT_PAGES, "review_pages": MAX_REVIEW_PAGES,
           "web_pages": MAX_WEB_PAGES, "web_searches": MAX_WEB_SEARCHES}
 MEASURES = ("tool_calls", "product_pages", "review_pages", "web_pages", "web_searches", "model_calls", "cost_usd",
-            "seconds")
+            "seconds", "fact_problems")
 
 
 class Target(BaseModel):
@@ -129,6 +129,8 @@ def run_target(target: Target, graph, llm, source_ids: Callable[[list[int]], lis
     for call in agent_calls:
         model_calls[call.role] = model_calls.get(call.role, 0) + 1
     rank = pick_rank(pick_ids, target)
+    # The fact checks do not stop an answer; they are counted here (design section 8)
+    answers = [c for c in agent_calls if c.checked is not None]
     return {
         "target": target.id, "source_id": target.source_id, "found": rank is not None, "rank": rank,
         "seen": seen(target), "picks": pick_ids, "shopper_turns": len(turns) - 1, "error": error,
@@ -143,7 +145,9 @@ def run_target(target: Target, graph, llm, source_ids: Callable[[list[int]], lis
             "cost_usd": round(sum(c.cost or 0 for c in agent_calls), 6),
             "shopper_cost_usd": round(sum(c.cost or 0 for c in calls if c.role == "shopper"), 6),
             "seconds": round(sum(t["seconds"] for t in turns), 1),
+            "fact_problems": sum(len(c.problems or []) for c in answers),
         },
+        "answers": [{"passed": c.checked, "problems": list(c.problems or [])} for c in answers],
         "turn_max": {name: max((t["used"].get(name, 0) for t in turns), default=0) for name in LIMITS},
         "at_limit": sorted({name for t in turns for name in t["at_limit"]}),
         "conversation": [{"who": who, "text": text} for who, text in conversation],

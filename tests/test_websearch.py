@@ -257,11 +257,11 @@ def test_a_web_claim_needs_the_number_in_the_quotes():
     shop = WebShop()
     shop.web, shop.reviewed = {2}, {2}
     wrong = ShowPicks(picks=[Pick(id=2, text="41 dB in a test.", claims=[Claim(id=2, field="web", value="41 dB")])])
-    llm = FakeLLM([[NEEDS], [wrong], [PICK]])
+    llm = FakeLLM([[NEEDS], [wrong]])
     graph = build_agent_graph(shop.deps(llm), InMemorySaver())
     state = graph.invoke({"messages": [{"role": "user", "content": "A fridge, at most 180 cm"}], "searches": {"x": {"page": 1}}},
                          {"configurable": {"thread_id": "t"}})
-    assert "the web pages about this product do not show 41 dB" in llm.requests[2][1]
+    assert "the web pages about this product do not show 41 dB" in "".join(llm.calls[-1].problems)
     assert [p["listing_id"] for p in state["picks"]] == [2]
 
 

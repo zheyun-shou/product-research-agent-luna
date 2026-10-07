@@ -372,21 +372,11 @@ def check_text(text: str, known: set[Decimal], models: list[str | None]) -> list
 
 
 def check_final(call: BaseModel, state: dict, deps: LoopDeps, thread: str, used: dict | None = None) -> list[str]:
-    """Numbers have a source, citations exist, the floors are met. The live check of the picks runs here too, and
-    the picks that pass it are added to used["checked_now"]."""
+    """What stops the final call: the picks exist, the floors are met, and the live check of the price and the stock
+    passes. The picks that pass that check are added to used["checked_now"]."""
     used = used if used is not None else dict(state.get("used") or {})
-    allowed = user_numbers(state) | turn_numbers(state)
     if isinstance(call, Reply):
-        ids = {c.id for c in call.claims} | {p["listing_id"] for p in state.get("picks", [])}
-        cards = {c.listing_id: c for c in deps.cards(sorted(ids))}
-        errors, claimed = check_claims(call.claims, cards, pages_of(deps, {c.id for c in call.claims}),
-                                       web_of(deps, call.claims))
-        on_cards = {v for c in cards.values() for v in card_facts(c).values() if isinstance(v, Decimal)}
-        derived = set().union(set(), *(numbers_in(d.value) for d in call.derived))
-        picks = {Decimal(n) for n in range(1, len(state.get("picks", [])) + 1)}
-        errors += check_text(call.text, claimed | allowed | on_cards | derived | picks,
-                             [c.model for c in cards.values()])
-        return errors
+        return []
     assert isinstance(call, ShowPicks)
     errors: list[str] = []
     ids = [p.id for p in call.picks]
@@ -421,8 +411,26 @@ def check_final(call: BaseModel, state: dict, deps: LoopDeps, thread: str, used:
     problems = deps.check_now([i for i in ids if i not in checked], needs)
     errors += [f"id {i}: {problem}" for i, problem in problems.items() if problem]
     used["checked_now"] = sorted(checked | {i for i, problem in problems.items() if not problem})
-    if errors:
+    return errors
+
+
+def check_facts(call: BaseModel, state: dict, deps: LoopDeps) -> list[str]:
+    """Each number has a source and each claim agrees with the records. These problems do not stop the call: they
+    are kept in the call record, and the evaluation counts them (design section 8)."""
+    allowed = user_numbers(state) | turn_numbers(state)
+    if isinstance(call, Reply):
+        ids = {c.id for c in call.claims} | {p["listing_id"] for p in state.get("picks", [])}
+        cards = {c.listing_id: c for c in deps.cards(sorted(ids))}
+        errors, claimed = check_claims(call.claims, cards, pages_of(deps, {c.id for c in call.claims}),
+                                       web_of(deps, call.claims))
+        on_cards = {v for c in cards.values() for v in card_facts(c).values() if isinstance(v, Decimal)}
+        derived = set().union(set(), *(numbers_in(d.value) for d in call.derived))
+        picks = {Decimal(n) for n in range(1, len(state.get("picks", [])) + 1)}
+        errors += check_text(call.text, claimed | allowed | on_cards | derived | picks,
+                             [c.model for c in cards.values()])
         return errors
+    errors: list[str] = []
+    ids = [p.id for p in call.picks]
     cards = {c.listing_id: c for c in deps.cards(ids)}  # with the prices that were just checked
     derived = set().union(set(), *(numbers_in(d.value) for d in call.derived))
     said = user_numbers(state)
@@ -724,8 +732,8 @@ def build_agent_graph(deps: LoopDeps, checkpointer=None):
         call = from_state(state["final"])
         used = dict(state.get("used") or {})
         errors = check_final(call, state, deps, thread, used)
+        # The call record keeps only the fact checks; the floors that send Luna back are in gate_rounds
         if errors and state.get("gate_rounds", 0) + 1 < MAX_GATE_ROUNDS:
-            llm.mark_checked(False, errors)
             feedback = ("Python checked this call and found problems. Fix them and call show_picks or reply "
                         "again:\n- " + "\n- ".join(errors))
             history = list(state.get("turn_messages") or [])
@@ -733,11 +741,12 @@ def build_agent_graph(deps: LoopDeps, checkpointer=None):
                            else {"role": "user", "content": feedback})
             return {"gate_errors": errors, "gate_rounds": state.get("gate_rounds", 0) + 1, "final": None,
                     "used": used, "turn_messages": history}
-        llm.mark_checked(not errors, errors)
         if errors:
             return {"final": None, "gate_errors": [], "messages": [assistant(
-                "I could not write an answer whose facts all agree with the records, so I changed nothing. "
-                "You can ask again.")]}
+                "I could not finish the research for these picks, so I changed nothing. You can ask again.")]}
+        # The fact checks do not stop the answer: the call record keeps them for the evaluation
+        problems = check_facts(call, state, deps)
+        llm.mark_checked(not problems, problems)
         if isinstance(call, Reply):
             return {"final": None, "gate_errors": [], "messages": [assistant(call.text)]}
         cards = {c.listing_id: c for c in deps.cards([p.id for p in call.picks])}
