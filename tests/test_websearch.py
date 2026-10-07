@@ -110,7 +110,7 @@ def test_extract_finds_an_address_in_another_form_and_its_error_keeps_the_paid_s
                         store.web_store(), rerank)
     assert report.credits == 1 and len(store.searches) == 1  # the results are kept, so no new search is paid
     assert "Min Gorenje RK4182PS4 är tyst." in report.text
-    assert "Tavily could not get the text of 1 relevant pages: Tavily answered 432." in report.text
+    assert "The text of 1 relevant pages could not be read: Tavily answered 432." in report.text
 
 
 def test_the_best_parts_go_to_the_chat_model_with_their_neighbours():
@@ -235,7 +235,7 @@ class WebShop(Shop):
             raise WebSearchUnavailable(self.down)
         self.web_calls.append((question, ids, max_pages))
         self.web |= set(ids)
-        return f"Web search '{question}': read 3 pages.", 3
+        return f"Web search '{question}': read 3 pages.", 3, 1
 
 
 PICK = ShowPicks(picks=[Pick(id=2, text="Quiet, 39 dB in a test.", claims=[Claim(id=2, field="web", value="39 dB")])])
@@ -394,11 +394,61 @@ def test_searxng_that_does_not_run_is_unavailable():
 def test_the_next_back_end_searches_when_the_first_is_not_available():
     from scout.websearch import FirstThatAnswers, WebSearchUnavailable
 
+    from scout.websearch import EnginesBusy
+
     class Down:
+        name = "SearXNG"
+
         def search(self, query, max_results=20):
-            raise WebSearchUnavailable("SearXNG does not answer")
-    client = FirstThatAnswers([Down(), Client([TEST])])
-    assert client.search("q") == [TEST] and client.search_credits == 1
+            raise WebSearchUnavailable("it does not answer")
+    results, credits, note = FirstThatAnswers([Down(), Client([TEST])]).search_info("q")
+    assert results == [TEST] and credits == 1
+    assert note == "SearXNG: it does not answer. So the next back end searched (1 credit)."
+
+    class Busy(Down):
+        def search(self, query, max_results=20):
+            raise EnginesBusy("the search engines did not answer now: google (CAPTCHA)")
+    try:
+        FirstThatAnswers([Busy()]).search_info("q")
+    except EnginesBusy as exc:
+        assert "google (CAPTCHA)" in str(exc)
+    else:
+        raise AssertionError("no error")
+
+
+def test_searxng_reads_a_second_page_when_the_first_is_short_and_bad_json_is_unavailable():
+    from scout.websearch import WebSearchUnavailable
+    pages = []
+
+    def handler(request):
+        n = int(request.url.params["pageno"])
+        pages.append(n)
+        return httpx.Response(200, json={"results": [{"url": f"https://s{n}-{i}.se/", "title": "t", "content": "c"}
+                                                     for i in range(12)]})
+    assert len(searx(handler).search("q")) == 20 and pages == [1, 2]
+    try:
+        searx(lambda r: httpx.Response(200, text="<html>error</html>")).search("q")
+    except WebSearchUnavailable as exc:
+        assert "did not give JSON" in str(exc)
+    else:
+        raise AssertionError("no error")
+
+
+def test_busy_engines_do_not_stop_web_search_for_the_turn_the_first_time():
+    from scout.websearch import EnginesBusy
+    shop = WebShop()
+    shop.down = None
+    calls = []
+
+    def busy(question, ids, max_pages, want=""):
+        calls.append(question)
+        raise EnginesBusy("the search engines did not answer now: google (CAPTCHA)")
+    llm = FakeLLM([[SearchWeb(question="a")], [SearchWeb(question="b")], [SearchWeb(question="c")], "Done."])
+    deps = shop.deps(llm)
+    deps.search_web = busy
+    run(build_agent_graph(deps, InMemorySaver()), "a fridge")
+    assert "no results now" in llm.requests[1][1] and "not available: the search engines" in llm.requests[2][1]
+    assert "not available in this turn" in llm.requests[3][1] and calls == ["a", "b"]
 
 
 def test_a_searxng_search_costs_no_credit():

@@ -238,8 +238,9 @@ class LoopDeps:
     read_reviews: Callable[[list[int]], tuple[str, int, list[int]]] | None = None
     reviews_read: Callable[[list[int]], set[int]] = lambda ids: set()  # listings with a recent complete read
     summarize: Callable[[CategoryProfile, list[int], str], str] | None = None
-    # (search words, listing ids, at most this many pages, what to learn) -> (report, pages); raises WebSearchUnavailable
-    search_web: Callable[[str, list[int], int, str], tuple[str, int]] | None = None
+    # (search words, listing ids, at most this many pages, what to learn) -> (report, pages, credits);
+    # raises WebSearchUnavailable
+    search_web: Callable[[str, list[int], int, str], tuple[str, int, int]] | None = None
     web_searched: Callable[[list[int]], set[int]] = lambda ids: set()  # listings with a web search, last 7 days
     web_texts: Callable[[list[int]], dict[int, str]] | None = None  # the stored web pages of each product
     # (url, profile) -> (report, pages loaded, the listing id or None); stores the product of another shop
@@ -544,7 +545,7 @@ class Toolbox:
         return report
 
     def search_web(self, call: SearchWeb) -> str:
-        from scout.websearch import WebSearchUnavailable
+        from scout.websearch import EnginesBusy, WebSearchUnavailable
         if self.deps.search_web is None:
             return "not available: no web search back end is set."
         if self.used.get("web_unavailable"):
@@ -559,12 +560,21 @@ class Toolbox:
         # Counted before the call: a search that fails after the back end answered can have used a credit
         self.used["web_searches"] = self.used.get("web_searches", 0) + 1
         try:
-            report, pages = self.deps.search_web(call.question, [c.listing_id for c in cards], left, call.want)
+            report, pages, credits = self.deps.search_web(call.question, [c.listing_id for c in cards], left,
+                                                          call.want)
+        except EnginesBusy as exc:
+            # Busy engines can answer again later; the second time in a turn, web search stops for the turn
+            self.used["web_busy"] = self.used.get("web_busy", 0) + 1
+            if self.used["web_busy"] < 2:
+                return f"no results now: {exc}. Try other search words, or search again later."
+            self.used["web_unavailable"] = str(exc)
+            return f"not available: {exc}. Tell the shopper that the picks have no web tests."
         except WebSearchUnavailable as exc:
             # The floor does not ask for web searches that cannot be made now
             self.used["web_unavailable"] = str(exc)
             return f"not available: {exc}. Tell the shopper that the picks have no web tests."
         self.used["web_pages"] = self.used.get("web_pages", 0) + pages
+        self.used["web_credits"] = self.used.get("web_credits", 0) + credits
         done = self.current("web_searches")
         self.update["web_searches"] = done + ([call.question] if call.question not in done else [])
         return report + "".join(f" There is no product with id {i}." for i in unknown)

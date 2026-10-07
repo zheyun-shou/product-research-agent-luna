@@ -47,7 +47,12 @@ READ_WORKERS = 10
 
 
 class WebSearchUnavailable(RuntimeError):
-    """No key, no credits left, or Tavily does not answer."""
+    """No search back end answers: no key, no credits left, or the service does not run."""
+
+
+class EnginesBusy(WebSearchUnavailable):
+    """SearXNG found nothing because its engines did not answer now (a captcha, too many requests). It can work
+    again later in the same turn."""
 
 
 @dataclass
@@ -75,6 +80,9 @@ def _date(value: str | None) -> str | None:
 
 
 class TavilyClient:
+    name = "Tavily"
+    search_credits = 1
+
     def __init__(self, key: str, http: httpx.Client | None = None, timeout: float = 60.0):
         self.key, self.http = key, http or httpx.Client(timeout=timeout)
 
@@ -115,30 +123,42 @@ class SearxngClient:
     their results as JSON. No key and no credits. An engine that shows a captcha is left out by SearXNG; the
     program never bypasses it. SearXNG gives no page texts: our own fetcher reads them."""
     search_credits = 0
+    name = "SearXNG"
 
-    def __init__(self, url: str = "http://127.0.0.1:8888", http: httpx.Client | None = None, timeout: float = 30.0):
+    def __init__(self, url: str = "http://127.0.0.1:8888", http: httpx.Client | None = None, timeout: float = 15.0):
         self.url, self.http = url.rstrip("/"), http or httpx.Client(timeout=timeout)
 
-    def search(self, query: str, max_results: int = RESULTS) -> list[WebResult]:
+    def _page(self, query: str, pageno: int) -> dict:
         try:
-            response = self.http.get(f"{self.url}/search", params={"q": query, "format": "json"})
+            response = self.http.get(f"{self.url}/search", params={"q": query, "format": "json", "pageno": pageno})
         except httpx.HTTPError as exc:
             raise WebSearchUnavailable(f"SearXNG does not answer ({type(exc).__name__}); start it with "
                                        "docker compose up -d searxng") from exc
         if response.status_code != 200:
             raise WebSearchUnavailable(f"SearXNG gave status {response.status_code}")
-        data = response.json()
-        found, seen = [], set()
-        for r in data.get("results", []):
-            key = url_key(r.get("url") or "")
-            if not key or key in seen:
-                continue
-            seen.add(key)
-            found.append(WebResult(r["url"], r.get("title") or "", r.get("content") or "", "",
-                                   (r.get("publishedDate") or "")[:10] or None))
-        if not found and data.get("unresponsive_engines"):
-            engines = ", ".join(f"{name} ({why})" for name, why in data["unresponsive_engines"])
-            raise WebSearchUnavailable(f"the search engines did not answer: {engines}")
+        try:
+            data = response.json()
+        except ValueError as exc:  # an error page in place of the JSON
+            raise WebSearchUnavailable("SearXNG did not give JSON") from exc
+        return data if isinstance(data, dict) else {}
+
+    def search(self, query: str, max_results: int = RESULTS) -> list[WebResult]:
+        """The results of the first result pages until max_results (one page has about 10 to 20)."""
+        found: list[WebResult] = []
+        busy: list = []
+        for pageno in (1, 2):
+            data = self._page(query, pageno)
+            busy = data.get("unresponsive_engines") or busy
+            page = [WebResult(r["url"], r.get("title") or "", r.get("content") or "", "",
+                              (r.get("publishedDate") or "")[:10] or None)
+                    for r in data.get("results", []) if isinstance(r, dict) and r.get("url")]
+            found += page
+            if not page or len(unique_results(found)) >= max_results:
+                break
+        found = unique_results(found)
+        if not found and busy:
+            engines = ", ".join(f"{name} ({why})" for name, why in busy)
+            raise EnginesBusy(f"the search engines did not answer now: {engines}")
         return found[:max_results]
 
     def extract(self, urls: list[str]) -> dict[str, str]:
@@ -146,23 +166,30 @@ class SearxngClient:
 
 
 class FirstThatAnswers:
-    """The search back ends in order: the next one searches when one is not available."""
+    """The search back ends in order: the next one searches when one is not available. The note says why."""
 
     def __init__(self, clients: list):
         self.clients = clients
-        self.search_credits = 0  # of the back end that gave the last results
 
-    def search(self, query: str, max_results: int = RESULTS) -> list[WebResult]:
-        problems = []
+    def search_info(self, query: str, max_results: int = RESULTS) -> tuple[list[WebResult], int, str]:
+        """(results, credits, note)."""
+        problems, errors = [], []
         for client in self.clients:
             try:
                 results = client.search(query, max_results)
             except WebSearchUnavailable as exc:
-                problems.append(str(exc))
+                problems.append(f"{getattr(client, 'name', 'a back end')}: {exc}")
+                errors.append(exc)
                 continue
-            self.search_credits = getattr(client, "search_credits", 1)
-            return results
-        raise WebSearchUnavailable("; ".join(problems) or "no search back end")
+            credits = getattr(client, "search_credits", 1)
+            note = (f"{'; '.join(problems)}. So {getattr(client, 'name', 'the next back end')} searched"
+                    + (f" ({credits} credit)." if credits else ".")) if problems else ""
+            return results, credits, note
+        busy = bool(errors) and all(isinstance(e, EnginesBusy) for e in errors)
+        raise (EnginesBusy if busy else WebSearchUnavailable)("; ".join(problems) or "no search back end")
+
+    def search(self, query: str, max_results: int = RESULTS) -> list[WebResult]:
+        return self.search_info(query, max_results)[0]
 
     def extract(self, urls: list[str]) -> dict[str, str]:
         for client in self.clients:
@@ -171,6 +198,24 @@ class FirstThatAnswers:
             except WebSearchUnavailable:
                 continue
         raise WebSearchUnavailable("no back end gives page texts")
+
+
+def search_once(client, query: str) -> tuple[list[WebResult], int, str]:
+    """(results, credits, note) of one search with any back end."""
+    if hasattr(client, "search_info"):
+        return client.search_info(query)
+    return client.search(query), getattr(client, "search_credits", 1), ""
+
+
+def unique_results(results: list[WebResult]) -> list[WebResult]:
+    """One result for each address: back ends can give the same page with and without "www." or the last slash."""
+    seen, kept = set(), []
+    for r in results:
+        key = url_key(r.url)
+        if key and key not in seen:
+            seen.add(key)
+            kept.append(r)
+    return kept
 
 
 def url_key(url: str) -> str:
@@ -371,14 +416,14 @@ def search_web(question: str, products: list[ProductRef], client: TavilyClient, 
     """`extract(urls)` gets the text of the relevant pages that came without it: our own fetcher, free. Without it
     Tavily Extract gets them, for credits."""
     results = store.stored(question)
-    credits, stored = 0, results is not None
+    credits, stored, back_end_note = 0, results is not None, ""
     if results is None:
-        results = client.search(question)
-        credits = getattr(client, "search_credits", 1)  # Tavily 1, SearXNG 0
+        results, credits, back_end_note = search_once(client, question)  # Tavily 1 credit, SearXNG 0
+    results = unique_results(results)
     head = f"Web search '{question}'" + (" (stored results of the last 7 days)" if stored else "")
     if not results:
         store.save_search(question, [p.listing_id for p in products], [])
-        return WebReport(f"{head}: no pages found.", 0, credits)
+        return WebReport(f"{head}: no pages found." + (f" {back_end_note}" if back_end_note else ""), 0, credits)
     todo = results[:max_pages]
     findings, stopped = judge_pages(llm, question, todo, products)
     # The text of the relevant pages that came without it
@@ -387,7 +432,7 @@ def search_web(question: str, products: list[ProductRef], client: TavilyClient, 
     try:
         texts = (extract or client.extract)(missing) if missing else {}
     except WebSearchUnavailable as exc:  # the search is paid: keep its results and go on without these texts
-        texts, extract_note = {}, f"Tavily could not get the text of {len(missing)} relevant pages: {exc}."
+        texts, extract_note = {}, f"The text of {len(missing)} relevant pages could not be read: {exc}."
     if extract is None:
         credits += extract_credits(len(texts))
     texts = {url_key(url): text for url, text in texts.items()}
@@ -436,6 +481,8 @@ def search_web(question: str, products: list[ProductRef], client: TavilyClient, 
         lines.append(stopped)
     if extract_note:
         lines.append(extract_note)
+    if back_end_note:
+        lines.append(back_end_note)
     if len(results) > len(todo):
         lines.append(f"{len(results) - len(todo)} more pages were found and not judged (the web pages of this turn "
                      "are used up).")

@@ -17,8 +17,8 @@ MAX_SHOPPER_TURNS = 4  # the shopper messages after the first one; then the run 
 # The per-turn counters of the agent loop (state "used"), and the limit of each
 LIMITS = {"calls": MAX_TOOL_CALLS, "product_pages": MAX_PRODUCT_PAGES, "review_pages": MAX_REVIEW_PAGES,
           "web_pages": MAX_WEB_PAGES, "web_searches": MAX_WEB_SEARCHES}
-MEASURES = ("tool_calls", "product_pages", "review_pages", "web_pages", "web_searches", "model_calls", "cost_usd",
-            "seconds", "fact_problems")
+MEASURES = ("tool_calls", "product_pages", "review_pages", "web_pages", "web_searches", "web_credits", "model_calls",
+            "cost_usd", "seconds", "fact_problems")
 
 
 class Target(BaseModel):
@@ -140,7 +140,8 @@ def run_target(target: Target, graph, llm, source_ids: Callable[[list[int]], lis
             "product_pages": sum(t["used"].get("product_pages", 0) for t in turns),
             "review_pages": sum(t["used"].get("review_pages", 0) for t in turns),
             "web_pages": sum(t["used"].get("web_pages", 0) for t in turns),
-            "web_searches": sum(t["used"].get("web_searches", 0) for t in turns),  # Tavily credits at most
+            "web_searches": sum(t["used"].get("web_searches", 0) for t in turns),
+            "web_credits": sum(t["used"].get("web_credits", 0) for t in turns),  # Tavily; SearXNG is free
             "model_calls": len(agent_calls), "model_calls_by_role": model_calls,
             "cost_usd": round(sum(c.cost or 0 for c in agent_calls), 6),
             "shopper_cost_usd": round(sum(c.cost or 0 for c in calls if c.role == "shopper"), 6),
@@ -162,7 +163,7 @@ def summarize(records: list[dict]) -> dict:
     found = [r for r in measured if r["found"]]
 
     def spread(rows, key):
-        values = [r["totals"][key] for r in rows]
+        values = [r["totals"].get(key, 0) for r in rows]  # results from before a measure existed have 0
         return {"median": statistics.median(values), "max": max(values)} if values else {}
 
     return {

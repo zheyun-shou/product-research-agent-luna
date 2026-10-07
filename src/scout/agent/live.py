@@ -149,6 +149,10 @@ def web_client():
     choice = os.environ.get("WEB_SEARCH", "").strip().lower()
     if choice == "off":
         return None
+    if choice not in ("", "searxng", "tavily"):
+        raise ValueError(f"WEB_SEARCH is '{choice}'. Use searxng, tavily or off, or leave it empty for both")
+    if choice == "tavily" and not os.environ.get("TAVILY_API_KEY"):
+        raise ValueError("WEB_SEARCH is tavily, but TAVILY_API_KEY is not set")
     clients = []
     if choice in ("", "searxng"):
         clients.append(SearxngClient(os.environ.get("SEARXNG_URL") or "http://127.0.0.1:8888"))
@@ -297,8 +301,9 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
     week = timedelta(days=7)
 
     def stored(question):
+        # A search that found nothing is asked again: the engines of SearXNG can be busy for a short time
         rows = stored_web_results(conn, question, datetime.now(timezone.utc) - week)
-        return None if rows is None else [WebResult(**r) for r in rows]
+        return [WebResult(**r) for r in rows] if rows else None
 
     web_store = WebStore(
         stored=stored,
@@ -325,7 +330,7 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
         report = run_web_search(question, products, client, llm, web_store, reranker, max_pages, want=want,
                                 extract=lambda urls: fetch_texts(lambda u: fetcher.fetch(u, use_browser=False), urls))
         conn.commit()
-        return report.text, report.pages
+        return report.text, report.pages, report.credits
 
     return LoopDeps(
         llm=llm, profile_names=profile_names, load_profile=load_profile,
