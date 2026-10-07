@@ -42,6 +42,18 @@ class LLMTimeout(LLMUnavailable):
     """One call did not end within its deadline. The next call can work again."""
 
 
+class NoChoices(RuntimeError):
+    """The provider answered with status 200 but without a reply. OpenRouter does this when the model behind it
+    fails during the answer; the body then holds only an error."""
+
+
+def first_message(response):
+    if not getattr(response, "choices", None):
+        error = (getattr(response, "model_extra", None) or {}).get("error") or {}
+        raise NoChoices(str(error.get("message") or error or "no choices")[:300])
+    return response.choices[0].message
+
+
 class LLMOutputError(RuntimeError):
     """The model did not return output that matches the schema."""
 
@@ -244,7 +256,7 @@ class LLM:
                         model=role_cfg.model, messages=messages, response_format=response_format,
                         **self._extra(role_cfg)
                     ))
-                    text = response.choices[0].message.content or ""
+                    text = first_message(response).content or ""
                     usage = getattr(response, "usage", None)
                     tokens_in = getattr(usage, "prompt_tokens", 0) or 0
                     tokens_out = getattr(usage, "completion_tokens", 0) or 0
@@ -264,7 +276,7 @@ class LLM:
                 last_error = "rate limited"
                 self._sleep(15 * attempt)
                 continue
-            except (InternalServerError, APIConnectionError):
+            except (InternalServerError, APIConnectionError, NoChoices):
                 last_error = "unavailable"
                 self._sleep(15 * attempt)
                 continue
@@ -325,7 +337,7 @@ class LLM:
                         tool_choice="auto" if text_reply else "required",
                         **self._extra(role_cfg)
                     ))
-                    message = response.choices[0].message
+                    message = first_message(response)
                     raw = [(call.function.name, call.function.arguments) for call in (message.tool_calls or [])]
                     raw = raw or text_tool_calls(message.content or "")
                     usage = getattr(response, "usage", None)
@@ -346,7 +358,7 @@ class LLM:
                 last_error = "rate limited"
                 self._sleep(15 * attempt)
                 continue
-            except (InternalServerError, APIConnectionError):
+            except (InternalServerError, APIConnectionError, NoChoices):
                 last_error = "unavailable"
                 self._sleep(15 * attempt)
                 continue

@@ -32,6 +32,8 @@ class FakeCompletions:
         reply = self.replies.pop(0)
         if isinstance(reply, Exception):
             raise reply
+        if reply is None:  # status 200 with only an error in the body
+            return SimpleNamespace(choices=None, usage=None, model_extra={"error": {"message": "Provider returned error"}})
         return SimpleNamespace(
             choices=[SimpleNamespace(message=SimpleNamespace(content=reply))],
             usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5),
@@ -132,6 +134,15 @@ def test_busy_server_waits_and_retries():
 
 def test_busy_server_on_every_try_raises_unavailable():
     llm, _, _ = make([server_busy(), server_busy(), server_busy()])
+    with pytest.raises(LLMUnavailable, match="busy or unreachable"):
+        llm.structured("chat", "sys", "user", Answer)
+
+
+def test_a_reply_without_choices_is_retried_like_a_busy_server():
+    llm, _, clock = make([None, '{"answer": "ok"}'])
+    assert llm.structured("chat", "sys", "user", Answer).answer == "ok"
+    assert 15 in clock.slept
+    llm, _, _ = make([None, None, None])
     with pytest.raises(LLMUnavailable, match="busy or unreachable"):
         llm.structured("chat", "sys", "user", Answer)
 

@@ -5,6 +5,7 @@ WebShop benchmark (Yao et al., 2022)."""
 import re
 import statistics
 import time
+import traceback
 from pathlib import Path
 from typing import Callable
 
@@ -89,17 +90,19 @@ def run_target(target: Target, graph, llm, source_ids: Callable[[list[int]], lis
     for number in range(1, max_shopper_turns + 2):
         conversation.append(("shopper", text))
         before = len(graph.get_state(config).values.get("messages", []))
-        started, turn_error = time.monotonic(), None
+        started, turn_error, where = time.monotonic(), None, None
         try:
             for _ in graph.stream({"messages": [{"role": "user", "content": text}]}, config, stream_mode="updates"):
                 pass
-        except Exception as exc:  # report it, and end this target
+        except Exception as exc:  # report it with the place in the code, and end this target
             turn_error = f"{type(exc).__name__}: {exc}"
+            where = traceback.format_exc(limit=-3)
         after_turn()
         state = graph.get_state(config).values
         replies = [m["content"] for m in state.get("messages", [])[before + 1:]]
         used = dict(state.get("used") or {})
         turns.append({"say": text, "replies": replies, "used": used, "seconds": round(time.monotonic() - started, 1),
+                      "where": where,
                       "at_limit": sorted(name for name, limit in LIMITS.items() if used.get(name, 0) >= limit),
                       "error": turn_error})
         conversation += [("assistant", r) for r in replies]
