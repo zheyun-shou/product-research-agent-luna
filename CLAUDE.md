@@ -13,7 +13,7 @@ product-scout is a conversational agent. It helps to select products in any cate
 - The agent clarifies the needs, searches and stores, shows the top picks (default 5) and answers follow-up questions.
 - Price is a budget filter. It is never a ranking factor. There is no default shipping or duty. The chat model calculates by itself; it can convert a currency with a current rate that it states. A grader checks the arithmetic in the evaluation. The model can answer without a tool, and replies in the shopper's language.
 - The LLM layer is not tied to one provider. It has two roles, `chat` (strong) and `worker` (light, reads images). The first setup uses a free Gemini key. Never enable billing.
-- Each extracted value includes raw text, and Python finds this text in the source. Python checks each claim in the picks and the replies against the records. Since 2026-10-07 these fact checks do not stop an answer: the call record keeps them and the evaluation counts them. If Luna is right nearly always, the check goes away. The floors (shop search, reviews, web search) and the live price check still stop the picks.
+- Each extracted value includes raw text, and Python finds this text in the source. Since 2026-10-08 Python does not check the facts of Luna's answers. The grader (a second model) checks them in the evaluation against the sources that Luna saw: the context and the results of her tool calls. The floors (shop search, reviews, web search) and the live price check stay in Python and still stop the picks.
 
 ## Environment
 
