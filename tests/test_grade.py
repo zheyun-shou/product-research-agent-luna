@@ -72,3 +72,23 @@ def test_check_grader_counts_found_faults_and_failed_correct_replies():
                                 "wrongly_failed": ["c"]}
     assert not good_enough(rows["facts"]) and not good_enough(rows["said_did"])
     assert good_enough({"faults": 10, "found": 9, "correct": 10, "failed": 1})
+
+
+def test_tools_that_did_not_run_are_marked_and_python_texts_are_not_graded():
+    from scout.eval.grade import tool_line
+    assert tool_line({"tool": "search_shop", "args": "{}", "report": "search_shop: not run, the tool calls of this "
+                                                                        "turn are used up."}) == \
+        "search_shop {} (not run: the tool calls of this turn are used up)"
+    run = copy.deepcopy(RUN)
+    run["turns"][0]["tools"] = []  # the model did not answer, so the reply is a Python text
+    llm = FakeLLM([grade()])
+    grade_results(llm, {"summary": {}, "runs": [run, {**copy.deepcopy(RUN), "leaked": ["Bomann"]}]})
+    assert len(llm.calls) == 1  # only turn 2 of the first run
+
+
+def test_an_old_results_file_is_refused():
+    import pytest
+    with pytest.raises(ValueError, match="run eval-hidden again"):
+        grade_results(FakeLLM([]), {"summary": {}, "runs": [{"turns": [{"say": "x", "replies": ["y"]}]}]})
+    with pytest.raises(ValueError, match="not an eval-hidden results file"):
+        grade_results(FakeLLM([]), {"summary": {}, "turns": []})

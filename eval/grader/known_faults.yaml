@@ -199,7 +199,7 @@
     on the card'
   tools:
   - 'search_shop {"words": "kyl och frys"}'
-  - 'next_step {"action": "more"}'
+  - 'search_shop {"words": "kyl och frys", "page": 2}'
   - reply
   replies:
   - I’ll look for other fridge-freezer options with the same needs and budget.
@@ -285,7 +285,7 @@
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
     on the card'
   tools:
-  - 'next_step {"action": "recheck"}'
+  - 'show_picks {"picks": [1, 2, 3, 4, 5]} (Python opened each pick again for the price and the stock)'
   - reply
   replies:
   - I’ll recheck the current prices for these picks.

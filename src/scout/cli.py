@@ -512,7 +512,11 @@ def grade(
 ) -> None:
     """Grade the answers of a saved eval-hidden results file. Writes <name>-graded.json next to it."""
     llm = judge_llm(judge, rpm)
-    data = grade_results(llm, json.loads(results.read_text(encoding="utf-8")), typer.echo)
+    try:
+        data = grade_results(llm, json.loads(results.read_text(encoding="utf-8")), typer.echo)
+    except ValueError as exc:
+        typer.echo(f"Cannot grade: {exc}")
+        raise typer.Exit(1)
     out = results.with_name(f"{results.stem}-graded.json")
     out.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
     typer.echo(grades_text(data["summary"]["grades"]))
@@ -533,8 +537,8 @@ def check_grader_command(
     started = time.monotonic()
     grades = [grade_turn(llm, item, item.get("history") or []) for item in test_set]
     seconds = time.monotonic() - started
-    call_seconds = sorted(c.seconds for c in llm.calls)
-    median = call_seconds[len(call_seconds) // 2] if call_seconds else 0
+    import statistics
+    median = statistics.median(c.seconds for c in llm.calls) if llm.calls else 0
     typer.echo(f"Grader: {llm.model_for('judge')}, {len(test_set)} items, {seconds:.0f} s in all, "
                f"median {median:.1f} s a call, {len(llm.calls)} calls")
     rows = check_grader(test_set, grades)

@@ -19,7 +19,8 @@ the tool calls of this turn, and the messages to the shopper.
 
 A list of picks is written by two authors. Python writes the title, the line with the price, the rating and the id,
 the line of attributes and the address, all from the stored product. The model writes the text under each pick and
-the note at the end. Messages marked [Python] are fixed texts of the program.
+the note at the end; such a message is marked [Picks]. Messages marked [Model] are written by the model, and
+messages marked [Python] are fixed texts of the program. A tool call marked "not run" did not run.
 
 Grade the messages of this turn on each criterion. First write the reason, then the result.
 The result is pass, fail or not_applicable (the criterion has nothing to grade in this turn).
@@ -89,9 +90,19 @@ def grade_turn(llm, turn: dict, history: list[str]) -> Grade:
     return llm.structured("judge", SYSTEM, turn_prompt(turn, history), Grade)
 
 
+def tool_line(tool: dict) -> str:
+    """One tool call of the turn for the grader. Python answers "<tool>: not run, ..." when it did not run it."""
+    line = f"{tool['tool']} {tool['args'][:MAX_ARGS]}"
+    report = tool.get("report") or ""
+    if report.startswith(f"{tool['tool']}: not run"):
+        line += f" (not run: {report.split('not run', 1)[1].strip(' ,:.')})"
+    return line
+
+
 def hidden_turns(run: dict) -> list[dict]:
     """The turns of one eval-hidden run in the form of turn_prompt. The sources of a turn are its context and the
-    results of the tool calls of this turn and of the turns before."""
+    results of the tool calls of this turn and of the turns before: what Luna saw in this conversation. A turn with
+    no tool call is a Python text (for example a model that did not answer), so it gets no grade."""
     evidence: list[str] = []
     items = []
     for turn in run.get("turns") or []:
@@ -107,19 +118,25 @@ def hidden_turns(run: dict) -> list[dict]:
                 except ValueError:
                     pass
         items.append({"say": turn["say"], "replies": turn.get("replies") or [], "error": turn.get("error"),
-                      "sources": context + list(evidence), "model_texts": model,
-                      "tools": [f"{t['tool']} {t['args'][:MAX_ARGS]}" for t in tools]})
+                      "sources": context + list(evidence), "model_texts": model, "luna": bool(tools),
+                      "tools": [tool_line(t) for t in tools]})
     return items
 
 
 def grade_results(llm, results: dict, progress=lambda text: None) -> dict:
-    """Add the grades to each turn of an eval-hidden results file, and their counts to the summary. Turns with an
-    error or with no message get no grade."""
+    """Add the grades to each turn of an eval-hidden results file, and their counts to the summary. Runs where the
+    shopper named the product, turns with an error, and turns with no message of Luna get no grade."""
+    if "runs" not in results:
+        raise ValueError("this is not an eval-hidden results file")
+    if not any("tools" in t for run in results["runs"] for t in run.get("turns") or []):
+        raise ValueError("this results file has no tool calls (eval-hidden before 2026-10-08); run eval-hidden again")
     counts = {name: Counter() for name in CRITERIA}
     for run in results["runs"]:
         lines: list[str] = []
+        if run.get("leaked"):
+            continue
         for number, (turn, item) in enumerate(zip(run.get("turns") or [], hidden_turns(run)), 1):
-            if item["replies"] and not item["error"]:
+            if item["replies"] and item["luna"] and not item["error"]:
                 grade = grade_turn(llm, item, lines)
                 turn["grades"] = {name: getattr(grade, name).model_dump() for name in CRITERIA}
                 for name in CRITERIA:

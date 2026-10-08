@@ -222,12 +222,10 @@ class WebShop(Shop):
     def __init__(self):
         super().__init__()
         self.web, self.web_calls, self.down = set(), [], None
-        self.quotes = {2: "Vi mätte 39 dB."}
 
     def deps(self, llm):
         deps = super().deps(llm)
         deps.search_web, deps.web_searched = self.search_web, lambda ids: {i for i in ids if i in self.web}
-        deps.web_texts = lambda ids: {i: self.quotes[i] for i in ids if i in self.quotes}
         return deps
 
     def search_web(self, question, ids, max_pages, want=""):
@@ -279,7 +277,7 @@ def test_search_web_without_a_back_end():
 
 @pytest.mark.db
 def test_web_searches_count_for_the_product_and_web_text_loses_its_header(db):
-    from scout.db.store import (save_web_chunks, save_web_search, stored_web_results, web_searched, web_texts)
+    from scout.db.store import save_web_chunks, save_web_search, stored_web_results, web_searched
     from scout.websearch import Finding, web_chunks
     db.execute("INSERT INTO products (category, name) VALUES ('fridge', 'P1'), ('fridge', 'P2')")
     db.execute("""INSERT INTO listings (product_id, source, source_id, url, fetched_at) VALUES
@@ -306,7 +304,6 @@ def test_web_searches_count_for_the_product_and_web_text_loses_its_header(db):
     assert [r["text"].split("\n")[-1] for r in db.execute("SELECT text FROM chunks").fetchall()] == ["New text."]
     save_web_chunks(db, 1, url_ref(TEST.url), web_chunks("Fridge 2026\nmodel", finding), now)
     # without the two lines that name the product and the page; the chunks join the paragraphs with one newline
-    assert web_texts(db, [2]) == {2: TEST_PAGE.replace("\n\n", "\n")}
 
 
 def test_our_own_fetcher_gets_the_texts_without_credits():

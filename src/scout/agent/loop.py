@@ -1,5 +1,6 @@
 """The agent loop (design 2026-10-06-agent-loop-design.md): the chat model decides and calls tools; Python runs the
-tools, keeps the fetching polite, and checks the facts of the final reply."""
+tools, keeps the fetching polite, and checks the floors and the live price before the picks show. The facts of
+the answers are graded in the evaluation (scout grade)."""
 import json
 from dataclasses import dataclass, field
 from typing import Any, Callable, Literal
@@ -663,7 +664,7 @@ def build_agent_graph(deps: LoopDeps, checkpointer=None):
         call = from_state(state["final"])
         used = dict(state.get("used") or {})
         errors = check_final(call, state, deps, thread, used)
-        # The call record keeps only the fact checks; what the floors and the live check stopped is in used
+        # What the floors and the live check stopped is kept in used, for the evaluation
         if errors:
             used["gate_stops"] = used.get("gate_stops", []) + errors
         if errors and state.get("gate_rounds", 0) + 1 < MAX_GATE_ROUNDS:

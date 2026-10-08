@@ -266,7 +266,6 @@ def join_products(conn: psycopg.Connection, listing_id: int, same_as: int) -> st
            WHERE a.product_id = %s AND b.product_id = %s LIMIT 1""", (old, new)).fetchone()
     if shared:
         return f"both are listings of {shared['source']}; one shop does not list one product two times"
-    moved = [r["id"] for r in conn.execute("SELECT id FROM listings WHERE product_id = %s", (old,)).fetchall()]
     conn.execute("UPDATE listings SET product_id = %s WHERE product_id = %s", (new, old))
     conn.execute("UPDATE eliminations SET product_id = %s WHERE product_id = %s", (new, old))
     conn.execute(
@@ -428,13 +427,3 @@ def web_searched(conn: psycopg.Connection, listing_ids: list[int], since) -> set
                SELECT 1 FROM web_searches w JOIN listings o ON o.id = ANY(w.listing_ids)
                WHERE o.product_id = l.product_id AND w.searched_at >= %s)""", (listing_ids, since)).fetchall()
     return {row["id"] for row in rows}
-
-
-def web_texts(conn: psycopg.Connection, listing_ids: list[int]) -> dict[int, str]:
-    """The stored web quotes of each listing's product, joined: the numbers of a claim with the field web."""
-    rows = conn.execute(
-        """SELECT l.id, array_agg(c.text ORDER BY c.id) AS texts FROM listings l
-           JOIN listings o ON o.product_id = l.product_id JOIN chunks c ON c.listing_id = o.id AND c.source = 'web'
-           WHERE l.id = ANY(%s) GROUP BY l.id""", (listing_ids,)).fetchall()
-    # Each chunk starts with two lines that name the product and the page; only the quote is a source
-    return {row["id"]: "\n".join(t.split("\n", 2)[-1] for t in row["texts"]) for row in rows}
