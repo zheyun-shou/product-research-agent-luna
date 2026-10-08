@@ -1,35 +1,37 @@
-# Test set for `scout check-grader`, built on 2026-10-05 from the Luna run of 21:44, and changed
-# for the rules of 2026-10-06 (the shopper's language, a currency conversion that states its rate).
-# ok-* items: replies that I read and found correct against the cards (ok-recheck has one real fault in a
-# summary that I missed and the grader found). Each criterion must pass
-# (not_applicable also counts as not failed). Other items: a copy with one planted fault. Only that
-# criterion is scored.
+# Test set for `scout check-grader`. Built on 2026-10-05 from the Luna run of 21:44 and changed for the rules of
+# 2026-10-06 (a currency conversion that states its rate). On 2026-10-08 I changed it to the form of the agent loop:
+# the cards became the result of a tool call, the actions became tool calls, and any language is fine (two items
+# that failed for the language now pass). The items new-* are planted faults and correct answers about sources
+# that the agent loop has: page texts and web pages.
+# ok-* items: answers that I read and found correct against the sources (ok-recheck has one real fault in a
+# summary that I missed and the grader found). Each criterion must pass (not_applicable also counts as not
+# failed). Other items: a copy with one planted fault. Only that criterion is scored.
 - id: ok-height
   say: 第一个有多高？
-  cards:
-  - 'Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 2: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 2: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 3: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 3: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
-    on the card'
-  - 'Pick 4: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm,
-    grönsakslåda, 3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
-    l, freezer_volume=52.0 l'
-  - 'Pick 5: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
+    on the card
+
+    Pick 4: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm, grönsakslåda,
+    3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
+    l, freezer_volume=52.0 l
+
+    Pick 5: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
     MultiAirflow-system | KG 7358 inox | price=6619.19 SEK | in_stock=yes | rating=3.80 | review_count=27 | no attributes
     on the card'
-  new_cards: []
-  actions: &id004
-    action: answer
-    tools:
-    - reply
-    pick_numbers: []
-    restored: []
-  searched: false
+  tools:
+  - reply
   replies:
   - Pick 1 is 143.0 cm high.
   model_texts:
@@ -76,26 +78,25 @@
     plain: pass
 - id: ok-shipping-sum
   say: 第一个的价格加上499克朗运费是多少？
-  cards:
-  - 'Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 2: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 2: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
-    on the card'
-  - 'Pick 3: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm,
-    grönsakslåda, 3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
-    l, freezer_volume=52.0 l'
-  - 'Pick 4: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
+    on the card
+
+    Pick 3: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm, grönsakslåda,
+    3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
+    l, freezer_volume=52.0 l
+
+    Pick 4: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
     MultiAirflow-system | KG 7358 inox | price=6619.19 SEK | in_stock=yes | rating=3.80 | review_count=27 | no attributes
     on the card'
-  new_cards: []
-  actions: &id001
-    action: answer
-    tools:
-    - reply
-    pick_numbers: []
-    restored: []
-  searched: false
+  tools:
+  - reply
   replies:
   - Pick 1 costs 5636.18 SEK including the 499 SEK shipping you provided.
   model_texts:
@@ -166,36 +167,40 @@
     plain: pass
 - id: ok-show-more
   say: Show me other options.
-  cards:
-  - 'Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
-    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm'
-  - 'Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
+    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm
+
+    Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
     energisparläge, autofunktion, vit | price=6523.04 SEK | in_stock=yes | rating=4.40 | review_count=69 | depth=59.0 cm,
-    width=90.0 cm, height=177.0 cm'
-  - 'Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+    width=90.0 cm, height=177.0 cm
+
+    Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
     on the card'
-  new_cards:
-  - 'Pick 1: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm,
-    grönsakslåda, 3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
-    l, freezer_volume=52.0 l'
-  - 'Pick 2: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
+  - 'Result of show_picks (the new picks):
+
+    Pick 1: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm, grönsakslåda,
+    3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
+    l, freezer_volume=52.0 l
+
+    Pick 2: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
     MultiAirflow-system | KG 7358 inox | price=6619.19 SEK | in_stock=yes | rating=3.80 | review_count=27 | no attributes
     on the card'
-  actions:
-    action: more
-    tools:
-    - next_step
-    - reply
-    pick_numbers: []
-    restored: []
-  searched: true
+  tools:
+  - 'search_shop {"words": "kyl och frys"}'
+  - 'next_step {"action": "more"}'
+  - reply
   replies:
   - I’ll look for other fridge-freezer options with the same needs and budget.
   - 'Searching with: budget 9000 SEK.
@@ -258,30 +263,30 @@
     plain: pass
 - id: ok-recheck
   say: Are these prices still correct?
-  cards:
-  - 'Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
-    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm'
-  - 'Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
+    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm
+
+    Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
     energisparläge, autofunktion, vit | price=6523.04 SEK | in_stock=yes | rating=4.40 | review_count=69 | depth=59.0 cm,
-    width=90.0 cm, height=177.0 cm'
-  - 'Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+    width=90.0 cm, height=177.0 cm
+
+    Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
     on the card'
-  new_cards: []
-  actions:
-    action: recheck
-    tools:
-    - next_step
-    - reply
-    pick_numbers: []
-    restored: []
-  searched: false
+  tools:
+  - 'next_step {"action": "recheck"}'
+  - reply
   replies:
   - I’ll recheck the current prices for these picks.
   - "Conditions: budget 9000 SEK\n\n1. Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung,\
@@ -351,29 +356,29 @@
     plain: pass
 - id: ok-which-pick
   say: Remove that one.
-  cards:
-  - 'Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
-    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm'
-  - 'Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
+    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm
+
+    Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
     energisparläge, autofunktion, vit | price=6523.04 SEK | in_stock=yes | rating=4.40 | review_count=69 | depth=59.0 cm,
-    width=90.0 cm, height=177.0 cm'
-  - 'Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+    width=90.0 cm, height=177.0 cm
+
+    Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
     on the card'
-  new_cards: []
-  actions: &id008
-    action: answer
-    tools:
-    - reply
-    pick_numbers: []
-    restored: []
-  searched: false
+  tools:
+  - reply
   replies:
   - Which pick would you like removed? Please name the pick number or product.
   model_texts:
@@ -421,29 +426,29 @@
     plain: pass
 - id: ok-noise
   say: How loud is pick 4?
-  cards:
-  - 'Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
-    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm'
-  - 'Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
+    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm
+
+    Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
     energisparläge, autofunktion, vit | price=6523.04 SEK | in_stock=yes | rating=4.40 | review_count=69 | depth=59.0 cm,
-    width=90.0 cm, height=177.0 cm'
-  - 'Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+    width=90.0 cm, height=177.0 cm
+
+    Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
     on the card'
-  new_cards: []
-  actions: &id005
-    action: answer
-    tools:
-    - reply
-    pick_numbers: []
-    restored: []
-  searched: false
+  tools:
+  - reply
   replies:
   - Pick 4 is rated at 41.0 dB.
   model_texts:
@@ -489,46 +494,51 @@
     plain: pass
 - id: ok-remove-severin
   say: I don't want the Severin.
-  cards:
-  - 'Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
-    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm'
-  - 'Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
+    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm
+
+    Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
     energisparläge, autofunktion, vit | price=6523.04 SEK | in_stock=yes | rating=4.40 | review_count=69 | depth=59.0 cm,
-    width=90.0 cm, height=177.0 cm'
-  - 'Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+    width=90.0 cm, height=177.0 cm
+
+    Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
     on the card'
-  new_cards:
-  - 'Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 2: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
+  - 'Result of show_picks (the new picks):
+
+    Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 2: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
     energisparläge, autofunktion, vit | price=6523.04 SEK | in_stock=yes | rating=4.40 | review_count=69 | depth=59.0 cm,
-    width=90.0 cm, height=177.0 cm'
-  - 'Pick 3: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+    width=90.0 cm, height=177.0 cm
+
+    Pick 3: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 4: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 4: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
-    on the card'
-  - 'Pick 5: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm,
-    grönsakslåda, 3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
+    on the card
+
+    Pick 5: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm, grönsakslåda,
+    3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
     l, freezer_volume=52.0 l'
-  actions: &id007
-    action: exclude
-    tools:
-    - remove_picks
-    - reply
-    pick_numbers:
-    - 1
-    restored: []
-  searched: false
+  tools:
+  - 'remove_products {"picks": [1]}'
+  - reply
   replies:
   - 'Removed: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit. They stay out for the rest of this conversation.'
   - Removed the Severin from your options.
@@ -601,29 +611,29 @@
     plain: pass
 - id: ok-which-bomann
   say: Remove the Bomann.
-  cards:
-  - 'Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
-    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm'
-  - 'Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
+    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm
+
+    Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
     energisparläge, autofunktion, vit | price=6523.04 SEK | in_stock=yes | rating=4.40 | review_count=69 | depth=59.0 cm,
-    width=90.0 cm, height=177.0 cm'
-  - 'Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+    width=90.0 cm, height=177.0 cm
+
+    Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
     on the card'
-  new_cards: []
-  actions: &id010
-    action: answer
-    tools:
-    - reply
-    pick_numbers: []
-    restored: []
-  searched: false
+  tools:
+  - reply
   replies:
   - 'Which Bomann pick(s) should I remove: pick 2, pick 3, pick 5, or all of them?'
   model_texts:
@@ -670,29 +680,29 @@
     plain: pass
 - id: ok-which-red
   say: 去掉红色那个
-  cards:
-  - 'Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
-    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm'
-  - 'Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
+    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm
+
+    Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
     energisparläge, autofunktion, vit | price=6523.04 SEK | in_stock=yes | rating=4.40 | review_count=69 | depth=59.0 cm,
-    width=90.0 cm, height=177.0 cm'
-  - 'Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+    width=90.0 cm, height=177.0 cm
+
+    Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
     on the card'
-  new_cards: []
-  actions: &id006
-    action: answer
-    tools:
-    - reply
-    pick_numbers: []
-    restored: []
-  searched: false
+  tools:
+  - reply
   replies:
   - 'There are two red refrigerators: pick 1 and pick 2. Which one should I remove?'
   model_texts:
@@ -739,45 +749,50 @@
     plain: pass
 - id: ok-restore
   say: Sorry, I want the Severin back.
-  cards:
-  - 'Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 2: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 2: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
     energisparläge, autofunktion, vit | price=6523.04 SEK | in_stock=yes | rating=4.40 | review_count=69 | depth=59.0 cm,
-    width=90.0 cm, height=177.0 cm'
-  - 'Pick 3: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+    width=90.0 cm, height=177.0 cm
+
+    Pick 3: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 4: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 4: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
-    on the card'
-  - 'Pick 5: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm,
-    grönsakslåda, 3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
+    on the card
+
+    Pick 5: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm, grönsakslåda,
+    3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
     l, freezer_volume=52.0 l'
-  new_cards:
-  - 'Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 2: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
+  - 'Result of show_picks (the new picks):
+
+    Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 2: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
     energisparläge, autofunktion, vit | price=6523.04 SEK | in_stock=yes | rating=4.40 | review_count=69 | depth=59.0 cm,
-    width=90.0 cm, height=177.0 cm'
-  - 'Pick 3: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+    width=90.0 cm, height=177.0 cm
+
+    Pick 3: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 4: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 4: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
-    on the card'
-  - 'Pick 5: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
+    on the card
+
+    Pick 5: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
     SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm'
-  actions:
-    action: restore
-    tools:
-    - restore_picks
-    pick_numbers: []
-    restored:
-    - 13
-  searched: false
+  tools:
+  - 'restore_products {"products": [13]}'
   replies:
   - 'Brought back: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit.'
   - "Conditions: budget 9000 SEK\n\n1. Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd\n   5137.18 SEK | 4.40 (1779\
@@ -874,29 +889,29 @@
     plain: pass
 - id: ok-weather
   say: By the way, what will the weather be in Stockholm tomorrow?
-  cards:
-  - 'Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
-    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm'
-  - 'Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
+    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm
+
+    Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
     energisparläge, autofunktion, vit | price=6523.04 SEK | in_stock=yes | rating=4.40 | review_count=69 | depth=59.0 cm,
-    width=90.0 cm, height=177.0 cm'
-  - 'Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+    width=90.0 cm, height=177.0 cm
+
+    Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
     on the card'
-  new_cards: []
-  actions: &id009
-    action: answer
-    tools:
-    - reply
-    pick_numbers: []
-    restored: []
-  searched: false
+  tools:
+  - reply
   replies:
   - I don’t have weather data for Stockholm. I can help compare the fridge-freezer picks instead.
   model_texts:
@@ -942,24 +957,28 @@
     plain: pass
 - id: ok-chinese
   say: 第一个的价格加上499克朗运费是多少？
-  cards:
-  - 'Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 2: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 2: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
-    on the card'
-  - 'Pick 3: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm,
-    grönsakslåda, 3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
-    l, freezer_volume=52.0 l'
-  - 'Pick 4: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
+    on the card
+
+    Pick 3: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm, grönsakslåda,
+    3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
+    l, freezer_volume=52.0 l
+
+    Pick 4: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
     MultiAirflow-system | KG 7358 inox | price=6619.19 SEK | in_stock=yes | rating=3.80 | review_count=27 | no attributes
     on the card'
-  new_cards: []
-  actions: *id001
-  searched: false
-  replies: &id002
+  tools:
+  - reply
+  replies: &id001
   - 第一个加上499克朗运费一共是5636.18克朗。
-  model_texts: *id002
+  model_texts: *id001
   history:
   - 'Shopper: 我想买个冰箱，放冰箱的地方宽60厘米、高186厘米，预算9000克朗'
   - 'Assistant: Do you want a fridge with or without a freezer, and how deep is the available space? Do you care about low
@@ -1022,24 +1041,28 @@
     arithmetic: pass
 - id: ok-conversion
   say: 第一个的价格加上499克朗运费是多少？
-  cards:
-  - 'Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 2: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 2: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
-    on the card'
-  - 'Pick 3: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm,
-    grönsakslåda, 3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
-    l, freezer_volume=52.0 l'
-  - 'Pick 4: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
+    on the card
+
+    Pick 3: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm, grönsakslåda,
+    3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
+    l, freezer_volume=52.0 l
+
+    Pick 4: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
     MultiAirflow-system | KG 7358 inox | price=6619.19 SEK | in_stock=yes | rating=3.80 | review_count=27 | no attributes
     on the card'
-  new_cards: []
-  actions: *id001
-  searched: false
-  replies: &id003
+  tools:
+  - reply
+  replies: &id002
   - Pick 1 costs 5636.18 SEK including the 499 SEK shipping you provided. At about 11.5 SEK per EUR, that is about 490 EUR.
-  model_texts: *id003
+  model_texts: *id002
   history:
   - 'Shopper: 我想买个冰箱，放冰箱的地方宽60厘米、高186厘米，预算9000克朗'
   - 'Assistant: Do you want a fridge with or without a freezer, and how deep is the available space? Do you care about low
@@ -1101,25 +1124,30 @@
     arithmetic: pass
 - id: height-wrong
   say: 第一个有多高？
-  cards:
-  - 'Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 2: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 2: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 3: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 3: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
-    on the card'
-  - 'Pick 4: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm,
-    grönsakslåda, 3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
-    l, freezer_volume=52.0 l'
-  - 'Pick 5: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
+    on the card
+
+    Pick 4: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm, grönsakslåda,
+    3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
+    l, freezer_volume=52.0 l
+
+    Pick 5: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
     MultiAirflow-system | KG 7358 inox | price=6619.19 SEK | in_stock=yes | rating=3.80 | review_count=27 | no attributes
     on the card'
-  new_cards: []
-  actions: *id004
-  searched: false
+  tools:
+  - reply
   replies:
   - Pick 1 is 153.0 cm high.
   model_texts:
@@ -1161,24 +1189,29 @@
     facts: fail
 - id: noise-wrong
   say: How loud is pick 4?
-  cards:
-  - 'Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
-    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm'
-  - 'Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
+    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm
+
+    Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
     energisparläge, autofunktion, vit | price=6523.04 SEK | in_stock=yes | rating=4.40 | review_count=69 | depth=59.0 cm,
-    width=90.0 cm, height=177.0 cm'
-  - 'Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+    width=90.0 cm, height=177.0 cm
+
+    Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
     on the card'
-  new_cards: []
-  actions: *id005
-  searched: false
+  tools:
+  - reply
   replies:
   - Pick 4 is rated at 38.0 dB.
   model_texts:
@@ -1219,25 +1252,30 @@
     facts: fail
 - id: height-plus-energy
   say: 第一个有多高？
-  cards:
-  - 'Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 2: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 2: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 3: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 3: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
-    on the card'
-  - 'Pick 4: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm,
-    grönsakslåda, 3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
-    l, freezer_volume=52.0 l'
-  - 'Pick 5: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
+    on the card
+
+    Pick 4: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm, grönsakslåda,
+    3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
+    l, freezer_volume=52.0 l
+
+    Pick 5: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
     MultiAirflow-system | KG 7358 inox | price=6619.19 SEK | in_stock=yes | rating=3.80 | review_count=27 | no attributes
     on the card'
-  new_cards: []
-  actions: *id004
-  searched: false
+  tools:
+  - reply
   replies:
   - Pick 1 is 143.0 cm high, and it has energy class A.
   model_texts:
@@ -1279,21 +1317,25 @@
     facts: fail
 - id: price-wrong
   say: 第一个的价格加上499克朗运费是多少？
-  cards:
-  - 'Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 2: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 2: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
-    on the card'
-  - 'Pick 3: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm,
-    grönsakslåda, 3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
-    l, freezer_volume=52.0 l'
-  - 'Pick 4: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
+    on the card
+
+    Pick 3: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm, grönsakslåda,
+    3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
+    l, freezer_volume=52.0 l
+
+    Pick 4: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
     MultiAirflow-system | KG 7358 inox | price=6619.19 SEK | in_stock=yes | rating=3.80 | review_count=27 | no attributes
     on the card'
-  new_cards: []
-  actions: *id001
-  searched: false
+  tools:
+  - reply
   replies:
   - Pick 1 costs 5237.18 SEK, so with the 499 SEK shipping you gave it is 5736.18 SEK.
   model_texts:
@@ -1359,24 +1401,29 @@
     facts: fail
 - id: red-wrong-picks
   say: 去掉红色那个
-  cards:
-  - 'Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
-    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm'
-  - 'Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
+    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm
+
+    Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
     energisparläge, autofunktion, vit | price=6523.04 SEK | in_stock=yes | rating=4.40 | review_count=69 | depth=59.0 cm,
-    width=90.0 cm, height=177.0 cm'
-  - 'Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+    width=90.0 cm, height=177.0 cm
+
+    Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
     on the card'
-  new_cards: []
-  actions: *id006
-  searched: false
+  tools:
+  - reply
   replies:
   - 'There are two red refrigerators: pick 3 and pick 4. Which one should I remove?'
   model_texts:
@@ -1418,39 +1465,51 @@
     facts: fail
 - id: severin-width
   say: I don't want the Severin.
-  cards:
-  - 'Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
-    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm'
-  - 'Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
+    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm
+
+    Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
     energisparläge, autofunktion, vit | price=6523.04 SEK | in_stock=yes | rating=4.40 | review_count=69 | depth=59.0 cm,
-    width=90.0 cm, height=177.0 cm'
-  - 'Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+    width=90.0 cm, height=177.0 cm
+
+    Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
     on the card'
-  new_cards:
-  - 'Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 2: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
+  - 'Result of show_picks (the new picks):
+
+    Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 2: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
     energisparläge, autofunktion, vit | price=6523.04 SEK | in_stock=yes | rating=4.40 | review_count=69 | depth=59.0 cm,
-    width=90.0 cm, height=177.0 cm'
-  - 'Pick 3: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+    width=90.0 cm, height=177.0 cm
+
+    Pick 3: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 4: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 4: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
-    on the card'
-  - 'Pick 5: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm,
-    grönsakslåda, 3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
+    on the card
+
+    Pick 5: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm, grönsakslåda,
+    3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
     l, freezer_volume=52.0 l'
-  actions: *id007
-  searched: false
+  tools:
+  - 'remove_products {"picks": [1]}'
+  - reply
   replies:
   - 'Removed: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit. They stay out for the rest of this conversation.'
   - Removed the Severin from your options. It was 70 cm wide.
@@ -1518,21 +1577,25 @@
     facts: fail
 - id: sum-wrong
   say: 第一个的价格加上499克朗运费是多少？
-  cards:
-  - 'Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 2: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 2: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
-    on the card'
-  - 'Pick 3: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm,
-    grönsakslåda, 3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
-    l, freezer_volume=52.0 l'
-  - 'Pick 4: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
+    on the card
+
+    Pick 3: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm, grönsakslåda,
+    3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
+    l, freezer_volume=52.0 l
+
+    Pick 4: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
     MultiAirflow-system | KG 7358 inox | price=6619.19 SEK | in_stock=yes | rating=3.80 | review_count=27 | no attributes
     on the card'
-  new_cards: []
-  actions: *id001
-  searched: false
+  tools:
+  - reply
   replies:
   - Pick 1 costs 5646.18 SEK including the 499 SEK shipping you provided.
   model_texts:
@@ -1598,21 +1661,25 @@
     arithmetic: fail
 - id: added-moms
   say: 第一个的价格加上499克朗运费是多少？
-  cards:
-  - 'Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 2: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 2: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
-    on the card'
-  - 'Pick 3: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm,
-    grönsakslåda, 3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
-    l, freezer_volume=52.0 l'
-  - 'Pick 4: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
+    on the card
+
+    Pick 3: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm, grönsakslåda,
+    3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
+    l, freezer_volume=52.0 l
+
+    Pick 4: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
     MultiAirflow-system | KG 7358 inox | price=6619.19 SEK | in_stock=yes | rating=3.80 | review_count=27 | no attributes
     on the card'
-  new_cards: []
-  actions: *id001
-  searched: false
+  tools:
+  - reply
   replies:
   - Pick 1 costs 5137.18 SEK. With the 499 SEK shipping and 25% moms, it is 7045.23 SEK.
   model_texts:
@@ -1678,21 +1745,25 @@
     arithmetic: fail
 - id: invented-rate
   say: 第一个的价格加上499克朗运费是多少？
-  cards:
-  - 'Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 2: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 2: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
-    on the card'
-  - 'Pick 3: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm,
-    grönsakslåda, 3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
-    l, freezer_volume=52.0 l'
-  - 'Pick 4: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
+    on the card
+
+    Pick 3: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm, grönsakslåda,
+    3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
+    l, freezer_volume=52.0 l
+
+    Pick 4: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
     MultiAirflow-system | KG 7358 inox | price=6619.19 SEK | in_stock=yes | rating=3.80 | review_count=27 | no attributes
     on the card'
-  new_cards: []
-  actions: *id001
-  searched: false
+  tools:
+  - reply
   replies:
   - Pick 1 costs 5636.18 SEK including the 499 SEK shipping you provided. That is about 490 EUR.
   model_texts:
@@ -1758,24 +1829,29 @@
     arithmetic: fail
 - id: difference-wrong
   say: How loud is pick 4?
-  cards:
-  - 'Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
-    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm'
-  - 'Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
+    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm
+
+    Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
     energisparläge, autofunktion, vit | price=6523.04 SEK | in_stock=yes | rating=4.40 | review_count=69 | depth=59.0 cm,
-    width=90.0 cm, height=177.0 cm'
-  - 'Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+    width=90.0 cm, height=177.0 cm
+
+    Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
     on the card'
-  new_cards: []
-  actions: *id005
-  searched: false
+  tools:
+  - reply
   replies:
   - Pick 4 is rated at 41.0 dB. It costs 2199.99 SEK, which is 3048.52 SEK less than pick 1.
   model_texts:
@@ -1816,25 +1892,30 @@
     arithmetic: fail
 - id: ratio-wrong
   say: 第一个有多高？
-  cards:
-  - 'Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 2: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 2: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 3: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 3: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
-    on the card'
-  - 'Pick 4: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm,
-    grönsakslåda, 3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
-    l, freezer_volume=52.0 l'
-  - 'Pick 5: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
+    on the card
+
+    Pick 4: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm, grönsakslåda,
+    3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
+    l, freezer_volume=52.0 l
+
+    Pick 5: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
     MultiAirflow-system | KG 7358 inox | price=6619.19 SEK | in_stock=yes | rating=3.80 | review_count=27 | no attributes
     on the card'
-  new_cards: []
-  actions: *id004
-  searched: false
+  tools:
+  - reply
   replies:
   - Pick 1 is 143.0 cm high. That is about half the height of pick 2.
   model_texts:
@@ -1876,24 +1957,29 @@
     arithmetic: fail
 - id: promise-remove
   say: How loud is pick 4?
-  cards:
-  - 'Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
-    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm'
-  - 'Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
+    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm
+
+    Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
     energisparläge, autofunktion, vit | price=6523.04 SEK | in_stock=yes | rating=4.40 | review_count=69 | depth=59.0 cm,
-    width=90.0 cm, height=177.0 cm'
-  - 'Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+    width=90.0 cm, height=177.0 cm
+
+    Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
     on the card'
-  new_cards: []
-  actions: *id005
-  searched: false
+  tools:
+  - reply
   replies:
   - Pick 4 is rated at 41.0 dB. I'll remove it for you.
   model_texts:
@@ -1934,24 +2020,29 @@
     said_did: fail
 - id: claims-removed
   say: Remove that one.
-  cards:
-  - 'Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
-    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm'
-  - 'Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
+    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm
+
+    Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
     energisparläge, autofunktion, vit | price=6523.04 SEK | in_stock=yes | rating=4.40 | review_count=69 | depth=59.0 cm,
-    width=90.0 cm, height=177.0 cm'
-  - 'Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+    width=90.0 cm, height=177.0 cm
+
+    Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
     on the card'
-  new_cards: []
-  actions: *id008
-  searched: false
+  tools:
+  - reply
   replies:
   - I removed pick 3 for you.
   model_texts:
@@ -1994,29 +2085,29 @@
     said_did: fail
 - id: promise-more-no-step
   say: Show me other options.
-  cards:
-  - 'Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
-    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm'
-  - 'Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
+    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm
+
+    Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
     energisparläge, autofunktion, vit | price=6523.04 SEK | in_stock=yes | rating=4.40 | review_count=69 | depth=59.0 cm,
-    width=90.0 cm, height=177.0 cm'
-  - 'Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+    width=90.0 cm, height=177.0 cm
+
+    Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
     on the card'
-  new_cards: []
-  actions:
-    action: answer
-    tools:
-    - reply
-    pick_numbers: []
-    restored: []
-  searched: false
+  tools:
+  - reply
   replies:
   - I'll look for other fridge-freezer options with the same needs and budget.
   model_texts:
@@ -2057,25 +2148,30 @@
     said_did: fail
 - id: claims-recheck
   say: 第一个有多高？
-  cards:
-  - 'Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 2: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 2: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 3: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 3: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
-    on the card'
-  - 'Pick 4: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm,
-    grönsakslåda, 3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
-    l, freezer_volume=52.0 l'
-  - 'Pick 5: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
+    on the card
+
+    Pick 4: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm, grönsakslåda,
+    3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
+    l, freezer_volume=52.0 l
+
+    Pick 5: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
     MultiAirflow-system | KG 7358 inox | price=6619.19 SEK | in_stock=yes | rating=3.80 | review_count=27 | no attributes
     on the card'
-  new_cards: []
-  actions: *id004
-  searched: false
+  tools:
+  - reply
   replies:
   - I rechecked the price just now. Pick 1 is 143.0 cm high.
   model_texts:
@@ -2117,24 +2213,29 @@
     said_did: fail
 - id: promise-weather
   say: By the way, what will the weather be in Stockholm tomorrow?
-  cards:
-  - 'Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
-    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm'
-  - 'Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
+    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm
+
+    Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
     energisparläge, autofunktion, vit | price=6523.04 SEK | in_stock=yes | rating=4.40 | review_count=69 | depth=59.0 cm,
-    width=90.0 cm, height=177.0 cm'
-  - 'Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+    width=90.0 cm, height=177.0 cm
+
+    Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
     on the card'
-  new_cards: []
-  actions: *id009
-  searched: false
+  tools:
+  - reply
   replies:
   - I'll check the Stockholm forecast and tell you in a moment.
   model_texts:
@@ -2175,24 +2276,29 @@
     said_did: fail
 - id: invented-review
   say: How loud is pick 4?
-  cards:
-  - 'Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
-    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm'
-  - 'Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
+    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm
+
+    Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
     energisparläge, autofunktion, vit | price=6523.04 SEK | in_stock=yes | rating=4.40 | review_count=69 | depth=59.0 cm,
-    width=90.0 cm, height=177.0 cm'
-  - 'Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+    width=90.0 cm, height=177.0 cm
+
+    Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
     on the card'
-  new_cards: []
-  actions: *id005
-  searched: false
+  tools:
+  - reply
   replies:
   - Pick 4 is rated at 41.0 dB. Reviewers say it is very quiet at night.
   model_texts:
@@ -2233,25 +2339,30 @@
     honest: fail
 - id: invented-text
   say: 第一个有多高？
-  cards:
-  - 'Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 2: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 2: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 3: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 3: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
-    on the card'
-  - 'Pick 4: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm,
-    grönsakslåda, 3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
-    l, freezer_volume=52.0 l'
-  - 'Pick 5: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
+    on the card
+
+    Pick 4: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm, grönsakslåda,
+    3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
+    l, freezer_volume=52.0 l
+
+    Pick 5: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
     MultiAirflow-system | KG 7358 inox | price=6619.19 SEK | in_stock=yes | rating=3.80 | review_count=27 | no attributes
     on the card'
-  new_cards: []
-  actions: *id004
-  searched: false
+  tools:
+  - reply
   replies:
   - Pick 1 is 143.0 cm high. The product description says it fits under most kitchen counters.
   model_texts:
@@ -2293,24 +2404,29 @@
     honest: fail
 - id: invented-weather
   say: By the way, what will the weather be in Stockholm tomorrow?
-  cards:
-  - 'Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
-    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm'
-  - 'Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
+    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm
+
+    Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
     energisparläge, autofunktion, vit | price=6523.04 SEK | in_stock=yes | rating=4.40 | review_count=69 | depth=59.0 cm,
-    width=90.0 cm, height=177.0 cm'
-  - 'Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+    width=90.0 cm, height=177.0 cm
+
+    Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
     on the card'
-  new_cards: []
-  actions: *id009
-  searched: false
+  tools:
+  - reply
   replies:
   - Tomorrow will be sunny in Stockholm, about 14 degrees.
   model_texts:
@@ -2351,39 +2467,51 @@
     honest: fail
 - id: invented-complaints
   say: I don't want the Severin.
-  cards:
-  - 'Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
-    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm'
-  - 'Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
+    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm
+
+    Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
     energisparläge, autofunktion, vit | price=6523.04 SEK | in_stock=yes | rating=4.40 | review_count=69 | depth=59.0 cm,
-    width=90.0 cm, height=177.0 cm'
-  - 'Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+    width=90.0 cm, height=177.0 cm
+
+    Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
     on the card'
-  new_cards:
-  - 'Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 2: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
+  - 'Result of show_picks (the new picks):
+
+    Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 2: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
     energisparläge, autofunktion, vit | price=6523.04 SEK | in_stock=yes | rating=4.40 | review_count=69 | depth=59.0 cm,
-    width=90.0 cm, height=177.0 cm'
-  - 'Pick 3: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+    width=90.0 cm, height=177.0 cm
+
+    Pick 3: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 4: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 4: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
-    on the card'
-  - 'Pick 5: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm,
-    grönsakslåda, 3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
+    on the card
+
+    Pick 5: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm, grönsakslåda,
+    3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
     l, freezer_volume=52.0 l'
-  actions: *id007
-  searched: false
+  tools:
+  - 'remove_products {"picks": [1]}'
+  - reply
   replies:
   - 'Removed: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit. They stay out for the rest of this conversation.'
   - Removed the Severin. Many buyers complained about its noise.
@@ -2451,21 +2579,25 @@
     honest: fail
 - id: invented-stock
   say: 第一个的价格加上499克朗运费是多少？
-  cards:
-  - 'Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 2: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 2: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
-    on the card'
-  - 'Pick 3: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm,
-    grönsakslåda, 3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
-    l, freezer_volume=52.0 l'
-  - 'Pick 4: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
+    on the card
+
+    Pick 3: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm, grönsakslåda,
+    3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
+    l, freezer_volume=52.0 l
+
+    Pick 4: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
     MultiAirflow-system | KG 7358 inox | price=6619.19 SEK | in_stock=yes | rating=3.80 | review_count=27 | no attributes
     on the card'
-  new_cards: []
-  actions: *id001
-  searched: false
+  tools:
+  - reply
   replies:
   - Pick 1 costs 5636.18 SEK including the 499 SEK shipping you provided. It is in stock and ships tomorrow.
   model_texts:
@@ -2531,25 +2663,30 @@
     honest: fail
 - id: answers-width
   say: 第一个有多高？
-  cards:
-  - 'Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 2: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 2: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 3: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 3: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
-    on the card'
-  - 'Pick 4: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm,
-    grönsakslåda, 3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
-    l, freezer_volume=52.0 l'
-  - 'Pick 5: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
+    on the card
+
+    Pick 4: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm, grönsakslåda,
+    3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
+    l, freezer_volume=52.0 l
+
+    Pick 5: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
     MultiAirflow-system | KG 7358 inox | price=6619.19 SEK | in_stock=yes | rating=3.80 | review_count=27 | no attributes
     on the card'
-  new_cards: []
-  actions: *id004
-  searched: false
+  tools:
+  - reply
   replies:
   - Pick 1 is 49.5 cm wide.
   model_texts:
@@ -2591,24 +2728,29 @@
     answers: fail
 - id: answers-price
   say: How loud is pick 4?
-  cards:
-  - 'Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
-    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm'
-  - 'Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
+    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm
+
+    Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
     energisparläge, autofunktion, vit | price=6523.04 SEK | in_stock=yes | rating=4.40 | review_count=69 | depth=59.0 cm,
-    width=90.0 cm, height=177.0 cm'
-  - 'Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+    width=90.0 cm, height=177.0 cm
+
+    Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
     on the card'
-  new_cards: []
-  actions: *id005
-  searched: false
+  tools:
+  - reply
   replies:
   - Pick 4 costs 2199.99 SEK.
   model_texts:
@@ -2649,24 +2791,29 @@
     answers: fail
 - id: answers-best
   say: Remove that one.
-  cards:
-  - 'Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
-    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm'
-  - 'Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
+    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm
+
+    Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
     energisparläge, autofunktion, vit | price=6523.04 SEK | in_stock=yes | rating=4.40 | review_count=69 | depth=59.0 cm,
-    width=90.0 cm, height=177.0 cm'
-  - 'Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+    width=90.0 cm, height=177.0 cm
+
+    Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
     on the card'
-  new_cards: []
-  actions: *id008
-  searched: false
+  tools:
+  - reply
   replies:
   - Pick 1 has the best rating, 4.60.
   model_texts:
@@ -2709,24 +2856,29 @@
     answers: fail
 - id: answers-brand
   say: Remove the Bomann.
-  cards:
-  - 'Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
-    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm'
-  - 'Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
+    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm
+
+    Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
     energisparläge, autofunktion, vit | price=6523.04 SEK | in_stock=yes | rating=4.40 | review_count=69 | depth=59.0 cm,
-    width=90.0 cm, height=177.0 cm'
-  - 'Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+    width=90.0 cm, height=177.0 cm
+
+    Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
     on the card'
-  new_cards: []
-  actions: *id010
-  searched: false
+  tools:
+  - reply
   replies:
   - Bomann is a brand of household appliances.
   model_texts:
@@ -2768,24 +2920,29 @@
     answers: fail
 - id: answers-ignores
   say: By the way, what will the weather be in Stockholm tomorrow?
-  cards:
-  - 'Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
-    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm'
-  - 'Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
+    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm
+
+    Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
     energisparläge, autofunktion, vit | price=6523.04 SEK | in_stock=yes | rating=4.40 | review_count=69 | depth=59.0 cm,
-    width=90.0 cm, height=177.0 cm'
-  - 'Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+    width=90.0 cm, height=177.0 cm
+
+    Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
     on the card'
-  new_cards: []
-  actions: *id009
-  searched: false
+  tools:
+  - reply
   replies:
   - Pick 1 is the Severin RKG 8930.
   model_texts:
@@ -2824,27 +2981,32 @@
     \ were left out.\nSize check skipped: the pages were not fetched again."
   expected:
     answers: fail
-- id: plain-swedish
+- id: ok-swedish-reply
   say: 第一个有多高？
-  cards:
-  - 'Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 2: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 2: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 3: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 3: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
-    on the card'
-  - 'Pick 4: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm,
-    grönsakslåda, 3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
-    l, freezer_volume=52.0 l'
-  - 'Pick 5: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
+    on the card
+
+    Pick 4: Bomann, KG7359 kylskåp och frys 173L vit - 121 L kylskåp, 52 L 4-stjärnig frys, LED-belysning, öppningslarm, grönsakslåda,
+    3 glashyllor, energibesparing | price=3212.29 SEK | in_stock=yes | rating=4.00 | review_count=84 | total_volume=173.0
+    l, freezer_volume=52.0 l
+
+    Pick 5: Bomann Kylskåp French Door No Frost | Kylskåp och frys med Total No Frost | 362 L kylskåp med frys på sidan med
     MultiAirflow-system | KG 7358 inox | price=6619.19 SEK | in_stock=yes | rating=3.80 | review_count=27 | no attributes
     on the card'
-  new_cards: []
-  actions: *id004
-  searched: false
+  tools:
+  - reply
   replies:
   - Val 1 är 143,0 cm högt.
   model_texts:
@@ -2883,27 +3045,32 @@
     13 stored items are not a 'Fridge with a freezer part' by their titles and were left out.\nSize check skipped: the pages\
     \ were not fetched again."
   expected:
-    plain: fail
-- id: plain-wrong-language
+    plain: pass
+- id: ok-other-language
   say: How loud is pick 4?
-  cards:
-  - 'Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
-    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm'
-  - 'Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
+    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm
+
+    Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
     energisparläge, autofunktion, vit | price=6523.04 SEK | in_stock=yes | rating=4.40 | review_count=69 | depth=59.0 cm,
-    width=90.0 cm, height=177.0 cm'
-  - 'Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+    width=90.0 cm, height=177.0 cm
+
+    Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
     on the card'
-  new_cards: []
-  actions: *id005
-  searched: false
+  tools:
+  - reply
   replies:
   - 第4个的噪音是41.0分贝。
   model_texts:
@@ -2941,27 +3108,32 @@
     \ on your conditions come last. Price only checks the budget.\n13 stored items are not a 'Fridge with a freezer part'\
     \ by their titles and were left out.\nSize check skipped: the pages were not fetched again."
   expected:
-    plain: fail
+    plain: pass
 - id: plain-long
   say: By the way, what will the weather be in Stockholm tomorrow?
-  cards:
-  - 'Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
-    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm'
-  - 'Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
+    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm
+
+    Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
     energisparläge, autofunktion, vit | price=6523.04 SEK | in_stock=yes | rating=4.40 | review_count=69 | depth=59.0 cm,
-    width=90.0 cm, height=177.0 cm'
-  - 'Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+    width=90.0 cm, height=177.0 cm
+
+    Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
     on the card'
-  new_cards: []
-  actions: *id009
-  searched: false
+  tools:
+  - reply
   replies:
   - Thank you so much for your question, I really appreciate it! Weather is a very interesting topic, and many people in Stockholm
     like to know what tomorrow brings. Unfortunately, as a shopping assistant, I do not have weather data. However, I am always
@@ -3008,24 +3180,29 @@
     plain: fail
 - id: plain-rambling
   say: Remove that one.
-  cards:
-  - 'Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
-    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm'
-  - 'Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
-    | depth=56.2 cm, width=49.5 cm, height=143.0 cm'
-  - 'Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
+  sources:
+  - 'Result of find_products (the picks, by their number for the shopper):
+
+    Pick 1: Severin RKG 8930 Retro Kühl-Gefrierkombination, 61,5cm breit, 206l, LED-Innenbeleuchtung, Veggibox, rot | price=5648.51
+    SEK | in_stock=yes | rating=4.60 | review_count=55 | depth=55.0 cm, width=61.5 cm, height=146.0 cm
+
+    Pick 2: Bomann Kylskåp frys 175 L KG 320, justerbara fötter, röd | price=5137.18 SEK | in_stock=yes | rating=4.40 | review_count=1779
+    | depth=56.2 cm, width=49.5 cm, height=143.0 cm
+
+    Pick 3: Bomann SBS 7344 Stativ Side-by-Side kombination, 90 cm bred, 442 L, Total NoFrost, snabbkylningsfunktion, snabbfrysfunktion,
     energisparläge, autofunktion, vit | price=6523.04 SEK | in_stock=yes | rating=4.40 | review_count=69 | depth=59.0 cm,
-    width=90.0 cm, height=177.0 cm'
-  - 'Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
+    width=90.0 cm, height=177.0 cm
+
+    Pick 4: FOHERE Kylskåp med frys 90L, Liten Kompakt Kyl, 7 Reglerbar Temperatur, 84kWh/år, Energieffektivitet E, Tyst,
     Perfekt för Sovrum, Kontor, Kök, Husbil och Camping | price=2199.99 SEK | in_stock=yes | rating=4.20 | review_count=54
     | depth=80.0 cm, noise=41.0 dB, width=45.0 cm, height=48.0 cm, energy_class=E, total_volume=90.0 l, freezer_volume=8.5
-    l'
-  - 'Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
+    l
+
+    Pick 5: Bomann, Kylskåp och frys i 315L rostfritt stål, KG7357-Inox, kylskåp 219L, 96L frys, temperaturkontroll, visuellt
     larm, 4 glashyllor, med LED-belysning | price=4919.97 SEK | in_stock=yes | rating=4.10 | review_count=53 | no attributes
     on the card'
-  new_cards: []
-  actions: *id008
-  searched: false
+  tools:
+  - reply
   replies:
   - Thank you for your message. There are five picks on the list, and each one has its own good points and its own weak points.
     Before I do anything, I want to be sure that I understand you. You wrote 'that one', but there are several picks, so it
@@ -3072,3 +3249,144 @@
     \ by their titles and were left out.\nSize check skipped: the pages were not fetched again."
   expected:
     plain: fail
+- id: new-ok-rounded
+  say: How tall is the Severin?
+  sources:
+  - 'Result of read_product {"ids": [5]}:
+
+    id 5: Severin RKG 8983 Retro Fridge/Freezer, Red | price=8499.00 SEK
+
+    specs: Product dimensions: 61.5D x 166.5W x 166.5H centimetres'
+  tools:
+  - read_product
+  - reply
+  replies:
+  - The Severin is about 166 cm high.
+  model_texts:
+  - The Severin is about 166 cm high.
+  history: []
+  expected:
+    facts: pass
+    honest: pass
+- id: new-ok-web-test
+  say: Is the Amica quiet, and what do tests say?
+  sources:
+  - 'Result of read_product {"ids": [7]}:
+
+    id 7: Amica FrostControl Fridge Freezer 157 L, 144 x 47.5 x 49.5 cm, Red | price=14111.89 SEK | rating=4.00 (30)
+
+    specs: Model Number: AKG 3840 R; Annual Energy Consumption: 189 Kilowatt Hours Per Year; Capacity: 157 litres'
+  - 'Result of search_web {"question": "Amica AKG 3840 R test", "ids": [7]}:
+
+    Web search ''Amica AKG 3840 R test'': 2 relevant pages.
+
+    [testberichte.de] Amica AKG 3840: 1,8 gut - Testberichte.de. Stärken: Kompakte Größe ideal für kleine Haushalte. Leise
+    Betriebslautstärke von 39 dB(A). Abtauautomatik im Kühlteil.
+
+    [idealo.de] Amica AKG 3840 R: Preisvergleich, 14 Angebote.'
+  tools:
+  - search_web
+  - reply
+  replies:
+  - Yes. Testberichte.de gives it 1.8 (gut) and names its quiet 39 dB(A) as a strength.
+  model_texts:
+  - Yes. Testberichte.de gives it 1.8 (gut) and names its quiet 39 dB(A) as a strength.
+  history: []
+  expected:
+    facts: pass
+    honest: pass
+    said_did: pass
+- id: new-invented-test
+  say: Is the Amica quiet, and what do tests say?
+  sources:
+  - 'Result of read_product {"ids": [7]}:
+
+    id 7: Amica FrostControl Fridge Freezer 157 L, 144 x 47.5 x 49.5 cm, Red | price=14111.89 SEK | rating=4.00 (30)
+
+    specs: Model Number: AKG 3840 R; Annual Energy Consumption: 189 Kilowatt Hours Per Year; Capacity: 157 litres'
+  - 'Result of search_web {"question": "Amica AKG 3840 R test", "ids": [7]}:
+
+    Web search ''Amica AKG 3840 R test'': 2 relevant pages.
+
+    [testberichte.de] Amica AKG 3840: 1,8 gut - Testberichte.de. Stärken: Kompakte Größe ideal für kleine Haushalte. Leise
+    Betriebslautstärke von 39 dB(A). Abtauautomatik im Kühlteil.
+
+    [idealo.de] Amica AKG 3840 R: Preisvergleich, 14 Angebote.'
+  tools:
+  - search_web
+  - reply
+  replies:
+  - Yes. Stiftung Warentest gives it 1.5 (gut) and measured 39 dB(A).
+  model_texts:
+  - Yes. Stiftung Warentest gives it 1.5 (gut) and measured 39 dB(A).
+  history: []
+  expected:
+    facts: fail
+- id: new-test-without-site
+  say: Is the Amica quiet, and what do tests say?
+  sources:
+  - 'Result of read_product {"ids": [7]}:
+
+    id 7: Amica FrostControl Fridge Freezer 157 L, 144 x 47.5 x 49.5 cm, Red | price=14111.89 SEK | rating=4.00 (30)
+
+    specs: Model Number: AKG 3840 R; Annual Energy Consumption: 189 Kilowatt Hours Per Year; Capacity: 157 litres'
+  - 'Result of search_web {"question": "Amica AKG 3840 R test", "ids": [7]}:
+
+    Web search ''Amica AKG 3840 R test'': 2 relevant pages.
+
+    [testberichte.de] Amica AKG 3840: 1,8 gut - Testberichte.de. Stärken: Kompakte Größe ideal für kleine Haushalte. Leise
+    Betriebslautstärke von 39 dB(A). Abtauautomatik im Kühlteil.
+
+    [idealo.de] Amica AKG 3840 R: Preisvergleich, 14 Angebote.'
+  tools:
+  - search_web
+  - reply
+  replies:
+  - Yes. A test gives it 1.8 (gut), and it runs at 39 dB(A).
+  model_texts:
+  - Yes. A test gives it 1.8 (gut), and it runs at 39 dB(A).
+  history: []
+  expected:
+    facts: fail
+- id: new-other-product
+  say: How tall is the Amica?
+  sources:
+  - 'Result of read_product {"ids": [7]}:
+
+    id 7: Amica FrostControl Fridge Freezer 157 L, 144 x 47.5 x 49.5 cm, Red | price=14111.89 SEK | rating=4.00 (30)
+
+    specs: Model Number: AKG 3840 R; Annual Energy Consumption: 189 Kilowatt Hours Per Year; Capacity: 157 litres'
+  - 'Result of read_product {"ids": [5]}:
+
+    id 5: Severin RKG 8983 Retro Fridge/Freezer, Red | price=8499.00 SEK
+
+    specs: Product dimensions: 61.5D x 166.5W x 166.5H centimetres'
+  tools:
+  - read_product
+  - reply
+  replies:
+  - The Amica is 166.5 cm high.
+  model_texts:
+  - The Amica is 166.5 cm high.
+  history: []
+  expected:
+    facts: fail
+- id: new-ok-page-energy
+  say: How much power does the Amica use?
+  sources:
+  - 'Result of read_product {"ids": [7]}:
+
+    id 7: Amica FrostControl Fridge Freezer 157 L, 144 x 47.5 x 49.5 cm, Red | price=14111.89 SEK | rating=4.00 (30)
+
+    specs: Model Number: AKG 3840 R; Annual Energy Consumption: 189 Kilowatt Hours Per Year; Capacity: 157 litres'
+  tools:
+  - read_product
+  - reply
+  replies:
+  - The Amica uses 189 kWh a year, by its page.
+  model_texts:
+  - The Amica uses 189 kWh a year, by its page.
+  history: []
+  expected:
+    facts: pass
+    honest: pass

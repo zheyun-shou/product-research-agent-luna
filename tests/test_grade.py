@@ -1,6 +1,9 @@
-import json
+import copy
 
-from scout.eval.grade import (CRITERIA, CriterionGrade, Grade, check_grader, good_enough, grade_results, model_texts,
+import yaml
+
+from scout.config import ROOT
+from scout.eval.grade import (CRITERIA, CriterionGrade, Grade, check_grader, good_enough, grade_results, hidden_turns,
                               turn_prompt)
 from tests.fakes import FakeLLM
 
@@ -9,48 +12,54 @@ def grade(**fails) -> Grade:
     return Grade(**{name: CriterionGrade(reason="r", result=fails.get(name, "pass")) for name in CRITERIA})
 
 
-def act_output(text: str) -> str:
-    """A round of tool calls as the call record keeps it."""
-    return json.dumps([["reply", json.dumps({"text": text})]])
+PICKS = "Conditions: height<=180\n\n1. Fridge 1\n   5000 SEK | id 1\n   Quiet."
+RUN = {"target": "t", "turns": [
+    {"say": "a fridge", "replies": ["Which height?"], "error": None, "context": "Conversation:\nShopper: a fridge",
+     "tools": [{"tool": "reply", "args": '{"text": "Which height?"}', "report": "reply: the turn ends"}]},
+    {"say": "at most 180 cm", "replies": [PICKS], "error": None,
+     "context": "Conversation:\nShopper: a fridge\nAssistant: Which height?",
+     "tools": [{"tool": "search_shop", "args": '{"words": "kylskåp"}', "report": "search_shop: id 1: Fridge 1 | "
+                                                                               "height=170 cm"},
+               {"tool": "show_picks", "args": '{"picks": [{"id": 1, "text": "Quiet."}]}', "report": ""}]},
+    {"say": "ok", "replies": ["I cannot work on this now."], "error": "LLMUnavailable: busy", "context": "", "tools": []},
+]}
 
 
-TURNS = [
-    {"script": "s", "turn": 1, "say": "a fridge", "replies": ["Here are 5 picks."], "measured": True,
-     "cards": [], "new_cards": ["Pick 1: Fridge 1 | price=5000 SEK"], "actions": None, "searched": True},
-    {"script": "s", "turn": 2, "say": "pick 1 plus 499 shipping?", "replies": ["5499 SEK. I'll recheck the price."],
-     "measured": True, "cards": ["Pick 1: Fridge 1 | price=5000 SEK"], "new_cards": [],
-     "actions": {"action": "answer", "tools": ["reply"], "pick_numbers": []}, "searched": False,
-     "rounds": [{"schema": "Act", "passed": False, "problems": ["x"], "output": act_output("6000 SEK.")},
-                {"schema": "Act", "passed": True, "problems": [],
-                 "output": act_output("5499 SEK. I'll recheck the price.")}]},
-    {"script": "s", "turn": 3, "say": "ok", "replies": ["I cannot finish this step now."], "measured": False},
-]
+def test_the_grader_sees_the_sources_the_history_and_the_tool_calls():
+    items = hidden_turns(RUN)
+    assert items[0]["model_texts"] == ["Which height?"]
+    assert items[0]["sources"] == ["Context at the start of the turn:\nConversation:\nShopper: a fridge"]
+    # The results of the turns before stay sources; the arguments of the final calls are not sources
+    assert items[1]["sources"][1] == ('Result of search_shop {"words": "kylskåp"}:\nsearch_shop: id 1: Fridge 1 | '
+                                      'height=170 cm')
+    assert not any("show_picks" in source for source in items[1]["sources"])
+    prompt = turn_prompt(items[1], ["Shopper: a fridge", "Assistant: Which height?"])
+    assert "Conversation before this turn:\nShopper: a fridge\nAssistant: Which height?" in prompt
+    assert 'Tool calls of this turn:\nsearch_shop {"words": "kylskåp"}\nshow_picks' in prompt
+    assert "[Picks] Conditions: height<=180" in prompt
+    assert "[Model] Which height?" in turn_prompt(items[0], [])
+    assert "[Python] Removed." in turn_prompt({"say": "x", "replies": ["Removed."]}, [])
 
 
-def test_the_grader_sees_the_cards_the_history_and_the_actions():
-    prompt = turn_prompt(TURNS[1], ["Shopper: a fridge", "Assistant: Here are 5 picks."])
-    assert "Cards before this turn:\nPick 1: Fridge 1 | price=5000 SEK" in prompt
-    assert "Conversation before this turn:\nShopper: a fridge\nAssistant: Here are 5 picks." in prompt
-    assert "tools called: reply" in prompt and "search started: no" in prompt
-    assert prompt.endswith("Messages to the shopper in this turn:\n[Model] 5499 SEK. I'll recheck the price.")
-    assert "[Python] Here are 5 picks." in turn_prompt(TURNS[0], [])
-    assert model_texts({"model_texts": ["a"], "rounds": []}) == {"a"}
-    old_text_answer = {"schema": "Act", "passed": True, "output": json.dumps("Pick 2 is cheaper.")}
-    assert model_texts({"rounds": [old_text_answer]}) == {"Pick 2 is cheaper."}
-    assert "Cards after this turn:\nPick 1" in turn_prompt(TURNS[0], [])
-
-
-def test_only_measured_turns_are_graded_and_counted():
+def test_only_turns_without_an_error_are_graded_and_counted():
     llm = FakeLLM([grade(), grade(said_did="fail", arithmetic="pass", plain="not_applicable")])
-    results = grade_results(llm, {"summary": {}, "turns": [dict(t) for t in TURNS]})
+    results = grade_results(llm, {"summary": {}, "runs": [copy.deepcopy(RUN)]})
     assert [c.schema for c in llm.calls] == ["Grade", "Grade"] and llm.requests[0][0] == "judge"
-    assert "Assistant: Here are 5 picks." in llm.requests[1][1]
-    assert results["turns"][1]["grades"]["said_did"] == {"reason": "r", "result": "fail"}
-    assert "grades" not in results["turns"][2]
+    assert "Assistant: Which height?" in llm.requests[1][1]
+    turns = results["runs"][0]["turns"]
+    assert turns[1]["grades"]["said_did"] == {"reason": "r", "result": "fail"} and "grades" not in turns[2]
     summary = results["summary"]["grades"]
     assert summary["judge"] == "fake-judge"
     assert summary["said_did"] == {"pass": 1, "fail": 1, "not_applicable": 0}
     assert summary["plain"] == {"pass": 1, "fail": 0, "not_applicable": 1}
+
+
+def test_the_test_set_has_the_form_of_the_agent_loop():
+    items = yaml.safe_load((ROOT / "eval" / "grader" / "known_faults.yaml").read_text(encoding="utf-8"))
+    assert len({i["id"] for i in items}) == len(items) >= 40
+    for item in items:
+        assert item["sources"] and item["replies"] and set(item["expected"]) <= set(CRITERIA), item["id"]
+        assert "cards" not in item and "actions" not in item, item["id"]
 
 
 def test_check_grader_counts_found_faults_and_failed_correct_replies():

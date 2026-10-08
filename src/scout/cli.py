@@ -484,14 +484,14 @@ def threads(limit: int = 20) -> None:
         typer.echo(f"{row['thread_id']}  last turn {row['last'][:16]} UTC")
 
 
-def judge_llm(judge: Optional[str]) -> LLM:
+def judge_llm(judge: Optional[str], rpm: int = 60) -> LLM:
     """The LLM with the judge role from models.yaml, or from --judge provider:model. Stops when it cannot run."""
     load_settings()  # reads .env, which has the API keys
     config = load_llm_config()
     try:
         if judge:
             provider, model = judge.split(":", 1)
-            config.roles["judge"] = RoleConfig(provider=provider, model=model, rpm=60)
+            config.roles["judge"] = RoleConfig(provider=provider, model=model, rpm=rpm)
         if "judge" not in config.roles:
             raise ValueError("models.yaml has no judge role")
         config = LLMConfig.model_validate(config.model_dump())
@@ -507,10 +507,11 @@ def judge_llm(judge: Optional[str]) -> LLM:
 def grade(
     results: Path,
     judge: Optional[str] = typer.Option(None, help="provider:model for the grader, for example "
-                                                   "openrouter:deepseek/deepseek-v4-flash"),
+                                                   "gemini:gemini-3.5-flash-lite"),
+    rpm: int = typer.Option(60, help="requests per minute for --judge (free OpenRouter models: 20)"),
 ) -> None:
-    """Grade the replies of a saved results file of scripted turns. Writes <name>-graded.json next to it."""
-    llm = judge_llm(judge)
+    """Grade the answers of a saved eval-hidden results file. Writes <name>-graded.json next to it."""
+    llm = judge_llm(judge, rpm)
     data = grade_results(llm, json.loads(results.read_text(encoding="utf-8")), typer.echo)
     out = results.with_name(f"{results.stem}-graded.json")
     out.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -523,16 +524,24 @@ def grade(
 def check_grader_command(
     items: Path = ROOT / "eval" / "grader" / "known_faults.yaml",
     judge: Optional[str] = typer.Option(None, help="provider:model for the grader"),
+    rpm: int = typer.Option(60, help="requests per minute for --judge (free OpenRouter models: 20)"),
 ) -> None:
-    """Grade the test set with planted faults, and show how many faults the grader found."""
-    llm = judge_llm(judge)
+    """Grade the test set with planted faults, and show how many faults the grader found and how fast it was."""
+    import time
+    llm = judge_llm(judge, rpm)
     test_set = yaml.safe_load(items.read_text(encoding="utf-8"))
+    started = time.monotonic()
     grades = [grade_turn(llm, item, item.get("history") or []) for item in test_set]
-    typer.echo(f"Grader: {llm.model_for('judge')}, {len(test_set)} items")
+    seconds = time.monotonic() - started
+    call_seconds = sorted(c.seconds for c in llm.calls)
+    median = call_seconds[len(call_seconds) // 2] if call_seconds else 0
+    typer.echo(f"Grader: {llm.model_for('judge')}, {len(test_set)} items, {seconds:.0f} s in all, "
+               f"median {median:.1f} s a call, {len(llm.calls)} calls")
     rows = check_grader(test_set, grades)
     slug = re.sub(r"[^\w.-]", "_", llm.model_for("judge"))
     out = ROOT / "eval" / "results" / f"grader-{slug}-{datetime.now():%Y%m%d-%H%M}.json"
-    out.write_text(json.dumps({"judge": llm.model_for("judge"), "rows": rows,
+    out.write_text(json.dumps({"judge": llm.model_for("judge"), "seconds": round(seconds, 1),
+                               "median_call_seconds": round(median, 1), "rows": rows,
                                "grades": {item["id"]: grade.model_dump() for item, grade in zip(test_set, grades)}},
                               indent=2, ensure_ascii=False), encoding="utf-8")
     for name, row in rows.items():
