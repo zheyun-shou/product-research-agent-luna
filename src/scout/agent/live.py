@@ -171,7 +171,7 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
     web: a search client, None for no web search, or "env" for the back ends of web_client()."""
     from datetime import datetime, timedelta, timezone
 
-    from scout.db.store import save_web_chunks, save_web_search, stored_web_results, web_searched, web_texts
+    from scout.db.store import save_web_chunks, save_web_search, stored_web_results, web_searched
     from scout.websearch import ProductRef, WebResult, WebStore, fetch_texts, url_ref
     from scout.websearch import search_web as run_web_search
 
@@ -354,6 +354,5 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
         find_missing=find_missing, read_reviews=reviews, reviews_read=reviews_read, summarize=summarize,
         search_web=search_web if client is not None else None, read_page=read_page, same_product=same_product,
         web_searched=lambda ids: web_searched(conn, ids, datetime.now(timezone.utc) - week),
-        web_texts=lambda ids: web_texts(conn, ids),
         say=say, tracer=tracer,
     )

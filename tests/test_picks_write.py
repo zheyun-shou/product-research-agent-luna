@@ -130,31 +130,3 @@ def test_a_rounded_number_counts():
     assert unchecked_numbers("about 166 cm high, 4.5 stars", {Decimal("166.5"), Decimal("4.53")}) == []
     assert unchecked_numbers("165 cm", {Decimal("166.5")}) == ["165"]
     assert unchecked_numbers("167 cm", {Decimal("166")}) == ["167"]  # the allowed number has no more decimals
-
-
-def test_a_web_claim_can_take_a_number_from_the_page_of_its_product():
-    from decimal import Decimal
-
-    from scout.agent.loop import Claim as LoopClaim
-    from scout.agent.loop import check_claims
-    claim = LoopClaim(id=7, field="web", value="test 1.8 gut, 39 dB(A), 189 kWh/year")
-    errors, numbers = check_claims([claim], {7: card(7)}, {7: {Decimal("189")}},
-                                   {7: {Decimal("1.8"), Decimal("39")}})
-    assert errors == [] and numbers == {Decimal("1.8"), Decimal("39"), Decimal("189")}
-    # Only numbers of the page and none of the web pages: that is not a web claim
-    errors, _ = check_claims([LoopClaim(id=7, field="web", value="189 kWh")], {7: card(7)}, {7: {Decimal("189")}},
-                             {7: {Decimal("39")}})
-    assert errors == ["id 7: the web pages about this product do not show 189 kWh"]
-
-
-def test_the_note_can_give_numbers_of_other_products_with_claims():
-    from scout.agent.loop import Claim as LoopClaim
-    from scout.agent.loop import LoopDeps, Pick, ShowPicks, check_facts
-    cards = {1: card(1, height=145), 5: card(5, height=166.5)}
-    deps = LoopDeps.__new__(LoopDeps)
-    deps.cards = lambda ids: [cards[i] for i in ids if i in cards]
-    deps.page_texts, deps.web_texts = None, None
-    call = ShowPicks(picks=[Pick(id=1, text="Fits.")], note="The Severin is 166 cm high.",
-                     note_claims=[LoopClaim(id=5, field="height", value="166.5")])
-    assert check_facts(call, {"messages": []}, deps) == []
-    assert check_facts(call.model_copy(update={"note_claims": []}), {"messages": []}, deps) != []

@@ -1,21 +1,18 @@
 """The agent loop (design 2026-10-06-agent-loop-design.md): the chat model decides and calls tools; Python runs the
 tools, keeps the fetching polite, and checks the facts of the final reply."""
 import json
-import re
 from dataclasses import dataclass, field
-from decimal import Decimal
 from typing import Any, Callable, Literal
 
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
 
-from scout.agent.followup import Derived
 from scout.agent.history import assistant, compact, history_text, user_numbers
 from scout.agent.state import ChatState
 from scout.llm.client import LLMOutputError, LLMUnavailable, tool_name
 from scout.needs import ConditionSpec, Needs, check_needs
 from scout.picks.rank import Card
-from scout.picks.write import attribute_text, card_facts, check_claim, numbers_in, unchecked_numbers
+from scout.picks.write import attribute_text
 from scout.profiles import CategoryProfile
 from scout.trace import NoTracer
 
@@ -67,10 +64,7 @@ Rules:
 - Never add shipping, duty or moms that the shopper did not give. For a currency conversion, state the rate.
 - Summarize reviews in qualitative words ("most buyers", "a few"), never as counts.
 - Each number that you write is a value from a tool result, a number that the shopper wrote, or your own
-  calculation. Give claims for the facts of products: the product id, the card field and the value, or the field
-  "page" for a number that the stored page text of that product shows (read_product), or the field "web" for a
-  number in the web pages about that product (search_web). The numbers of products that are not picks go in
-  note_claims. Put each calculated number in derived with how you got it. Say when a number comes from a test or a forum, and name the site.
+  calculation. Say when a number comes from a test or a forum, and name the site.
 - Before show_picks, Python checks: a shop was searched or a shop page was read in this conversation, the reviews
   of each pick were read (good and bad, or the reviews on the page of another shop), and it had a web search for tests (in the last 7 days), unless the shopper does not want
   that (update_needs with web_tests false). Python opens each pick again for the price and the stock now.
@@ -180,34 +174,20 @@ class RestoreProducts(BaseModel):
     ids: list[int]
 
 
-class Claim(BaseModel):
-    id: int = Field(description="The product id")
-    field: str = Field(description="price, rating, review_count, an attribute name, page: a number that the "
-                                   "stored page text of the product shows, or web: a number in the web pages "
-                                   "about the product")
-    value: str
-
-
 class Pick(BaseModel):
     id: int
     text: str = Field(description="Why it fits, and what to watch out for")
-    claims: list[Claim] = Field(default_factory=list)
 
 
 class ShowPicks(BaseModel):
     """The final picks for the shopper, best first. Ends your work in this turn."""
     picks: list[Pick]
     note: str = Field("", description="What the shopper should know about all picks, for example why fewer than 5")
-    note_claims: list[Claim] = Field(default_factory=list, description="The sources of the numbers in the note, "
-                                     "also of products that are not picks")
-    derived: list[Derived] = Field(default_factory=list)
 
 
 class Reply(BaseModel):
     """Your message to the shopper. Ends your work in this turn."""
     text: str
-    claims: list[Claim] = Field(default_factory=list)
-    derived: list[Derived] = Field(default_factory=list)
 
 
 WORK_TOOLS = [UpdateNeeds, SearchShop, SearchWeb, ReadPage, SameProduct, FindProducts, ReadProduct, SearchText, ReadImages, FindMissing, ReadReviews,
@@ -252,7 +232,6 @@ class LoopDeps:
     # raises WebSearchUnavailable
     search_web: Callable[[str, list[int], int, str], tuple[str, int, int]] | None = None
     web_searched: Callable[[list[int]], set[int]] = lambda ids: set()  # listings with a web search, last 7 days
-    web_texts: Callable[[list[int]], dict[int, str]] | None = None  # the stored web pages of each product
     # (url, profile) -> (report, pages loaded, the listing id or None); stores the product of another shop
     read_page: Callable[[str, CategoryProfile], tuple[str, int, int | None]] | None = None
     same_product: Callable[[int, int], str | None] | None = None  # (id, same as) -> the problem or None
@@ -324,84 +303,6 @@ def result_message(call_id: str, text: str) -> dict:
 
 # ---- the checks of the final call (design section 8) ----
 
-def turn_numbers(state: dict) -> set[Decimal]:
-    return set().union(*(numbers_in(r) for r in turn_results(state)), set())
-
-
-def turn_results(state: dict) -> list[str]:
-    """The reports of the tools in this turn."""
-    return [m["content"] for m in state.get("turn_messages") or [] if m["role"] == "tool"]
-
-
-# Prices in the page text, for example "Nu 299 kr" in a description: an old price is not a source
-PAGE_PRICE = re.compile(r"\d[\d\s.,]*\s*(?:kr\b|sek\b|:-)", re.IGNORECASE)
-CARD_ONLY = {"price", "rating", "review_count", "in_stock"}  # the live facts come only from the card
-
-
-def page_numbers(row: dict | None) -> set[Decimal]:
-    """The numbers of the stored page text of one product: specifications, bullets and description, without the
-    prices. Not the reviews, because a buyer's number is not a fact of the product."""
-    if not row:
-        return set()
-    text = "\n".join([*(f"{k}: {v}" for k, v in (row.get("specs") or {}).items()), *(row.get("bullets") or []),
-                      row.get("description") or ""])
-    return numbers_in(PAGE_PRICE.sub(" ", text))
-
-
-def check_claims(claims: list[Claim], cards: dict[int, Card], pages: dict[int, set[Decimal]] | None = None,
-                 web: dict[int, set[Decimal]] | None = None) -> tuple[list[str], set[Decimal]]:
-    """A claim passes when the card has the value, or (not for the price, the rating, the review count and the
-    stock) when the page text of the product shows its number. A claim with the field web passes when the stored
-    web pages about the product show its numbers; a number of the same claim can also come from the page text of the
-    product."""
-    errors, numbers, pages, web = [], set(), pages or {}, web or {}
-    for claim in claims:
-        card = cards.get(claim.id)
-        if card is None:
-            errors.append(f"there is no product with id {claim.id}")
-            continue
-        shown = numbers_in(claim.value)
-        if claim.field == "web":
-            on_web = web.get(claim.id, set())
-            if shown and shown & on_web and shown <= on_web | pages.get(claim.id, set()):
-                numbers |= shown
-            else:
-                errors.append(f"id {claim.id}: the web pages about this product do not show {claim.value}")
-            continue
-        if claim.field not in CARD_ONLY and shown and shown <= pages.get(claim.id, set()):
-            numbers |= shown
-            continue
-        if claim.field == "page":
-            errors.append(f"id {claim.id}: the page text does not show {claim.value}")
-            continue
-        error, number = check_claim(card_facts(card), claim.field, claim.value)
-        if error:
-            errors.append(f"id {claim.id}: {error}" + ("" if claim.field in CARD_ONLY
-                                                         else ", and the page text does not show it"))
-        elif number is not None:
-            numbers.add(number)
-    return errors, numbers
-
-
-def pages_of(deps: "LoopDeps", ids) -> dict[int, set[Decimal]]:
-    if deps.page_texts is None or not ids:
-        return {}
-    return {i: page_numbers(row) for i, row in deps.page_texts(sorted(set(ids))).items()}
-
-
-def web_of(deps: "LoopDeps", claims: list[Claim]) -> dict[int, set[Decimal]]:
-    ids = sorted({c.id for c in claims if c.field == "web"})
-    if deps.web_texts is None or not ids:
-        return {}
-    return {i: numbers_in(text) for i, text in deps.web_texts(ids).items()}
-
-
-def check_text(text: str, known: set[Decimal], cards: list[Card]) -> list[str]:
-    return [f"the number {raw} has no source. Give a claim with the product id and the card field (or page, or web), put "
-            "it in derived with how you calculated it, or remove it"
-            for raw in unchecked_numbers(text, known, [c.model for c in cards], [c.title for c in cards])]
-
-
 def check_final(call: BaseModel, state: dict, deps: LoopDeps, thread: str, used: dict | None = None) -> list[str]:
     """What stops the final call: the picks exist, the floors are met, and the live check of the price and the stock
     passes. The picks that pass that check are added to used["checked_now"]."""
@@ -445,46 +346,6 @@ def check_final(call: BaseModel, state: dict, deps: LoopDeps, thread: str, used:
     problems = deps.check_now([i for i in ids if i not in checked], needs)
     errors += [f"id {i}: {problem}" for i, problem in problems.items() if problem]
     used["checked_now"] = sorted(checked | {i for i, problem in problems.items() if not problem})
-    return errors
-
-
-def check_facts(call: BaseModel, state: dict, deps: LoopDeps) -> list[str]:
-    """Each number has a source and each claim agrees with the records. These problems do not stop the call: they
-    are kept in the call record, and the evaluation counts them (design section 8)."""
-    allowed = user_numbers(state) | turn_numbers(state)
-    if isinstance(call, Reply):
-        ids = {c.id for c in call.claims} | {p["listing_id"] for p in state.get("picks", [])}
-        cards = {c.listing_id: c for c in deps.cards(sorted(ids))}
-        errors, claimed = check_claims(call.claims, cards, pages_of(deps, {c.id for c in call.claims}),
-                                       web_of(deps, call.claims))
-        on_cards = {v for c in cards.values() for v in card_facts(c).values() if isinstance(v, Decimal)}
-        derived = set().union(set(), *(numbers_in(d.value) for d in call.derived))
-        picks = {Decimal(n) for n in range(1, len(state.get("picks", [])) + 1)}
-        errors += check_text(call.text, claimed | allowed | on_cards | derived | picks, list(cards.values()))
-        return errors
-    errors: list[str] = []
-    ids = [p.id for p in call.picks]
-    cards = {c.listing_id: c for c in deps.cards(ids)}  # with the prices that were just checked
-    derived = set().union(set(), *(numbers_in(d.value) for d in call.derived))
-    said = user_numbers(state)
-    pages = pages_of(deps, ids)
-    web = web_of(deps, [c for p in call.picks for c in p.claims])
-    for pick in call.picks:
-        # A claim must be about this pick: a value of another candidate is not a source for it
-        claim_errors, claimed = check_claims([c for c in pick.claims if c.id == pick.id], cards, pages, web)
-        errors += claim_errors + [f"pick id {pick.id}: a claim names id {c.id}; give claims of this pick only"
-                                  for c in pick.claims if c.id != pick.id]
-        # Only the facts of this pick: its card and its page text
-        own = {v for v in card_facts(cards[pick.id]).values() if isinstance(v, Decimal)} | pages.get(pick.id, set())
-        errors += [f"pick id {pick.id}: {e}" for e in check_text(pick.text, claimed | own | said | derived,
-                                                                [cards[pick.id]])]
-    # The note can compare the picks with other products: note_claims give the sources
-    note_ids = sorted({c.id for c in call.note_claims} - set(cards))
-    note_cards = {**cards, **{c.listing_id: c for c in deps.cards(note_ids)}} if note_ids else cards
-    note_errors, note_claimed = check_claims(call.note_claims, note_cards,
-                                             {**pages, **pages_of(deps, note_ids)}, web_of(deps, call.note_claims))
-    errors += [f"note: {e}" for e in note_errors]
-    errors += check_text(call.note, said | derived | {Decimal(len(ids))} | note_claimed, list(note_cards.values()))
     return errors
 
 
@@ -817,9 +678,7 @@ def build_agent_graph(deps: LoopDeps, checkpointer=None):
             used["gate_gave_up"] = 1
             return {"final": None, "gate_errors": [], "used": used, "messages": [assistant(
                 "I could not finish the research for these picks, so I changed nothing. You can ask again.")]}
-        # The fact checks do not stop the answer: the call record keeps them for the evaluation
-        problems = check_facts(call, state, deps)
-        llm.mark_checked(not problems, problems)
+        # The facts of the answer are graded in the evaluation (scout grade), not here
         if isinstance(call, Reply):
             return {"final": None, "gate_errors": [], "messages": [assistant(call.text)]}
         cards = {c.listing_id: c for c in deps.cards([p.id for p in call.picks])}

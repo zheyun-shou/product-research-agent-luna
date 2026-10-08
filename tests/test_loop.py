@@ -1,10 +1,9 @@
 import copy
-from decimal import Decimal
 
 from langgraph.checkpoint.memory import InMemorySaver
 
-from scout.agent.loop import (MAX_TOOL_CALLS, Claim, FindProducts, LoopDeps, Pick, ReadReviews, RemoveProducts,
-                              Reply, SearchShop, ShowPicks, UpdateNeeds, build_agent_graph)
+from scout.agent.loop import (MAX_TOOL_CALLS, FindProducts, LoopDeps, Pick, ReadReviews, RemoveProducts,
+                              SearchShop, ShowPicks, UpdateNeeds, build_agent_graph)
 from scout.needs import ConditionSpec
 from scout.profiles import load_profile
 from tests.fakes import FakeLLM
@@ -52,7 +51,7 @@ def run(graph, text, thread="t1"):
 
 NEEDS = UpdateNeeds(category="fridge", kind="fridge_freezer", conditions=[ConditionSpec(attribute="height", op="<=",
                                                                                          value=180)])
-PICKS = ShowPicks(picks=[Pick(id=2, text="Quiet, 152 cm high.", claims=[Claim(id=2, field="height", value="152")]),
+PICKS = ShowPicks(picks=[Pick(id=2, text="Quiet, 152 cm high."),
                          Pick(id=1, text="Fits the space.")])
 
 
@@ -94,24 +93,6 @@ def test_a_pick_that_is_sold_out_now_goes_back():
     state = run(build_agent_graph(shop.deps(llm), InMemorySaver()), "A fridge at most 180 cm")
     assert "id 2: sold out now" in llm.requests[2][1]
     assert [p["listing_id"] for p in state["picks"]] == [1, 3] and shop.checked == [[2, 1], [3]]
-
-
-def test_a_number_without_a_source_is_recorded_and_does_not_stop_the_reply():
-    shop = Shop()
-    llm = FakeLLM([[Reply(text="Fridge 3 is 199 cm high.")]])
-    state = run(build_agent_graph(shop.deps(llm), InMemorySaver()), "How tall is fridge 3?")
-    assert state["messages"][-1]["content"] == "Fridge 3 is 199 cm high."
-    assert llm.calls[-1].checked is False and "the number 199 has no source" in llm.calls[-1].problems[0]
-    llm = FakeLLM([[Reply(text="Fridge 3 is 153 cm high.", claims=[Claim(id=3, field="height", value="153")])]])
-    run(build_agent_graph(shop.deps(llm), InMemorySaver()), "How tall is fridge 3?")
-    assert llm.calls[-1].checked is True and llm.calls[-1].problems == []
-
-
-def test_numbers_from_tool_results_and_the_shopper_need_no_claim():
-    shop = Shop()
-    llm = FakeLLM([[NEEDS, SearchShop(words="kylskåp")], "The search found 48 results; you said 180 cm."])
-    state = run(build_agent_graph(shop.deps(llm), InMemorySaver()), "Search fridges up to 180 cm")
-    assert state["messages"][-1]["content"] == "The search found 48 results; you said 180 cm."
 
 
 def test_needs_with_a_number_that_the_shopper_did_not_write_are_not_recorded():
@@ -187,15 +168,6 @@ def test_a_pick_is_marked_checked_only_after_its_live_check_passed():
     assert "could not finish the research" in state["messages"][-1]["content"]
 
 
-def test_a_price_of_another_candidate_is_not_a_source_for_a_pick():
-    shop = Shop()
-    shop.reviewed = {1, 2}
-    wrong = ShowPicks(picks=[Pick(id=2, text="Costs 5000 SEK and is 151 cm high."), Pick(id=1, text="Fits.")])
-    llm = FakeLLM([[NEEDS, SearchShop(words="kylskåp"), FindProducts()], [wrong]])
-    run(build_agent_graph(shop.deps(llm), InMemorySaver()), "A fridge at most 180 cm")
-    assert "pick id 2: the number 151 has no source" in "".join(llm.calls[-1].problems)  # the height of id 1
-
-
 def test_remove_then_remove_again_in_one_round():
     shop = Shop()
     shop.reviewed = {1, 2}
@@ -230,24 +202,6 @@ def deps_with_pages(shop, llm):
     return deps
 
 
-def test_a_number_of_the_page_text_is_a_source():
-    shop = page_shop()
-    picks = ShowPicks(picks=[Pick(id=1, text="142.5 cm high and 49.5 cm wide.",
-                                  claims=[Claim(id=1, field="height", value="142.5"),
-                                          Claim(id=1, field="page", value="49.5")])])
-    llm = FakeLLM([[NEEDS, SearchShop(words="kylskåp")], [picks]])
-    state = run(build_agent_graph(deps_with_pages(shop, llm), InMemorySaver()), "A fridge at most 180 cm")
-    assert [p["listing_id"] for p in state["picks"]] == [1]
-
-
-def test_a_number_of_a_review_on_the_page_is_not_a_source():
-    shop = page_shop()
-    wrong = ShowPicks(picks=[Pick(id=1, text="99 cm wide.", claims=[Claim(id=1, field="page", value="99")])])
-    llm = FakeLLM([[NEEDS, SearchShop(words="kylskåp")], [wrong]])
-    run(build_agent_graph(deps_with_pages(shop, llm), InMemorySaver()), "A fridge at most 180 cm")
-    assert "id 1: the page text does not show 99" in "".join(llm.calls[-1].problems)
-
-
 def test_a_product_read_in_this_turn_is_not_given_again_and_long_texts_are_cut():
     from scout.agent.loop import MAX_READ_CHARS, ReadProduct
     shop = page_shop()
@@ -264,19 +218,6 @@ def test_a_search_reads_at_most_8_product_pages():
     llm = FakeLLM([[NEEDS, SearchShop(words="kylskåp")], "Ok."])
     run(build_agent_graph(shop.deps(llm), InMemorySaver()), "A fridge at most 180 cm")
     assert shop.max_details == 8
-
-
-def test_a_price_claim_needs_the_card_even_when_the_page_shows_the_number():
-    shop = page_shop()
-    shop.page_rows[1]["description"] = "Nu 299 kr. Volym 100 liter."
-    wrong = ShowPicks(picks=[Pick(id=1, text="Costs 299 SEK, 100 liter.",
-                                  claims=[Claim(id=1, field="price", value="299")])])
-    llm = FakeLLM([[NEEDS, SearchShop(words="kylskåp")], [wrong]])
-    run(build_agent_graph(deps_with_pages(shop, llm), InMemorySaver()), "A fridge at most 180 cm")
-    retry = " | ".join(llm.calls[-1].problems)
-    assert "id 1: price is 5000, not 299" in retry and "page text does not show" not in retry
-    assert "the number 299 has no source" in retry  # "299 kr" in the page text is not a source
-    assert "the number 100 has no source" not in retry  # 100 liter is in the page text
 
 
 def answered(history):

@@ -5,7 +5,7 @@ import httpx
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 
-from scout.agent.loop import Claim, Pick, ReadReviews, SearchWeb, ShowPicks, UpdateNeeds, build_agent_graph
+from scout.agent.loop import Pick, ReadReviews, SearchWeb, ShowPicks, UpdateNeeds, build_agent_graph
 from scout.llm.client import LLMUnavailable
 from scout.websearch import (MAX_CHAT_PARTS, PageJudgement, Part, ProductRef, TavilyClient, WebResult,
                              WebSearchUnavailable, WebStore, choose_parts, search_web, topic_question, url_ref)
@@ -238,7 +238,7 @@ class WebShop(Shop):
         return f"Web search '{question}': read 3 pages.", 3, 1
 
 
-PICK = ShowPicks(picks=[Pick(id=2, text="Quiet, 39 dB in a test.", claims=[Claim(id=2, field="web", value="39 dB")])])
+PICK = ShowPicks(picks=[Pick(id=2, text="Quiet, 39 dB in a test.")])
 
 
 def test_the_picks_wait_for_a_web_search_of_each_pick():
@@ -253,18 +253,6 @@ def test_the_picks_wait_for_a_web_search_of_each_pick():
     assert state["web_searches"] == ["RK4182 test"] and state["used"]["web_pages"] == 3
     assert state["used"]["gate_stops"] == ["id 2 had no web search for tests yet. Call search_web with its id and "
                                             "its model"]
-
-
-def test_a_web_claim_needs_the_number_in_the_quotes():
-    shop = WebShop()
-    shop.web, shop.reviewed = {2}, {2}
-    wrong = ShowPicks(picks=[Pick(id=2, text="41 dB in a test.", claims=[Claim(id=2, field="web", value="41 dB")])])
-    llm = FakeLLM([[NEEDS], [wrong]])
-    graph = build_agent_graph(shop.deps(llm), InMemorySaver())
-    state = graph.invoke({"messages": [{"role": "user", "content": "A fridge, at most 180 cm"}], "searches": {"x": {"page": 1}}},
-                         {"configurable": {"thread_id": "t"}})
-    assert "the web pages about this product do not show 41 dB" in "".join(llm.calls[-1].problems)
-    assert [p["listing_id"] for p in state["picks"]] == [2]
 
 
 def test_no_floor_when_the_shopper_does_not_want_it_or_tavily_is_down():

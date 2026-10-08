@@ -32,6 +32,11 @@ def test_the_hidden_product_in_the_picks_and_its_place():
     assert record["totals"]["tool_calls"] == 4 and record["totals"]["product_pages"] == 4
     assert record["totals"]["review_pages"] == 6 and record["totals"]["model_calls"] == 4
     assert record["turn_max"]["calls"] == 4 and record["at_limit"] == []
+    # The grader gets what Luna saw: the context and each tool call with its result
+    tools = record["turns"][0]["tools"]
+    assert [t["tool"] for t in tools] == ["update_needs", "search_shop", "find_products", "read_reviews", "show_picks"]
+    assert tools[1]["report"].startswith("search_shop: ") and '"words": "kyl och frys"' in tools[1]["args"]
+    assert "Conversation:" in record["turns"][0]["context"]
 
 
 def test_the_shopper_answers_a_question_from_the_facts():
