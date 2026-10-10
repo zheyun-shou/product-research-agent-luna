@@ -33,9 +33,10 @@ roles:
       provider: gemini
       model: gemini-3.5-flash-lite
       rpm: 15
-  judge:  # the grader of eval-chat, chosen on 2026-10-05: not an OpenAI model like the chat model, and cheap
+  judge:  # the grader, chosen on 2026-10-11 by check-grader from 5 models: all planted faults found, no correct reply
+          # failed, 3.6 s a call, 0.04 USD for the 49 items. Not an OpenAI model like the chat model.
     provider: openrouter
-    model: deepseek/deepseek-v4-flash
+    model: anthropic/claude-haiku-5.5
     rpm: 60
   shopper:  # the simulated shopper of eval-hidden: not an OpenAI model like the chat model, and cheap
     provider: openrouter
