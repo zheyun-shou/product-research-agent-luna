@@ -8,3 +8,7 @@ __pycache__/
 data/
 snapshots/
 browser-profile/
+
+# Eval results hold replies and tool results with page text; only the sums go in the docs
+eval/results/*
+!eval/results/.gitkeep

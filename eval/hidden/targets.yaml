@@ -31,18 +31,19 @@
     - Colour does not matter.
   hidden_words: [Gorenje, RK 4182, RK4182, RK4182PS4, PS4]
 
-- id: frost-free-55
-  source_id: B0CTKNJJGG
+- id: frost-free-wide
+  # Replaced frost-free-55 on 2026-10-13: a buyer of that Candy says that it needs manual defrost.
+  source_id: B0D6LS15HD
   category: fridge
   kind: fridge_freezer
-  opening: Jag söker en kombinerad kyl och frys som är frostfri. Max 55 cm bred och 180 cm hög. Budget 6000 kr.
+  opening: Jag söker ett stort kylskåp med frys som är No Frost. Platsen är 80 cm bred och 182 cm hög. Budget 7500 kr.
   facts:
-    - The space is 55 cm wide, 180 cm high and 60 cm deep.
-    - It must be frost free, so that you never defrost it.
-    - The freezer part is at the bottom.
-    - About 250 litres in all.
-    - White.
-  hidden_words: [Candy, CCG1S, 518EW, "34005403"]
+    - The space is 80 cm wide, 182 cm high and 65 cm deep.
+    - It must be No Frost, so that you never defrost it.
+    - A steel look or silver front.
+    - About 350 litres in all, and a freezer part of at least 120 litres.
+    - Two doors next to each other are fine.
+  hidden_words: [Bomann, KG 7358, KG7358, "773589"]
 
 - id: retro-red
   source_id: B07M89WVWC
