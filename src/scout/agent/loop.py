@@ -148,6 +148,9 @@ class ReadProduct(BaseModel):
 class SearchText(BaseModel):
     """Search the stored text of many products at once and give the 10 best matching parts."""
     question: str
+    more: list[str] = Field(default_factory=list, description="The same search words in the other languages of "
+                            "Swedish, English and Chinese. The stored text has many languages, and the words of "
+                            "each language find more parts")
     ids: list[int] = Field(default_factory=list, description="Product ids, or empty for all of the category")
     kinds: list[Literal["specs", "description", "review", "test", "forum", "shop", "other"]] = Field(
         default_factory=list, description="test, forum, shop and other are web pages")
@@ -585,7 +588,9 @@ class Toolbox:
         if self.deps.search_text is None:
             return "not available."
         scope = Scope(listing_ids=call.ids or None, kinds=list(call.kinds) or None, category=self.needs.category)
-        hits = self.deps.search_text(call.question, scope, 10)
+        # The search words in each language go to one search (scout.text.retrieve.MultiQueryRetriever)
+        queries = [call.question, *call.more[:3]]
+        hits = self.deps.search_text(queries if len(queries) > 1 else call.question, scope, 10)
         lines = [f"[chunk {h.chunk_id}] id {h.listing_id}, {h.ref}:\n{h.text}" for h in hits]
         return (f"({call.question}) the {len(hits)} best parts. Reviews are a sample.\n\n"
                 + ("\n\n".join(lines) or "nothing matches."))

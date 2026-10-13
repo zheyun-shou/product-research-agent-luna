@@ -320,3 +320,14 @@ def test_the_step_of_a_tool_call_for_the_web_page():
     assert step_detail("find_products: 12 fit.\n1. ...") == ("done", "12 fit.")
     state, text = step_detail("read_product: " + "x" * 400)
     assert state == "done" and len(text) == 160 and text.endswith("…")
+
+
+def test_search_text_gives_the_words_of_each_language_to_one_search():
+    from scout.agent.loop import SearchText, Toolbox
+    seen = []
+    deps = Shop().deps(FakeLLM([]))
+    deps.search_text = lambda query, scope, k: seen.append(query) or []
+    box = Toolbox(deps, {"needs": {"category": "fridge"}}, "t1")
+    box.search_text(SearchText(question="tyst kompressor", more=["quiet compressor", "压缩机 安静"]))
+    box.search_text(SearchText(question="tyst"))
+    assert seen == [["tyst kompressor", "quiet compressor", "压缩机 安静"], "tyst"]

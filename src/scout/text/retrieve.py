@@ -182,17 +182,20 @@ class LongContext:
 
 
 def hybrid_search(conn, make_embedder) -> Callable[[str, Scope, int], list[Hit]]:
-    """The search of the search_text tool: vectors and BM25 with RRF. The embedder loads at the first search.
+    """The search of the search_text tool: vectors and BM25 with RRF, for each query (since 2026-10-13: the
+    multi-query method was best in eval-retrieval). The embedder loads at the first search.
     Chunks of newly stored pages get their vectors before each search."""
     from scout.text.index import index_chunks
     loaded: list = []
 
-    def search(query: str, scope: Scope, k: int = 10, index: bool = True) -> list[Hit]:
-        """index=False skips the indexing, for the second and later searches of one step."""
+    def search(query: str | list[str], scope: Scope, k: int = 10, index: bool = True) -> list[Hit]:
+        """A list gives the same search words in more languages (MultiQueryRetriever). index=False skips the
+        indexing, for the second and later searches of one step."""
         if not loaded:
             loaded.append(make_embedder())
         if index:
             index_chunks(conn, loaded[0])
-        return HybridRetriever([VectorRetriever(conn, loaded[0]), Bm25Retriever(conn, loaded[0])]).search(
-            query, scope, k)
+        queries = [query] if isinstance(query, str) else query
+        return MultiQueryRetriever([VectorRetriever(conn, loaded[0]), Bm25Retriever(conn, loaded[0])]).search_many(
+            queries, scope, k)
     return search

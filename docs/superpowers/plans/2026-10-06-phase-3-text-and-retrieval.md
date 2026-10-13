@@ -134,13 +134,31 @@ Plan as written before the build:
 - The chat model writes one or two pros and complaints for each pick. Each one cites chunk ids. Python checks that the ids exist and belong to that pick.
 - The statements are qualitative, without counts (decided 2026-10-06), for example "a small part of the buyers say that it is noisy, most say that it is quiet". The picks show the source type of each statement (buyer review or test).
 
-### Task 8: Retrieval evaluation
+### Task 8: Retrieval evaluation (done)
 
 - `eval/retrieval/questions.yaml`: about 30 questions in Swedish, English and Chinese. Some are about one product, some are across products, some name a model number. Each has the gold chunk ids and the exact words.
 - `scout eval-retrieval`: for each method, recall@10, MRR, the tokens put into the prompt and the time. No API cost.
 - ~~With my permission: the chat model answers each question with the top 10 chunks of each method and with long context.~~ I dropped this on 2026-10-13: it is not necessary now.
 - `scout make-retrieval-questions` (2026-10-13): the chat model writes the questions from the stored chunks. 12 products get 2 questions each, in Swedish, English and Chinese, in three styles: with the model number, with the brand and the kind, and without a name. Their scope is the whole category, so the search must find the product first; within the chunks of one product (about 8) recall@10 would be near 1 for each method. 6 groups of 3 products get one question across them, with the reviews and specifications of the three as the scope. The model gives the number of each gold chunk and the exact words; Python keeps a label only when the words are in the chunk. The file stays out of Git, because it quotes the stored pages.
 - The results go into this plan, with the size of the corpus. If the corpus is too small to show a difference, the plan says so.
+
+**Results (2026-10-13).** The corpus: 553 chunks of 68 listings (379 review, 106 specs, 68 description chunks), most of them in Swedish. 30 questions made by Claude Haiku 5.5 and checked by Python (0.03 USD); 80 gold chunks. k = 10.
+
+| Method | Recall@10 | Hit@10 | MRR | Tokens | Seconds |
+|---|---|---|---|---|---|
+| vector (bge-m3 dense) | 0.56 | 0.70 | 0.49 | 2416 | 0.20 |
+| BM25 | 0.24 | 0.40 | 0.22 | 3268 | 0.06 |
+| bge-m3 sparse | 0.28 | 0.43 | 0.25 | 2919 | 0.13 |
+| vector + BM25 (RRF) | 0.51 | 0.67 | 0.34 | 2724 | 0.18 |
+| multi-query, vector | 0.58 | 0.77 | 0.52 | 2476 | 0.39 |
+| multi-query, vector + BM25 | 0.69 | 0.87 | 0.43 | 2677 | 0.64 |
+| long context | 1.00 | 1.00 | 0.16 | 81950 | 0.01 |
+
+- BM25 and the sparse weights match words, so they fail when the question is in another language than the text: for the English questions BM25 had a recall of 0.11, for the Chinese 0.05. The dense vectors of bge-m3 match across languages. So the first hybrid (one query, vector and BM25) was worse than the vectors alone.
+- Multi-query: the question and its search words in Swedish, English and Chinese, each to vector and BM25, joined by RRF. It had the best recall and hit. For the Chinese questions the recall went from 0.30 (vector) to 0.78. Its MRR is lower than that of the vectors alone, but the chat model reads all 10 parts, so recall counts more.
+- Long context has all gold chunks, but 34 times the tokens, and the gold chunks come late.
+- I chose multi-query with vector and BM25 for `search_text`, because more shops in Chinese and English will come. The tool has a new field `more` for the search words in the other languages.
+- Limits: 30 questions are few; one question changes a recall by about 0.03. The questions come from one LLM. 5 of the 6 questions across products are about noise. One model number in the data is a seller's code (Jectseo3ymfiqen6). One question without a name fits many products, but only one is gold. In the first set of questions each language had only one style, so language and style could not be told apart; the second set (above) has each style in each language.
 
 ### Task 9: Web search (decided 2026-10-06)
 
