@@ -140,7 +140,8 @@ def make_questions(conn, llm, one: int = 12, per_product: int = 2, across: int =
             made.problems.append(f"{qid}: not used, no gold label is right")
 
     for i, product in enumerate(rng.sample(pool, min(one, len(pool)))):
-        language, style = LANGUAGES[i % len(LANGUAGES)], list(STYLES)[i % len(STYLES)]
+        # Each style gets each language, so the scores of a language and of a style can be told apart
+        language, style = LANGUAGES[i % len(LANGUAGES)], list(STYLES)[(i // len(LANGUAGES)) % len(STYLES)]
         items = sources(conn, [product["asin"]])
         say(f"{product['asin']}: {per_product} questions in {language}, style {style}")
         result = llm.structured(role, SYSTEM, one_product_prompt(product["title"], items, language, style,
