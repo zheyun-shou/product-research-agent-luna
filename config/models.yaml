@@ -16,10 +16,12 @@ providers:
     base_url: https://openrouter.ai/api/v1
     api_key_env: OPENROUTER_API_KEY
 roles:
-  chat:  # GPT-5.6 Luna was chosen on 2026-10-05 after eval-chat (24 scripts, about 0.07 USD a run). On 2026-10-06
-        # I chose the newer GPT-6 Luna (half the price) without a new eval-chat run.
+  chat:  # GPT-5.6 Luna was chosen on 2026-10-05 after eval-chat, GPT-6 Luna on 2026-10-06 (half the price). On
+        # 2026-10-13 I chose Claude Haiku 5.5 during eval-hidden with the new prompt: it asked for the missing budget
+        # before it searched, and Luna asked a question in 1 of 24 runs. In the first 2 targets Haiku cost about
+        # 3 times as much as Luna for each run.
     provider: openrouter
-    model: openai/gpt-6-luna
+    model: anthropic/claude-haiku-5.5
     rpm: 60
     fallback:
       provider: gemini
@@ -33,12 +35,14 @@ roles:
       provider: gemini
       model: gemini-3.5-flash-lite
       rpm: 15
-  judge:  # the grader, chosen on 2026-10-11 by check-grader from 5 models: all planted faults found, no correct reply
-          # failed, 3.6 s a call, 0.04 USD for the 49 items. Not an OpenAI model like the chat model.
+  judge:  # the grader. Haiku 5.5 from 2026-10-11 (check-grader: all faults found, no correct reply failed). Since
+          # the chat model is Haiku, the grader must be another maker: GPT-6 Luna Pro from 2026-10-13. check-grader:
+          # all 37 planted faults found, but 6 correct replies failed (honest 2, plain 3, facts 1). So honest and
+          # plain are not good enough; use answers, facts, arithmetic and said_did. 665 s, 0.06 USD.
     provider: openrouter
-    model: anthropic/claude-haiku-5.5
+    model: openai/gpt-6-luna-pro
     rpm: 60
-  shopper:  # the simulated shopper of eval-hidden: not an OpenAI model like the chat model, and cheap
+  shopper:  # the simulated shopper of eval-hidden: not the maker of the chat model, and cheap
     provider: openrouter
     model: deepseek/deepseek-v4-flash
     rpm: 60
