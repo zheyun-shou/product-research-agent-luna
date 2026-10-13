@@ -147,6 +147,29 @@ class HybridRetriever:
         return [Hit(**{**hits[cid].__dict__, "score": scores[cid]}) for cid in top]
 
 
+class MultiQueryRetriever:
+    """Several queries for one question, for example the same search words in Swedish, English and Chinese. Each
+    query goes to each retriever, and RRF joins all lists. BM25 matches the words of the text in its own language;
+    the vectors also match across languages."""
+
+    def __init__(self, retrievers: list[Retriever], depth: int = 50):
+        self.retrievers, self.depth = retrievers, depth
+        self.name = "multi:" + "+".join(r.name for r in retrievers)
+
+    def search_many(self, queries: list[str], scope: Scope, k: int = 10) -> list[Hit]:
+        hits, scores = {}, Counter()
+        for query in dict.fromkeys(q.strip() for q in queries if q.strip()):
+            for retriever in self.retrievers:
+                for rank, hit in enumerate(retriever.search(query, scope, self.depth), 1):
+                    hits.setdefault(hit.chunk_id, hit)
+                    scores[hit.chunk_id] += 1 / (RRF_K + rank)
+        top = sorted(scores, key=lambda cid: -scores[cid])[:k]
+        return [Hit(**{**hits[cid].__dict__, "score": scores[cid]}) for cid in top]
+
+    def search(self, query: str, scope: Scope, k: int = 10) -> list[Hit]:
+        return self.search_many([query], scope, k)
+
+
 class LongContext:
     """The baseline: all chunks of the scope, in page order. k does not apply."""
     name = "long_context"

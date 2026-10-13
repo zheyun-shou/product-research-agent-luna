@@ -30,6 +30,7 @@ class Question:
     kinds: list[str] = field(default_factory=list)
     category: str = "fridge"
     style: str = ""  # model, brand, no_name or across (scout.eval.make_questions)
+    queries: dict[str, str] = field(default_factory=dict)  # search words in sv, en and zh
 
 
 def load_questions(path: Path = QUESTIONS) -> list[Question]:
@@ -80,7 +81,10 @@ def score_method(conn, retriever: Retriever, questions: list[Question], count, k
         if problems or not gold:
             continue
         start = time.perf_counter()
-        hits = retriever.search(q.question, scope_of(conn, q), k)
+        if hasattr(retriever, "search_many"):  # the question and its search words in each language
+            hits = retriever.search_many([q.question, *q.queries.values()], scope_of(conn, q), k)
+        else:
+            hits = retriever.search(q.question, scope_of(conn, q), k)
         s.seconds += time.perf_counter() - start
         ids = [h.chunk_id for h in hits]
         found = gold & set(ids)

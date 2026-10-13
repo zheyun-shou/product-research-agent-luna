@@ -42,8 +42,16 @@ class GoldOut(BaseModel):
     quote: str = Field(description=f"{QUOTE_WORDS} copied exactly from the chunk")
 
 
+class Queries(BaseModel):
+    sv: str
+    en: str
+    zh: str
+
+
 class QuestionOut(BaseModel):
     question: str
+    queries: Queries = Field(description="Short search words for the question in Swedish, English and Chinese, as "
+                                         "the assistant would give them to the search")
     gold: list[GoldOut]
 
 
@@ -135,7 +143,8 @@ def make_questions(conn, llm, one: int = 12, per_product: int = 2, across: int =
         made.problems += [f"{qid}: {p}" for p in problems]
         if gold:
             made.questions.append({"id": qid, "question": out.question.strip(), "language": language,
-                                   "style": style, "category": category, "asins": asins, "gold": gold})
+                                   "style": style, "category": category, "asins": asins,
+                                   "queries": out.queries.model_dump(), "gold": gold})
         else:
             made.problems.append(f"{qid}: not used, no gold label is right")
 

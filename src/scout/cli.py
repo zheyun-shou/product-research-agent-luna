@@ -150,8 +150,8 @@ def eval_retrieval(k: int = 10) -> None:
     from scout.eval.retrieval import gold_ids, load_questions, score_method, scores_table
     from scout.text.embed import BgeM3Embedder
     from scout.text.index import index_chunks
-    from scout.text.retrieve import (Bm25Retriever, HybridRetriever, LongContext, SparseRetriever,
-                                     VectorRetriever)
+    from scout.text.retrieve import (Bm25Retriever, HybridRetriever, LongContext, MultiQueryRetriever,
+                                     SparseRetriever, VectorRetriever)
 
     settings = load_settings()
     questions = load_questions()
@@ -163,7 +163,8 @@ def eval_retrieval(k: int = 10) -> None:
         for p in problems:
             typer.echo(f"Not used: {p}")
         vector, bm25 = VectorRetriever(conn, embedder), Bm25Retriever(conn, embedder)
-        methods = [vector, bm25, SparseRetriever(conn, embedder), HybridRetriever([vector, bm25]), LongContext(conn)]
+        methods = [vector, bm25, SparseRetriever(conn, embedder), HybridRetriever([vector, bm25]),
+                   MultiQueryRetriever([vector]), MultiQueryRetriever([vector, bm25]), LongContext(conn)]
         scores = [score_method(conn, m, questions, embedder.count, k) for m in methods]
         chunks = conn.execute("SELECT count(*) AS n, count(DISTINCT listing_id) AS l FROM chunks").fetchone()
     typer.echo(f"{len(questions)} questions, {chunks['n']} chunks of {chunks['l']} listings.\n")

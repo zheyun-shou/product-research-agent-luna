@@ -67,3 +67,13 @@ def test_long_context_gives_all_chunks_of_the_scope(corpus):
     db, embedder, a, b = corpus
     assert [h.ref for h in LongContext(db).search("anything", Scope(listing_ids=[a]))] == [
         "review 1", "review 2", "specs 1"]
+
+
+@pytest.mark.db
+def test_more_queries_join_with_rrf(corpus):
+    from scout.text.retrieve import MultiQueryRetriever
+    db, embedder, a, b = corpus
+    multi = MultiQueryRetriever([Bm25Retriever(db, embedder)])
+    top = multi.search_many(["kg39nxibf", "loud compressor", "  ", "kg39nxibf"], Scope(), k=2)
+    assert {h.text.split("\n")[1] for h in top} == {"Model KG39NXIBF height 203 cm", "The compressor is loud at night"}
+    assert multi.name == "multi:bm25" and multi.search("kg39nxibf", Scope(), k=1)[0].listing_id == b
