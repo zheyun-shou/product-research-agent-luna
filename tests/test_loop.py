@@ -309,3 +309,14 @@ def test_a_page_of_another_shop_does_not_meet_the_shop_floor_for_amazon_picks():
     state = run(build_agent_graph(deps, InMemorySaver()), "A fridge at most 180 cm")
     assert "no shop search in this conversation yet" in llm.requests[2][1]
     assert [p["listing_id"] for p in state["picks"]] == [4]
+
+
+def test_the_step_of_a_tool_call_for_the_web_page():
+    from scout.agent.loop import ReadPage, SearchWeb, step_detail, step_title
+    assert step_title(SearchWeb(question="Bomann KG 7358 test")) == ("web", "Search the web for 'Bomann KG 7358 test'")
+    assert step_title(ReadPage(url="https://www.elgiganten.se/product/x")) == ("web", "Read a shop page on www.elgiganten.se")
+    assert step_title(ReadReviews(ids=[1])) == ("reviews", "Read the amazon.se reviews of 1 product")
+    assert step_detail("search_web: not available: no key.\nmore") == ("fail", "not available: no key.")
+    assert step_detail("find_products: 12 fit.\n1. ...") == ("done", "12 fit.")
+    state, text = step_detail("read_product: " + "x" * 400)
+    assert state == "done" and len(text) == 160 and text.endswith("…")

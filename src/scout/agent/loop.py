@@ -1,9 +1,12 @@
 """The agent loop (design 2026-10-06-agent-loop-design.md): the chat model decides and calls tools; Python runs the
 tools, keeps the fetching polite, and checks the floors and the live price before the picks show. The facts of
 the answers are graded in the evaluation (scout grade)."""
+import itertools
 import json
+import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Literal
+from urllib.parse import urlparse
 
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
@@ -245,6 +248,7 @@ class LoopDeps:
     read_page: Callable[[str, CategoryProfile], tuple[str, int, int | None]] | None = None
     same_product: Callable[[int, int], str | None] | None = None  # (id, same as) -> the problem or None
     say: Callable[[str], None] = print
+    step: Callable[[dict], None] = lambda event: None  # the progress of a turn, for the web page
     tracer: Any = field(default_factory=NoTracer)
 
 
@@ -372,6 +376,62 @@ def picks_text(call: ShowPicks, cards: dict[int, Card]) -> str:
 
 
 # ---- running the work tools ----
+
+# ---- progress ----
+
+STEP_IDS = itertools.count(1)
+LIMITS = {"calls": MAX_TOOL_CALLS, "product_pages": MAX_PRODUCT_PAGES, "web_searches": MAX_WEB_SEARCHES,
+          "web_pages": MAX_WEB_PAGES}
+STEP_DETAIL_CHARS = 160
+
+
+def _products(ids: list[int]) -> str:
+    return f"{len(ids)} product" + ("" if len(ids) == 1 else "s")
+
+
+def step_title(call: BaseModel) -> tuple[str, str]:
+    """(kind, title) of a tool call, for the progress on the web page. The kind groups the steps: needs, shop,
+    web, db, reviews."""
+    if isinstance(call, UpdateNeeds):
+        return "needs", "Record the needs"
+    if isinstance(call, SearchShop):
+        return "shop", f"Search amazon.se for '{call.words}'" + (f", result page {call.page}" if call.page > 1 else "")
+    if isinstance(call, SearchWeb):
+        return "web", f"Search the web for '{call.question}'"
+    if isinstance(call, ReadPage):
+        return "web", f"Read a shop page on {urlparse(call.url).netloc or call.url}"
+    if isinstance(call, SameProduct):
+        return "db", f"Join two listings of one product (ids {call.id} and {call.same_as})"
+    if isinstance(call, FindProducts):
+        return "db", "Find the stored products that meet the needs"
+    if isinstance(call, ReadProduct):
+        return "db", f"Read the stored pages of {_products(call.ids)}"
+    if isinstance(call, SearchText):
+        return "db", f"Search the stored text for '{call.question}'"
+    if isinstance(call, ReadImages):
+        return "db", f"Look at the images of product {call.id}"
+    if isinstance(call, FindMissing):
+        return "db", f"Look for missing values ({', '.join(call.attributes)})"
+    if isinstance(call, ReadReviews):
+        return "reviews", f"Read the amazon.se reviews of {_products(call.ids)}"
+    if isinstance(call, SummarizeReviews):
+        return "reviews", f"Sum up the reviews of {_products(call.ids)}"
+    if isinstance(call, RemoveProducts):
+        return "needs", f"Remove {_products(call.ids)}"
+    if isinstance(call, RestoreProducts):
+        return "needs", f"Bring back {_products(call.ids)}"
+    return "db", tool_name(type(call))
+
+
+def step_detail(report: str) -> tuple[str, str]:
+    """(state, detail) from a tool report: its first line without the tool name, cut short."""
+    lines = report.split(": ", 1)[-1].strip().splitlines()
+    text = lines[0] if lines else ""
+    failed = text.startswith(("failed (", "not available", "the model for this tool is not available"))
+    if len(text) > STEP_DETAIL_CHARS:
+        text = text[:STEP_DETAIL_CHARS - 1].rstrip() + "…"
+    return ("fail" if failed else "done"), text
+
 
 class Toolbox:
     def __init__(self, deps: LoopDeps, state: dict, thread: str):
@@ -623,6 +683,8 @@ def build_agent_graph(deps: LoopDeps, checkpointer=None):
         context = state.get("turn_context") or turn_prompt(state, deps, thread)  # the same in the whole turn
         history = list(state.get("turn_messages") or [])
         used_up = (state.get("used") or {}).get("calls", 0) >= MAX_TOOL_CALLS
+        deps.step({"id": next(STEP_IDS), "kind": "think", "state": "run",
+                   "title": "Plan the next step" if history else "Read the message and plan the work"})
         with deps.tracer.span("agent"):
             try:
                 calls = llm.tools("chat", SYSTEM, context, WORK_TOOLS + FINAL_TOOLS, name="Agent", text_reply=Reply,
@@ -661,8 +723,16 @@ def build_agent_graph(deps: LoopDeps, checkpointer=None):
                 report = f"{item['tool']}: not run, the tool calls of this turn are used up."
             else:
                 box.used["calls"] = box.used.get("calls", 0) + 1
+                call = from_state(item)
+                kind, title = step_title(call)
+                step = {"id": next(STEP_IDS), "kind": kind, "title": title}
+                deps.step({**step, "state": "run"})
+                began = time.monotonic()
                 with deps.tracer.span(item["tool"]):
-                    report = box.run(from_state(item))
+                    report = box.run(call)
+                done, detail = step_detail(report)
+                deps.step({**step, "state": done, "detail": detail, "seconds": round(time.monotonic() - began, 1),
+                           "used": {k: box.used.get(k, 0) for k in LIMITS}, "limits": LIMITS})
                 report = report[:REPORT_LIMITS.get(item["tool"], MAX_REPORT_CHARS)]
             history.append(result_message(item["id"], report))
         return {**box.update, "turn_messages": history, "used": box.used, "pending": []}
@@ -671,7 +741,14 @@ def build_agent_graph(deps: LoopDeps, checkpointer=None):
         thread = thread_of(config)
         call = from_state(state["final"])
         used = dict(state.get("used") or {})
+        step = {"id": next(STEP_IDS), "kind": "check",
+                "title": "Check the picks: the price and stock now, the reviews, the web tests"
+                if isinstance(call, ShowPicks) else "Check the reply"}
+        deps.step({**step, "state": "run"})
         errors = check_final(call, state, deps, thread, used)
+        problems = f"{len(errors)} problem" + ("" if len(errors) == 1 else "s")
+        deps.step({**step, "state": "done",
+                   "detail": f"{problems} sent back to the model" if errors else "All checks pass"})
         # What the floors and the live check stopped is kept in used, for the evaluation
         if errors:
             used["gate_stops"] = used.get("gate_stops", []) + errors

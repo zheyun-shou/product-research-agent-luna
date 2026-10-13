@@ -439,7 +439,7 @@ def chat(thread: Optional[str] = typer.Option(None, help="the ID of a conversati
 
 
 @app.command()
-def web(port: int = 8000, k: int = 5,
+def web(port: int = 9000, k: int = 5,
         pipeline: bool = typer.Option(False, help="the fixed pipeline of before the agent loop")) -> None:
     """Open the chat page at http://127.0.0.1:PORT. It uses the same threads as scout chat."""
     import uvicorn

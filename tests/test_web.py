@@ -145,7 +145,29 @@ def test_the_agent_loop_on_the_web_page():
     chat = ChatService(build)
     events = list(chat.turn("t1", "A fridge at most 180 cm"))
     kinds = [e["type"] for e in events]
-    assert kinds[0] == "status" and "picks" in kinds and kinds[-1] == "done"
+    assert "status" in kinds and "picks" in kinds and kinds[-1] == "done"
     picks = next(e for e in events if e["type"] == "picks")["picks"]
     assert [p["listing_id"] for p in picks] == [2, 1]
     assert chat.remove("t1", 2)["picks"][0]["listing_id"] == 1
+
+
+def test_the_web_page_gets_each_step_of_the_agent_loop():
+    from scout.agent.loop import build_agent_graph
+    from tests.test_loop import NEEDS, PICKS, Shop
+    from scout.agent.loop import SearchShop
+    shop = Shop()
+    llm = FakeLLM([[NEEDS, SearchShop(words="kylskåp")], [PICKS]])
+
+    def build(say, on_problem):
+        deps = shop.deps(llm)
+        deps.say = say
+        deps.page_texts = lambda ids: {}
+        return build_agent_graph(deps, InMemorySaver()), deps
+    events = [e for e in ChatService(build).turn("t1", "A fridge at most 180 cm") if e["type"] == "step"]
+    titles = [e["title"] for e in events if e["state"] != "run"]
+    assert titles == ["Record the needs", "Search amazon.se for 'kylskåp'",
+                      "Check the picks: the price and stock now, the reviews, the web tests"]
+    assert events[0]["kind"] == "think" and events[0]["title"] == "Read the message and plan the work"
+    search = next(e for e in events if e["kind"] == "shop" and e["state"] == "done")
+    assert search["used"]["calls"] == 2 and search["limits"]["calls"] == 25 and search["seconds"] >= 0
+    assert all(len(e.get("detail", "")) <= 160 for e in events)

@@ -84,14 +84,37 @@ body:not(.empty) .examples { display: none; }
 .msg.assistant { line-height: 1.55; }
 .msg.error { color: var(--bad); }
 .msg.note { color: var(--muted); font-size: 14px; }
-.status { color: var(--muted); font-size: 14px; display: grid; gap: 4px; }
-.status .line { white-space: pre-wrap; }
-.working { color: var(--muted); font-size: 14px; display: flex; align-items: center; gap: 8px; }
-.dots { display: inline-flex; gap: 4px; }
-.dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: blink 1.2s infinite ease-in-out; }
-.dots i:nth-child(2) { animation-delay: .2s; }
-.dots i:nth-child(3) { animation-delay: .4s; }
-@keyframes blink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
+/* The progress of a turn */
+.progress { font-size: 14px; color: var(--muted); border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.progress summary { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 8px 14px; cursor: pointer;
+  list-style: none; }
+.progress summary::-webkit-details-marker { display: none; }
+.progress summary::after { content: ""; order: 9; width: 7px; height: 7px; margin-left: auto; border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted); transform: rotate(45deg); transition: transform .2s; }
+.progress[open] summary::after { transform: rotate(-135deg); }
+.p-title { color: var(--ink); font-weight: 600; }
+.p-time, .p-meter { font-variant-numeric: tabular-nums; }
+.p-meter { font-family: var(--font-mono); font-size: 12px; }
+.p-spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--accent-soft); border-top-color: var(--accent);
+  animation: spin .9s linear infinite; }
+.progress.finished .p-spin { animation: none; border-color: var(--accent); background: var(--accent-soft); }
+@keyframes spin { to { transform: rotate(360deg); } }
+.steps { list-style: none; margin: 0; padding: 4px 14px 12px; display: grid; border-top: 1px solid var(--line); }
+.step { position: relative; display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 10px; padding-top: 8px; }
+.step:not(:last-child)::before { content: ""; position: absolute; left: 11px; top: 34px; bottom: -6px; width: 2px; background: var(--line); }
+.s-icon { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); color: var(--muted); }
+.s-icon svg { width: 14px; height: 14px; }
+.step.run .s-icon { background: var(--accent-soft); color: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
+.step.done .s-icon { color: var(--accent); }
+.step.fail .s-icon { background: var(--bad-soft); color: var(--bad); }
+@keyframes pulse { 50% { box-shadow: 0 0 0 4px var(--accent-soft); } }
+.s-body { min-width: 0; padding-top: 1px; }
+.s-title { color: var(--ink); overflow-wrap: anywhere; }
+.step.think .s-title { color: var(--muted); font-style: italic; }
+.s-lines, .s-detail { font-size: 13px; overflow-wrap: anywhere; }
+.s-lines { display: grid; }
+.s-detail:empty, .s-lines:empty { display: none; }
+.step.fail .s-detail { color: var(--bad); }
 
 /* Message box */
 .composer { display: flex; align-items: flex-end; gap: 8px; background: var(--surface); border: 1px solid var(--line);
@@ -160,5 +183,5 @@ body:not(.panel-open) .panel { visibility: hidden; }
 }
 @media (prefers-reduced-motion: reduce) {
   .app, .panel, .card { transition: none; }
-  .dots i { animation: none; opacity: .6; }
+  .p-spin, .step.run .s-icon { animation: none; }
 }

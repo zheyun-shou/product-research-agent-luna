@@ -45,11 +45,13 @@ The login prompt replaces the terminal prompt of `ask_user`. The program never t
 
 1. **Plan.** This file.
 2. **Service.** `src/scout/web/service.py`: `ChatService` runs a turn and sends the events, answers a login problem, removes a pick, and gives the history and the pick views. Tests with the fake world of `tests/test_graph.py`.
-3. **App and command.** `src/scout/web/app.py` with the routes, and `scout web --port 8000`. Tests with the FastAPI test client.
+3. **App and command.** `src/scout/web/app.py` with the routes, and `scout web --port 9000`. Tests with the FastAPI test client.
 4. **Page.** `src/scout/web/static/` with `index.html`, `app.css` and `app.js`. I check it in Chrome with a fake service that needs no LLM and no browser: the empty state, a turn, the picks panel, delete, the login banner, dark mode and a narrow window.
 Tasks 1 to 4 are done (2026-10-06, 275 tests). All turns run in one worker thread, because Playwright works only in the thread that opened the browser. The Chrome extension could not open 127.0.0.1 on this computer, so I checked the page with headless Chrome through Playwright, on a fake world with real cards and images from the database. The checks passed: the empty state, a question, the login banner and Done, the picks panel, delete, a reload of the thread, dark mode, and a window 400 px wide. The browser console had no errors.
 
 5. **My test.** I run `scout web` and talks with the agent. This is a real run with the paid chat model, a few cents a conversation.
+
+6. **Progress of a turn (2026-10-13).** A turn takes about 10 minutes, so the page shows each step while it works. The agent loop sends a `step` event when a tool call starts and ends: the kind (needs, shop, web, db, reviews, check), a short title, the first line of the tool report, the seconds, and the calls, product pages and web searches used of the turn limits. The status lines of a tool (the search pages, the login) show under its step. A planning step of the model shows only while the model thinks. When the turn ends, the list closes to one line ("Worked for 10 min 32 s, 19 steps"), and a click opens it again. The steps are not stored, so a reload shows only the messages. The default port is now 9000: Windows keeps the ports 7276 to 8818 on this computer, so 8000 cannot open. I checked the page in Chrome with a demo server that sends scripted events.
 
 ## Not in this plan
 

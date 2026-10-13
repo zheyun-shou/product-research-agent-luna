@@ -1,4 +1,5 @@
-"""The chat behind the web page: one turn at a time, the events of a turn, the login pause and the delete button."""
+"""The chat behind the web page: one turn at a time, the events and the steps of a turn, the login pause and the
+delete button."""
 import contextlib
 import queue
 import threading
@@ -32,6 +33,8 @@ class ChatService:
         self._jobs: queue.Queue = queue.Queue()
         threading.Thread(target=self._worker, daemon=True).start()
         self.graph, self.deps = build(self._say, self._on_problem)
+        if hasattr(self.deps, "step"):  # the agent loop tells the page each step of a turn
+            self.deps.step = self._step
         self._last_node = last_node(self.graph)
 
     def _worker(self) -> None:
@@ -74,6 +77,10 @@ class ChatService:
     def _say(self, text: str) -> None:
         if self._send:
             self._send({"type": "status", "text": text})
+
+    def _step(self, event: dict) -> None:
+        if self._send:
+            self._send({"type": "step", **event})
 
     def _on_problem(self, status, url: str) -> bool:
         """Called by the crawl in the turn thread. True: the shopper dealt with it in the browser window."""

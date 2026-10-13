@@ -150,6 +150,102 @@ async function answerProblem(skip) {
     body: JSON.stringify({ skip }) });
 }
 
+// The progress of a turn: one line for each step of the agent, with a clock and the limits of the turn
+const ICONS = {
+  think: "M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1",
+  needs: "M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01",
+  shop: "M3 4h2l2.4 11h10.2L20 8H6.2M9 20h.01M17 20h.01",
+  web: "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3",
+  db: "M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6",
+  reviews: "M4 5h16v11H9l-5 4z",
+  check: "M12 3l8 3v6c0 4.4-3.4 8-8 9-4.6-1-8-4.6-8-9V6zM8.5 12l2.5 2.5 4.5-5",
+  note: "M12 8v5M12 16h.01",
+};
+const METER = [["calls", "calls"], ["product_pages", "product pages"], ["web_searches", "web searches"]];
+
+function clock(seconds) {
+  const s = Math.round(seconds);
+  return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, "0")} s`;
+}
+
+function icon(kind) {
+  const span = el("span", "s-icon");
+  span.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${ICONS[kind] || ICONS.note}"/></svg>`;
+  return span;
+}
+
+function progress() {
+  const box = el("details", "progress");
+  box.open = true;
+  const summary = el("summary");
+  const title = el("span", "p-title", "Working");
+  const time = el("span", "p-time", "0 s");
+  const meter = el("span", "p-meter");
+  summary.append(el("span", "p-spin"), title, time, meter);
+  const list = el("ol", "steps");
+  box.append(summary, list);
+  const p = { box, list, title, time, meter, steps: new Map(), count: 0, started: Date.now() };
+  p.timer = setInterval(() => { time.textContent = clock((Date.now() - p.started) / 1000); }, 1000);
+  return p;
+}
+
+function running(p) {
+  return [...p.list.children].filter((li) => li.classList.contains("run"));
+}
+
+// A planning step shows only while the model thinks; the next step replaces it
+function settle(p) {
+  running(p).forEach((li) => {
+    if (li.classList.contains("think")) li.remove();
+    else li.classList.replace("run", "done");
+  });
+}
+
+function addStep(p, kind, title) {
+  const li = el("li", `step ${kind} run`);
+  const body = el("div", "s-body");
+  body.append(el("div", "s-title", title), el("div", "s-lines"), el("div", "s-detail"));
+  li.append(icon(kind), body);
+  p.list.append(li);
+  if (kind !== "think") p.count += 1;
+  return li;
+}
+
+function onStep(p, event) {
+  let li = p.steps.get(event.id);
+  if (!li) {
+    settle(p);
+    li = addStep(p, event.kind, event.title);
+    p.steps.set(event.id, li);
+  }
+  li.classList.remove("run", "done", "fail");
+  li.classList.add(event.state);
+  if (event.detail !== undefined || event.seconds !== undefined) {
+    const parts = [event.detail, event.seconds >= 1 ? clock(event.seconds) : null].filter(Boolean);
+    li.querySelector(".s-detail").textContent = parts.join(" · ");
+  }
+  if (event.used) {
+    p.meter.textContent = METER.map(([key, name]) => `${name} ${event.used[key]}/${event.limits[key]}`).join(" · ");
+  }
+}
+
+// A status line of a tool (the search pages, the login) goes under the running step
+function onStatus(p, text) {
+  const li = running(p).filter((x) => !x.classList.contains("think")).pop();
+  if (li) li.querySelector(".s-lines").append(el("div", null, text));
+  else { settle(p); addStep(p, "note", text); }
+}
+
+function finish(p) {
+  clearInterval(p.timer);
+  settle(p);
+  if (!p.list.childElementCount) { p.box.remove(); return; }
+  p.box.classList.add("finished");
+  p.title.textContent = `Worked for ${clock((Date.now() - p.started) / 1000)}`;
+  p.time.textContent = `${p.count} step${p.count === 1 ? "" : "s"}`;
+  p.box.open = false;
+}
+
 // One turn
 async function sendMessage(text) {
   if (busy || !text.trim()) return;
@@ -157,11 +253,8 @@ async function sendMessage(text) {
   addMessage("user", text);
   input.value = ""; grow();
   setBusy(true);
-  const status = el("div", "status");
-  const working = el("div", "working");
-  working.append(el("span", "dots"), "Working");
-  working.firstChild.append(el("i"), el("i"), el("i"));
-  log.append(status, working);
+  const p = progress();
+  log.append(p.box);
   scrollDown();
   try {
     const response = await fetch(`/api/threads/${thread}/messages`, {
@@ -181,29 +274,31 @@ async function sendMessage(text) {
       while ((cut = buffer.indexOf("\n")) >= 0) {
         const line = buffer.slice(0, cut).trim();
         buffer = buffer.slice(cut + 1);
-        if (line) handle(JSON.parse(line), status, working);
+        if (line) handle(JSON.parse(line), p);
       }
     }
   } catch (err) {
     addMessage("error", `The connection to the server failed (${err.message}). Is scout web still running?`);
   } finally {
-    working.remove();
-    if (!status.childElementCount) status.remove();
+    finish(p);
     $("problem").hidden = true;
     setBusy(false);
     input.focus();
   }
 }
 
-function handle(event, status, working) {
-  if (event.type === "status") {
-    status.append(el("div", "line", event.text));
+function handle(event, p) {
+  if (event.type === "step") {
+    onStep(p, event);
+  } else if (event.type === "status") {
+    onStatus(p, event.text);
   } else if (event.type === "problem") {
     showProblem(event);
   } else if (event.type === "reply") {
-    log.insertBefore(el("div", "msg assistant"), working).append(linked(event.text));
+    log.append(el("div", "msg assistant"));
+    log.lastChild.append(linked(event.text));
   } else if (event.type === "error") {
-    log.insertBefore(el("div", "msg error", event.text), working);
+    log.append(el("div", "msg error", event.text));
   } else if (event.type === "picks") {
     showPicks(event, true);
   }
