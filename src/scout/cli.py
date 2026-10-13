@@ -109,6 +109,41 @@ def embed() -> None:
     typer.echo(f"Embedded {report.chunks} chunks with {embedder.name} in {report.seconds:.1f} s.")
 
 
+@app.command("make-retrieval-questions")
+def make_retrieval_questions(
+    one: int = typer.Option(12, help="products with questions about one product"),
+    per_product: int = typer.Option(2, help="questions for each of these products"),
+    across: int = typer.Option(6, help="groups of 3 products with one question across them"),
+    seed: int = typer.Option(7, help="the seed that chooses the products"),
+    force: bool = typer.Option(False, help="replace the question file when it exists"),
+    yes: bool = typer.Option(False, help="start without the question"),
+) -> None:
+    """An LLM (the chat role) writes the questions of eval-retrieval from the stored chunks; Python keeps a gold
+    label only when its words are in its chunk. Writes eval/retrieval/questions.yaml. Costs a few cents."""
+    import yaml
+
+    from scout.eval.make_questions import make_questions
+    from scout.eval.retrieval import QUESTIONS
+
+    if QUESTIONS.exists() and not force:
+        typer.echo(f"{QUESTIONS} exists. Use --force to replace it.")
+        raise typer.Exit(1)
+    settings = load_settings()
+    llm = LLM(load_llm_config())
+    if not yes and not typer.confirm(f"{one + across} calls to {llm.model_for('chat')}. Start?"):
+        raise typer.Exit(1)
+    with connect(settings.database_url) as conn:
+        made = make_questions(conn, llm, one, per_product, across, seed, say=typer.echo)
+    for problem in made.problems:
+        typer.echo(f"Not used: {problem}")
+    QUESTIONS.parent.mkdir(parents=True, exist_ok=True)
+    QUESTIONS.write_text(yaml.safe_dump(made.questions, allow_unicode=True, sort_keys=False, width=120),
+                         encoding="utf-8")
+    gold = sum(len(q["gold"]) for q in made.questions)
+    typer.echo(f"{len(made.questions)} of {made.asked} questions kept, {gold} gold chunks. Saved {QUESTIONS}")
+    report_llm_use(llm)
+
+
 @app.command("eval-retrieval")
 def eval_retrieval(k: int = 10) -> None:
     """Compare the retrieval methods on eval/retrieval/questions.yaml. No API calls: bge-m3 runs on this computer."""

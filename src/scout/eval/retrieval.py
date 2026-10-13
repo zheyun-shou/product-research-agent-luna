@@ -29,6 +29,7 @@ class Question:
     asins: list[str] = field(default_factory=list)  # empty: all stored products of the category
     kinds: list[str] = field(default_factory=list)
     category: str = "fridge"
+    style: str = ""  # model, brand, no_name or across (scout.eval.make_questions)
 
 
 def load_questions(path: Path = QUESTIONS) -> list[Question]:

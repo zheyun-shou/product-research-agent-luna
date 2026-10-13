@@ -138,7 +138,8 @@ Plan as written before the build:
 
 - `eval/retrieval/questions.yaml`: about 30 questions in Swedish, English and Chinese. Some are about one product, some are across products, some name a model number. Each has the gold chunk ids and the exact words.
 - `scout eval-retrieval`: for each method, recall@10, MRR, the tokens put into the prompt and the time. No API cost.
-- With my permission: the chat model answers each question with the top 10 chunks of each method and with long context. The DeepSeek grader marks each answer. The report gives accuracy, tokens, cost and latency for each method.
+- ~~With my permission: the chat model answers each question with the top 10 chunks of each method and with long context.~~ I dropped this on 2026-10-13: it is not necessary now.
+- `scout make-retrieval-questions` (2026-10-13): the chat model writes the questions from the stored chunks. 12 products get 2 questions each, in Swedish, English and Chinese, in three styles: with the model number, with the brand and the kind, and without a name. Their scope is the whole category, so the search must find the product first; within the chunks of one product (about 8) recall@10 would be near 1 for each method. 6 groups of 3 products get one question across them, with the reviews and specifications of the three as the scope. The model gives the number of each gold chunk and the exact words; Python keeps a label only when the words are in the chunk. The file stays out of Git, because it quotes the stored pages.
 - The results go into this plan, with the size of the corpus. If the corpus is too small to show a difference, the plan says so.
 
 ### Task 9: Web search (decided 2026-10-06)
