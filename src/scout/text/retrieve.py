@@ -36,20 +36,21 @@ class Retriever(Protocol):
     def search(self, query: str, scope: Scope, k: int = 10) -> list[Hit]: ...
 
 
-def _where(scope: Scope) -> tuple[str, list]:
+def _where(scope: Scope, table: str = "") -> tuple[str, list]:
+    """The SQL condition of the scope on the chunks. `table` is the alias of the chunks with its dot, in a join."""
     parts, args = ["TRUE"], []
     if scope.listing_ids is not None:
-        parts.append("listing_id = ANY(%s)")
+        parts.append(f"{table}listing_id = ANY(%s)")
         args.append(scope.listing_ids)
     if scope.kinds is not None:
-        parts.append("kind = ANY(%s)")
+        parts.append(f"{table}kind = ANY(%s)")
         args.append(scope.kinds)
     if scope.category is not None:
-        parts.append("listing_id IN (SELECT l.id FROM listings l JOIN products p ON p.id = l.product_id"
+        parts.append(f"{table}listing_id IN (SELECT l.id FROM listings l JOIN products p ON p.id = l.product_id"
                      " WHERE p.category = %s)")
         args.append(scope.category)
     if scope.since is not None:
-        parts.append("fetched_at >= %s")
+        parts.append(f"{table}fetched_at >= %s")
         args.append(scope.since)
     return " AND ".join(parts), args
 
@@ -183,49 +184,62 @@ class LongContext:
 
 @dataclass
 class Similar:
-    listing_id: int
+    listing_id: int  # the first listing of the product
     score: float  # the sum of the cosine similarities to the product and to the wish
-    reason: Hit  # the chunk of the listing that is nearest to the wish, or to the product without a wish
+    reason: Hit  # the chunk of the product that is nearest to the wish, or to the product without a wish
+
+
+class NoText(Exception):
+    """The product to compare with has no indexed text."""
 
 
 def _mean(vectors: list[list[float]]) -> list[float]:
     return [sum(xs) / len(vectors) for xs in zip(*vectors)]
 
 
-def similar_products(conn, embedder: Embedder, like: list[int], wishes: list[str], scope: Scope,
-                     k: int = 10) -> list[Similar]:
-    """The listings that are near the listings `like` and near the soft wish (the same wish in more languages).
-    Each listing has one vector, the mean of the vectors of its chunks. The listings of the products of `like` are
-    left out. The reason of each listing is its chunk that is nearest to the wish."""
+def similar_products(conn, embedder: Embedder, like: list[int], wishes: list[str], scope: Scope, k: int = 10,
+                     exclude: set[int] | frozenset = frozenset()) -> list[Similar]:
+    """The products that are near the products of the listings `like` and near the soft wish (the same wish in more
+    languages). Each product has one vector, the mean of the vectors of the chunks of all its listings. The products
+    of `like` and the product ids in `exclude` are left out. The reason of each product is its chunk that is nearest
+    to the wish. Raises NoText when `like` has no indexed chunks."""
     targets = []
     if like:
-        row = conn.execute("SELECT avg(embedding)::text AS v FROM chunks WHERE embedding IS NOT NULL"
-                           " AND listing_id = ANY(%s)", [like]).fetchone()
-        if row["v"] is not None:
-            targets.append(row["v"])
+        row = conn.execute(
+            """SELECT avg(c.embedding)::text AS v FROM chunks c JOIN listings l ON l.id = c.listing_id
+               WHERE c.embedding IS NOT NULL
+                 AND l.product_id IN (SELECT product_id FROM listings WHERE id = ANY(%s))""", [like]).fetchone()
+        if row["v"] is None:
+            raise NoText(f"no indexed text for id {', '.join(map(str, like))}")
+        targets.append(row["v"])
     wishes = list(dict.fromkeys(w.strip() for w in wishes if w.strip()))
     if wishes:
         targets.append(str(_mean([e.dense for e in embedder.embed(wishes)])))
     if not targets:
         return []
-    where, args = _where(scope)
+    where, args = _where(scope, "c.")
     near = " + ".join("(1 - (v <=> %s::vector))" for _ in targets)
     rows = conn.execute(
-        f"""WITH m AS (SELECT listing_id, avg(embedding) AS v FROM chunks WHERE embedding IS NOT NULL AND {where}
-                       AND listing_id NOT IN (SELECT l.id FROM listings l WHERE l.product_id IN
-                                              (SELECT product_id FROM listings WHERE id = ANY(%s)))
-                       GROUP BY listing_id)
-            SELECT listing_id, {near} AS score FROM m ORDER BY score DESC, listing_id LIMIT %s""",
-        [*args, like, *targets, k]).fetchall()
+        f"""WITH m AS (SELECT l.product_id, min(c.listing_id) AS listing_id, avg(c.embedding) AS v
+                       FROM chunks c JOIN listings l ON l.id = c.listing_id
+                       WHERE c.embedding IS NOT NULL AND {where}
+                         AND l.product_id <> ALL(%s)
+                         AND l.product_id NOT IN (SELECT product_id FROM listings WHERE id = ANY(%s))
+                       GROUP BY l.product_id)
+            SELECT product_id, listing_id, {near} AS score FROM m ORDER BY score DESC, product_id LIMIT %s""",
+        [*args, sorted(exclude), like, *targets, k]).fetchall()
     if not rows:
         return []
-    where, args = _where(Scope(listing_ids=[r["listing_id"] for r in rows], kinds=scope.kinds, since=scope.since))
+    where, args = _where(Scope(kinds=scope.kinds, since=scope.since), "c.")
     best = conn.execute(
-        f"""SELECT DISTINCT ON (listing_id) id, listing_id, kind, ref, text, meta, embedding <=> %s::vector AS distance
-            FROM chunks WHERE embedding IS NOT NULL AND {where} ORDER BY listing_id, distance, id""",
-        [targets[-1], *args]).fetchall()
-    reasons = {r["listing_id"]: _hit(r, 1 - r["distance"]) for r in best}
-    return [Similar(r["listing_id"], r["score"], reasons[r["listing_id"]]) for r in rows]
+        f"""SELECT DISTINCT ON (l.product_id) c.id, c.listing_id, c.kind, c.ref, c.text, c.meta, l.product_id,
+                   c.embedding <=> %s::vector AS distance
+            FROM chunks c JOIN listings l ON l.id = c.listing_id
+            WHERE c.embedding IS NOT NULL AND l.product_id = ANY(%s) AND {where}
+            ORDER BY l.product_id, distance, c.id""",
+        [targets[-1], [r["product_id"] for r in rows], *args]).fetchall()
+    reasons = {r["product_id"]: _hit(r, 1 - r["distance"]) for r in best}
+    return [Similar(r["listing_id"], r["score"], reasons[r["product_id"]]) for r in rows]
 
 
 def hybrid_search(conn, make_embedder) -> Callable[[str, Scope, int], list[Hit]]:
@@ -247,11 +261,12 @@ def hybrid_search(conn, make_embedder) -> Callable[[str, Scope, int], list[Hit]]
         return MultiQueryRetriever([VectorRetriever(conn, loaded[0]), Bm25Retriever(conn, loaded[0])]).search_many(
             queries, scope, k)
 
-    def similar(like: list[int], wishes: list[str], scope: Scope, k: int = 10) -> list[Similar]:
+    def similar(like: list[int], wishes: list[str], scope: Scope, k: int = 10,
+                exclude: set[int] | frozenset = frozenset()) -> list[Similar]:
         """similar_products with the same embedder and the same indexing (the similar_products tool)."""
         if not loaded:
             loaded.append(make_embedder())
         index_chunks(conn, loaded[0])
-        return similar_products(conn, loaded[0], like, wishes, scope, k)
+        return similar_products(conn, loaded[0], like, wishes, scope, k, exclude)
     search.similar = similar
     return search

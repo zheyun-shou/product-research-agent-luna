@@ -130,7 +130,8 @@ def make_retrieval_questions(
         raise typer.Exit(1)
     settings = load_settings()
     llm = LLM(load_llm_config())
-    if not yes and not typer.confirm(f"{one + across} calls to {llm.model_for('chat')}. Start?"):
+    if not yes and not typer.confirm(f"{one + across} calls to {llm.model_for('chat')}, and one more for the search "
+                                     "words of each question. Start?"):
         raise typer.Exit(1)
     with connect(settings.database_url) as conn:
         made = make_questions(conn, llm, one, per_product, across, seed, say=typer.echo)
@@ -141,6 +142,26 @@ def make_retrieval_questions(
                          encoding="utf-8")
     gold = sum(len(q["gold"]) for q in made.questions)
     typer.echo(f"{len(made.questions)} of {made.asked} questions kept, {gold} gold chunks. Saved {QUESTIONS}")
+    report_llm_use(llm)
+
+
+@app.command("rewrite-retrieval-words")
+def rewrite_retrieval_words(yes: bool = typer.Option(False, help="start without the question")) -> None:
+    """The chat role writes the search words of each question in eval/retrieval/questions.yaml again, from the
+    question only. The questions and the gold labels stay. Costs about one cent."""
+    import yaml
+
+    from scout.eval.make_questions import search_words
+    from scout.eval.retrieval import QUESTIONS
+
+    rows = yaml.safe_load(QUESTIONS.read_text(encoding="utf-8"))
+    llm = LLM(load_llm_config())
+    if not yes and not typer.confirm(f"{len(rows)} calls to {llm.model_for('chat')}. Start?"):
+        raise typer.Exit(1)
+    for row in rows:
+        row["queries"] = search_words(llm, "chat", row["question"])
+        typer.echo(f"{row['id']}: {row['queries']}")
+    QUESTIONS.write_text(yaml.safe_dump(rows, allow_unicode=True, sort_keys=False, width=120), encoding="utf-8")
     report_llm_use(llm)
 
 

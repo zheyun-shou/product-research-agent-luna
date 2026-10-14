@@ -50,9 +50,19 @@ class Queries(BaseModel):
 
 class QuestionOut(BaseModel):
     question: str
-    queries: Queries = Field(description="Short search words for the question in Swedish, English and Chinese, as "
-                                         "the assistant would give them to the search")
     gold: list[GoldOut]
+
+
+WORDS_SYSTEM = """You are a shopping assistant. You search the stored text of products (specifications, descriptions,
+buyer reviews and web pages) for the answer to the shopper's question. The stored text has many languages. Give
+short search words for the question in Swedish, English and Chinese, as you would give them to the search."""
+
+
+def search_words(llm, role: str, question: str) -> dict[str, str]:
+    """The search words of the question in each language. The model sees only the question, as the chat model in
+    the agent loop does (the field `more` of search_text). Before 2026-10-14 the model wrote them next to the
+    chunks with the answer, so the words could copy the answer."""
+    return llm.structured(role, WORDS_SYSTEM, f"The question: {question}", Queries).model_dump()
 
 
 class QuestionSet(BaseModel):
@@ -136,15 +146,16 @@ def make_questions(conn, llm, one: int = 12, per_product: int = 2, across: int =
     pool = products(conn, min_chunks)
     made = Made([], [])
 
-    def add(out: QuestionOut, items, language, style, category, asins):
+    def add(out: QuestionOut, items, language, style, category, asins, kinds):
         made.asked += 1
         qid = f"q{made.asked:02d}"
         gold, problems = checked(out, items)
         made.problems += [f"{qid}: {p}" for p in problems]
         if gold:
-            made.questions.append({"id": qid, "question": out.question.strip(), "language": language,
-                                   "style": style, "category": category, "asins": asins,
-                                   "queries": out.queries.model_dump(), "gold": gold})
+            question = out.question.strip()
+            made.questions.append({"id": qid, "question": question, "language": language, "style": style,
+                                   "category": category, "asins": asins, "kinds": kinds,
+                                   "queries": search_words(llm, role, question), "gold": gold})
         else:
             made.problems.append(f"{qid}: not used, no gold label is right")
 
@@ -156,7 +167,7 @@ def make_questions(conn, llm, one: int = 12, per_product: int = 2, across: int =
         result = llm.structured(role, SYSTEM, one_product_prompt(product["title"], items, language, style,
                                                                  per_product), QuestionSet)
         for out in result.questions[:per_product]:
-            add(out, items, language, style, product["category"], [])
+            add(out, items, language, style, product["category"], [], [])
 
     by_category: dict[str, list[dict]] = {}
     for product in pool:
@@ -168,9 +179,10 @@ def make_questions(conn, llm, one: int = 12, per_product: int = 2, across: int =
     for i, group in enumerate(rng.sample(groups, min(across, len(groups)))):
         language = LANGUAGES[i % len(LANGUAGES)]
         titles = {p["asin"]: p["title"] for p in group}
-        items = sources(conn, list(titles), ["review", "specs"])
+        kinds = ["review", "specs"]  # the search has the same kinds as the chunks that the model saw
+        items = sources(conn, list(titles), kinds)
         say(f"{', '.join(titles)}: 1 question across them in {language}")
         result = llm.structured(role, SYSTEM, across_prompt(titles, items, language), QuestionSet)
         for out in result.questions[:1]:
-            add(out, items, language, "across", group[0]["category"], list(titles))
+            add(out, items, language, "across", group[0]["category"], list(titles), kinds)
     return made

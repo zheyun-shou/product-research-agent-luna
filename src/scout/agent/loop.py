@@ -261,7 +261,8 @@ class LoopDeps:
     check_now: Callable[[list[int], Needs], dict[int, str]]
     page_texts: Callable[[list[int]], dict[int, dict]] | None = None
     search_text: Callable[..., list] | None = None
-    similar_products: Callable[..., list] | None = None  # (like ids, wishes, scope, k) -> [Similar]
+    # (like listing ids, wishes, scope, k, removed product ids) -> [Similar], one for each product; raises NoText
+    similar_products: Callable[..., list] | None = None
     read_images: Callable[[list[str], str], Any] | None = None
     find_missing: Callable[[list[Card], list[str], CategoryProfile], str] | None = None
     # -> (report, review pages, ids whose reviews cannot be read: not on amazon.se, or the shopper skipped the login)
@@ -463,11 +464,17 @@ def step_title(call: BaseModel) -> tuple[str, str]:
     return "db", tool_name(type(call))
 
 
+# The first words of a tool report when the tool did nothing: a failure or a refusal
+FAILED = ("failed (", "not available", "the model for this tool is not available", "not run", "not recorded",
+          "record the category", "there is no product", "give a product id", "the product pages of this turn",
+          "the web searches of this turn", "the web pages of this turn")
+
+
 def step_detail(report: str) -> tuple[str, str]:
     """(state, detail) from a tool report: its first line without the tool name, cut short."""
     lines = report.split(": ", 1)[-1].strip().splitlines()
     text = lines[0] if lines else ""
-    failed = text.startswith(("failed (", "not available", "the model for this tool is not available"))
+    failed = text.startswith(FAILED)
     if len(text) > STEP_DETAIL_CHARS:
         text = text[:STEP_DETAIL_CHARS - 1].rstrip() + "…"
     return ("fail" if failed else "done"), text
@@ -633,7 +640,7 @@ class Toolbox:
                 + ("\n\n".join(lines) or "nothing matches."))
 
     def similar_products(self, call: SimilarProducts) -> str:
-        from scout.text.retrieve import Scope
+        from scout.text.retrieve import NoText, Scope
         if self.deps.similar_products is None:
             return "not available."
         if self.needs.category is None:
@@ -646,12 +653,13 @@ class Toolbox:
             if unknown:
                 return f"there is no product with id {call.like}."
             like = [cards[0].listing_id]
-        limit = max(1, min(call.limit, 15))
-        removed = self.deps.eliminated(self.thread)
-        found = self.deps.similar_products(like, [call.wish, *call.more[:3]], Scope(category=self.needs.category),
-                                           limit + len(removed))
+        try:
+            found = self.deps.similar_products(like, [call.wish, *call.more[:3]], Scope(category=self.needs.category),
+                                               max(1, min(call.limit, 15)), self.deps.eliminated(self.thread))
+        except NoText:
+            return f"id {call.like} has no stored text to compare with. Use the wish alone, or read_product."
         cards = {c.listing_id: c for c in self.deps.cards([s.listing_id for s in found])}
-        found = [s for s in found if s.listing_id in cards and cards[s.listing_id].product_id not in removed][:limit]
+        found = [s for s in found if s.listing_id in cards]
         near = " and ".join(([f"id {call.like}"] if call.like is not None else [])
                             + ([f"'{call.wish}'"] if call.wish.strip() else []))
         lines = [f"{candidate_text(cards[s.listing_id])}\n  score {s.score:.3f}; nearest part ({s.reason.ref}): "
@@ -800,8 +808,13 @@ def build_agent_graph(deps: LoopDeps, checkpointer=None):
                 step = {"id": next(STEP_IDS), "kind": kind, "title": title}
                 deps.step({**step, "state": "run"})
                 began = time.monotonic()
-                with deps.tracer.span(item["tool"]):
-                    report = box.run(call)
+                try:
+                    with deps.tracer.span(item["tool"]):
+                        report = box.run(call)
+                except BaseException as exc:  # the step must not stay "run" on the page
+                    deps.step({**step, "state": "fail", "detail": type(exc).__name__,
+                               "seconds": round(time.monotonic() - began, 1)})
+                    raise
                 done, detail = step_detail(report)
                 deps.step({**step, "state": done, "detail": detail, "seconds": round(time.monotonic() - began, 1),
                            "used": {k: box.used.get(k, 0) for k in LIMITS}, "limits": LIMITS})

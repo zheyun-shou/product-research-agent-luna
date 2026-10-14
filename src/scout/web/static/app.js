@@ -201,13 +201,13 @@ function settle(p) {
   });
 }
 
-function addStep(p, kind, title) {
+function addStep(p, kind, title, counted = kind !== "think") {
   const li = el("li", `step ${kind} run`);
   const body = el("div", "s-body");
   body.append(el("div", "s-title", title), el("div", "s-lines"), el("div", "s-detail"));
   li.append(icon(kind), body);
   p.list.append(li);
-  if (kind !== "think") p.count += 1;
+  if (counted) p.count += 1;
   return li;
 }
 
@@ -233,7 +233,8 @@ function onStep(p, event) {
 function onStatus(p, text) {
   const li = running(p).filter((x) => !x.classList.contains("think")).pop();
   if (li) li.querySelector(".s-lines").append(el("div", null, text));
-  else { settle(p); addStep(p, "note", text); }
+  // Without a running tool the line is a note of its own: not a step, and the planning step stays
+  else addStep(p, "note", text, false).classList.replace("run", "done");
 }
 
 function finish(p) {

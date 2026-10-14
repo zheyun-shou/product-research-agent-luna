@@ -12,9 +12,9 @@ def source(number, text, asin="B0AAAAAAA1", ref="review 1"):
 
 def test_only_gold_labels_with_their_words_in_the_chunk_are_kept():
     items = [source(1, "The compressor is loud at night"), source(2, "Nice white door", ref="review 2")]
-    out = QuestionOut(question="Is it loud?", queries=QUERIES, gold=[GoldOut(chunk=1, quote="compressor is loud"),
-                                                     GoldOut(chunk=1, quote=" loud at night "),
-                                                     GoldOut(chunk=2, quote="red door"), GoldOut(chunk=9, quote="x")])
+    out = QuestionOut(question="Is it loud?", gold=[GoldOut(chunk=1, quote="compressor is loud"),
+                                                    GoldOut(chunk=1, quote=" loud at night "),
+                                                    GoldOut(chunk=2, quote="red door"), GoldOut(chunk=9, quote="x")])
     gold, problems = checked(out, items)
     assert gold == [{"asin": "B0AAAAAAA1", "ref": "review 1", "quote": "compressor is loud"}]
     assert problems == ["the words 'red door' are not in chunk [2]", "no chunk [9]"]
@@ -35,9 +35,10 @@ class Writer:
 def test_questions_about_one_product_and_across_products(corpus):
     db, *_ = corpus
     llm = Writer([
-        QuestionSet(questions=[QuestionOut(question="Is the RB38C7B5D22 loud?", queries=QUERIES,
+        QuestionSet(questions=[QuestionOut(question="Is the RB38C7B5D22 loud?",
                                            gold=[GoldOut(chunk=1, quote="compressor is loud")])]),
-        QuestionSet(questions=[QuestionOut(question="Which one is 203 cm?", queries=QUERIES,
+        QUERIES,
+        QuestionSet(questions=[QuestionOut(question="Which one is 203 cm?",
                                            gold=[GoldOut(chunk=99, quote="203 cm")])]),
     ])
     made = make_questions(db, llm, one=1, per_product=1, across=0, min_chunks=3, say=lambda text: None)
@@ -47,3 +48,5 @@ def test_questions_about_one_product_and_across_products(corpus):
     assert q["gold"] == [{"asin": "B0AAAAAAA1", "ref": "review 1", "quote": "compressor is loud"}]
     assert q["queries"] == {"sv": "kompressor ljud", "en": "compressor noise", "zh": "压缩机 噪音"}
     assert "[1] (this product, review)" in llm.prompts[0] and "Swedish" in llm.prompts[0]
+    # The search words are written from the question only, without the chunks
+    assert llm.prompts[1] == "The question: Is the RB38C7B5D22 loud?"

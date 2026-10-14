@@ -94,3 +94,20 @@ def test_similar_products_compare_the_mean_of_the_chunks(corpus):
     both = similar_products(db, embedder, [a], ["quiet"], Scope(kinds=["review"]), k=5)
     assert {s.listing_id for s in both} == {b, c} and both[0].reason.kind == "review"
     assert similar_products(db, embedder, [], [""], Scope()) == []
+
+
+@pytest.mark.db
+def test_similar_products_join_the_listings_of_one_product(corpus):
+    from scout.text.retrieve import NoText, similar_products
+    db, embedder, a, b = corpus
+    other = save_record(db, record(asin="B0AAAAAAA4").model_copy(update={"model": "KG40"}), "fridge").listing_id
+    product_b = db.execute("SELECT product_id FROM listings WHERE id = %s", [b]).fetchone()["product_id"]
+    db.execute("UPDATE listings SET product_id = %s WHERE id = %s", [product_b, other])
+    save_chunks(db, other, [Chunk("review", "review 1", "Product: B\nQuiet and cold")], NOW)
+    index_chunks(db, embedder)
+    near = similar_products(db, embedder, [], ["quiet"], Scope(), k=5)
+    assert [s.listing_id for s in near] == [min(b, other), a]  # product B shows one time
+    assert similar_products(db, embedder, [], ["quiet"], Scope(), k=5, exclude={product_b})[0].listing_id == a
+    empty = save_record(db, record(asin="B0AAAAAAA5").model_copy(update={"model": "KG41"}), "fridge").listing_id
+    with pytest.raises(NoText):
+        similar_products(db, embedder, [empty], ["quiet"], Scope())

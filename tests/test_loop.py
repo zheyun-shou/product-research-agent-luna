@@ -347,24 +347,49 @@ def test_think_runs_nothing_counts_as_a_call_and_shows_no_note():
     assert not any("Two of five" in str(s) for s in steps)
 
 
-def test_similar_products_leaves_out_removed_products_and_gives_the_reason():
-    from scout.agent.loop import SimilarProducts, Toolbox, step_title
-    from scout.text.retrieve import Hit, Similar
+def test_similar_products_passes_the_removed_products_and_gives_the_reason():
+    from scout.agent.loop import SimilarProducts, Toolbox, step_detail, step_title
+    from scout.text.retrieve import Hit, NoText, Similar
     seen = []
     shop = Shop()
     shop.removed.add(shop.cards[3].product_id)
 
-    def similar(like, wishes, scope, k):
-        seen.append((like, wishes, scope.category, k))
-        return [Similar(i, 1.5 - i / 10, Hit(10 + i, i, "review", "review 1", f"Product: Fridge {i}\nVery quiet at night"))
-                for i in (3, 2, 4)]
+    def similar(like, wishes, scope, k, exclude):
+        seen.append((like, wishes, scope.category, k, exclude))
+        if like == [4]:
+            raise NoText("no indexed text for id 4")
+        return [Similar(2, 1.3, Hit(12, 2, "review", "review 1", "Product: Fridge 2" + chr(10) + "Very quiet at night"))]
     deps = shop.deps(FakeLLM([]))
     deps.similar_products = similar
     box = Toolbox(deps, {"needs": {"category": "fridge"}}, "t1")
     text = box.similar_products(SimilarProducts(like=1, wish="tyst", more=["quiet"], limit=1))
-    assert seen == [([1], ["tyst", "quiet"], "fridge", 2)]
-    assert "1 stored products nearest to id 1 and 'tyst'" in text and "id 2:" in text and "id 3:" not in text
+    assert seen == [([1], ["tyst", "quiet"], "fridge", 1, {shop.cards[3].product_id})]
+    assert "1 stored products nearest to id 1 and 'tyst'" in text and "id 2:" in text
     assert "score 1.300; nearest part (review 1): Very quiet at night" in text
+    assert box.similar_products(SimilarProducts(like=4)).startswith("id 4 has no stored text to compare with")
     assert box.similar_products(SimilarProducts(like=9)) == "there is no product with id 9."
     assert box.similar_products(SimilarProducts()) == "give a product id, a wish or both."
     assert step_title(SimilarProducts(like=2, wish="quieter")) == ("db", "Find products near product 2 and 'quieter'")
+    # A refusal of a tool shows as a failed step on the web page
+    assert step_detail("similar_products: give a product id, a wish or both.")[0] == "fail"
+    assert step_detail("update_needs: not recorded: no such attribute")[0] == "fail"
+
+
+def test_a_tool_that_raises_does_not_leave_its_step_running():
+    import pytest
+
+    from scout.agent.loop import Think
+    from scout.trace import NoTracer
+
+    class Boom:
+        def span(self, name):
+            if name != "agent":
+                raise RuntimeError("tracer down")
+            return NoTracer().span(name)
+    steps = []
+    deps = Shop().deps(FakeLLM([[Think(note="x")], "Ok."]))
+    deps.step, deps.tracer = steps.append, Boom()
+    with pytest.raises(RuntimeError):
+        run(build_agent_graph(deps, InMemorySaver()), "Hi")
+    think = [s for s in steps if s.get("title") == "Think it over"]
+    assert [s["state"] for s in think] == ["run", "fail"] and think[-1]["detail"] == "RuntimeError"
