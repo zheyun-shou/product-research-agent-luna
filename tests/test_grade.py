@@ -56,6 +56,12 @@ def test_only_turns_without_an_error_are_graded_and_counted():
     results = grade_results(llm, {"summary": {}, "runs": [copy.deepcopy(RUN)]})
     assert [c.schema for c in llm.calls] == ["Grade", "Grade"] and llm.requests[0][0] == "judge"
     assert "Assistant: Which height?" in llm.requests[1][1]
+    # A turn that was not graded is marked, so the grader does not pass a fact that repeats it
+    again = copy.deepcopy(RUN)
+    again["turns"].append({**RUN["turns"][1], "say": "and?"})
+    llm = FakeLLM([grade(), grade(), grade()])
+    grade_results(llm, {"summary": {}, "runs": [again]})
+    assert "Assistant (not graded): I cannot work on this now." in llm.requests[2][1]
     turns = results["runs"][0]["turns"]
     assert turns[1]["grades"]["said_did"] == {"reason": "r", "result": "fail"} and "grades" not in turns[2]
     summary = results["summary"]["grades"]

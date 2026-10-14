@@ -418,6 +418,7 @@ def test_find_products_orders_by_the_preferences_and_shows_the_verdicts():
     assert lines[3].startswith("id 4:") and lines[4] == '  against: quiet (review 2: "Very loud")'
     # 2 and 3 were not judged, so they come after the judged ones
     assert lines[5].startswith("id 2:") and lines[6].startswith("id 3:")
+    assert box.used["shown"] == [1, 2, 3, 4]  # eval-hidden counts what the model saw
 
     def down(cards, wishes):
         raise LLMUnavailable("busy")

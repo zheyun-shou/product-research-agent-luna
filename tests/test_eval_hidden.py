@@ -77,20 +77,23 @@ def test_the_record_says_where_the_hidden_product_stopped():
 
 def test_funnel_stages():
     from scout.eval.hidden import funnel_stage
-    shown = [{"used": {"read": []}, "tools": [{"tool": "find_products", "args": "{}",
-                                               "report": "find_products: 2 stored products\nid 7: Fridge | 5000 SEK"}]}]
-    read = [{"used": {"read": [7]}, "tools": []}]
-    none = [{"used": {}, "tools": []}]
+    shown = [{"used": {}}, {"used": {"shown": [3, 7]}}]
+    read = [{"used": {"read": [7]}}]
+    none = [{"used": {}}]
     log = [{"words": "kyl", "page": 1, "outcomes": {"B1": "unread", "B2": "read"}},
            {"words": "kyl", "page": 1, "outcomes": {"B1": "read"}}]
     assert funnel_stage(TARGET, True, True, none, log, [7])[0] == "picked"
-    assert funnel_stage(TARGET, False, True, shown, log, [7])[0] == "considered"
+    assert funnel_stage(TARGET, False, True, shown, log, [7])[0] == "considered"  # in a later turn
     assert funnel_stage(TARGET, False, True, read, log, [7])[0] == "considered"
-    assert funnel_stage(TARGET, False, True, shown, log, [8])[0] == "stored"  # "id 7:" is another product
+    assert funnel_stage(TARGET, False, True, shown, log, [8])[0] == "stored"  # 7 is another product
     stage, searches = funnel_stage(TARGET, False, True, none, log, [7])
     assert stage == "stored" and searches == [{"words": "kyl", "page": 1, "outcome": "unread"},
                                               {"words": "kyl", "page": 1, "outcome": "read"}]
+    # Read, but stored under another ASIN (a redirect to a variant)
+    assert funnel_stage(TARGET, False, False, none, log, [])[0] == "stored"
     assert funnel_stage(TARGET, False, False, none, log[:1], [])[0] == "not_read"
+    parse = [{"words": "kyl", "page": 1, "outcomes": {"B1": "not_parsed"}}]
+    assert funnel_stage(TARGET, False, False, none, parse, [])[0] == "left_out"
     over = [{"words": "kyl", "page": 1, "outcomes": {"B1": "over_budget"}}]
     assert funnel_stage(TARGET, False, False, none, over, [])[0] == "left_out"
     assert funnel_stage(TARGET, False, False, none, [], [])[0] == "not_in_results"

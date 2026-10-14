@@ -26,11 +26,11 @@ STOP_KINDS = (("shop_floor", "no shop search"), ("reviews_floor", "the reviews o
               ("web_floor", "had no web search"), ("removed", "was removed by the shopper"),
               ("no_pick", "show_picks has no pick"), ("no_product", "there is no product"))
 # Where the hidden product stopped, from the end of the funnel to its start: in the picks; shown to Luna by
-# find_products or similar_products, or read by her, but not picked; stored but never shown; in the results of a shop
-# search but past the pages read; in the results but left out (over the budget, off topic by title, or the page did
-# not load); in no result of a shop search
+# find_products, search_text or similar_products, or read by her, but not picked; stored but never shown; in the
+# results of a shop search but past the pages read; in the results but left out (over the budget, off topic by
+# title, or the page did not load or parse); in no result of a shop search
 STAGES = ("picked", "considered", "stored", "not_read", "left_out", "not_in_results")
-LEFT_OUT = ("over_budget", "off_topic", "not_loaded")
+LEFT_OUT = ("over_budget", "off_topic", "not_loaded", "not_parsed")
 
 
 def turn_tools(messages: list[dict]) -> list[dict]:
@@ -106,22 +106,18 @@ def pick_rank(pick_ids: list[str], target: Target) -> int | None:
 def funnel_stage(target: Target, found: bool, seen: bool, turns: list[dict], search_log: list[dict],
                  listing_ids: list[int]) -> tuple[str, list[dict]]:
     """The stage of STAGES where the hidden product stopped, and what each shop search did with it. listing_ids are
-    the stored listings of the hidden product."""
+    the stored listings of the hidden product and of the products joined with it."""
     searches = [{"words": s["words"], "page": s["page"], "outcome": s["outcomes"][i]}
                 for s in search_log for i in sorted(target.ids()) if i in s["outcomes"]]
     if found:
         return "picked", searches
-    shown = {f"id {i}:" for i in listing_ids}
     for turn in turns:
-        if set(turn["used"].get("read") or []) & set(listing_ids):
+        if (set(turn["used"].get("read") or []) | set(turn["used"].get("shown") or [])) & set(listing_ids):
             return "considered", searches
-        for tool in turn.get("tools") or []:
-            if tool["tool"] in ("find_products", "similar_products") and any(
-                    line.startswith(tuple(shown)) for line in tool["report"].splitlines()):
-                return "considered", searches
-    if seen:
-        return "stored", searches
     outcomes = {s["outcome"] for s in searches}
+    # A page that was read but stored under another ASIN (a redirect to a variant) counts as stored
+    if seen or outcomes & {"read", "stored_before"}:
+        return "stored", searches
     if "unread" in outcomes:
         return "not_read", searches
     return ("left_out" if outcomes & set(LEFT_OUT) else "not_in_results"), searches

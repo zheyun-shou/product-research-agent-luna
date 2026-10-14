@@ -28,7 +28,8 @@ The result is pass, fail or not_applicable (the criterion has nothing to grade i
 - answers: the messages answer what the shopper asked in the last message, or ask one clear question when the
   message is not clear. Fail when they answer another question, or do something that the shopper did not ask for.
 - facts: each fact about a product is in the sources, or in the shopper's words. A fact that repeats an earlier
-  message of the assistant in the conversation passes: that message was graded in its own turn. A number can be
+  message of the assistant in the conversation passes, because that message was graded in its own turn, but not a
+  fact of a message marked "not graded". A number can be
   rounded (166 cm for 166.5 cm). A test result or a forum view must be in the results of a web search, and the message must name
   the site. Fail when a fact is not in the sources, differs from them, or belongs to another product. In the reason,
   name each fact that fails.
@@ -138,14 +139,17 @@ def grade_results(llm, results: dict, progress=lambda text: None) -> dict:
         if run.get("leaked"):
             continue
         for number, (turn, item) in enumerate(zip(run.get("turns") or [], hidden_turns(run)), 1):
-            if item["replies"] and item["luna"] and not item["error"]:
+            graded = bool(item["replies"] and item["luna"] and not item["error"])
+            if graded:
                 grade = grade_turn(llm, item, lines)
                 turn["grades"] = {name: getattr(grade, name).model_dump() for name in CRITERIA}
                 for name in CRITERIA:
                     counts[name][turn["grades"][name]["result"]] += 1
                 failed = [name for name in CRITERIA if turn["grades"][name]["result"] == "fail"]
                 progress(f"{run['target']} turn {number}: {', '.join(failed) or 'all pass'}")
-            lines += [f"Shopper: {item['say']}"] + [f"Assistant: {r}" for r in item["replies"]]
+            # A fact of a later turn that repeats a message passes only when that message was graded
+            who = "Assistant" if graded else "Assistant (not graded)"
+            lines += [f"Shopper: {item['say']}"] + [f"{who}: {r}" for r in item["replies"]]
     results["summary"]["grades"] = {
         "judge": llm.model_for("judge"),
         **{name: {r: counts[name][r] for r in ("pass", "fail", "not_applicable")} for name in CRITERIA}}

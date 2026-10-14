@@ -668,6 +668,11 @@ class Toolbox:
         problem = self.deps.same_product(call.id, call.same_as)
         return f"not joined: {problem}." if problem else f"id {call.id} and id {call.same_as} are now one product."
 
+    def shown(self, listing_ids) -> None:
+        """Count the products that a result shows to the model (used["shown"]). The hidden-target test finds with
+        it if the model saw the hidden product."""
+        self.used["shown"] = sorted(set(self.used.get("shown", [])) | set(listing_ids))
+
     def find_products(self, call: FindProducts) -> str:
         profile = self.profile()
         if profile is None:
@@ -685,6 +690,7 @@ class Toolbox:
                 note = f" The preferences could not be judged now ({exc})."
         ranked = rank_by_wishes(found, wishes if verdicts else [], verdicts)[:max(1, min(call.limit, 30))]
         order = "the rating and the preferences" if verdicts else "the rating"
+        self.shown(r.card.listing_id for r in ranked)
         return (f"{len(ranked)} stored products ({needs.text() or 'no conditions'}), ordered by {order}.{note} A "
                 "missing value is not shown; it can be looked for with find_missing.\n"
                 + ("\n".join(map(ranked_text, ranked)) or "none"))
@@ -716,6 +722,7 @@ class Toolbox:
         # The search words in each language go to one search (scout.text.retrieve.MultiQueryRetriever)
         queries = [call.question, *call.more[:3]]
         hits = self.deps.search_text(queries if len(queries) > 1 else call.question, scope, 10)
+        self.shown(h.listing_id for h in hits)
         lines = [f"[chunk {h.chunk_id}] id {h.listing_id}, {h.ref}:\n{h.text}" for h in hits]
         return (f"({call.question}) the {len(hits)} best parts. Reviews are a sample.\n\n"
                 + ("\n\n".join(lines) or "nothing matches."))
@@ -741,6 +748,7 @@ class Toolbox:
             return f"id {call.like} has no stored text to compare with. Use the wish alone, or read_product."
         cards = {c.listing_id: c for c in self.deps.cards([s.listing_id for s in found])}
         found = [s for s in found if s.listing_id in cards]
+        self.shown(s.listing_id for s in found)
         near = " and ".join(([f"id {call.like}"] if call.like is not None else [])
                             + ([f"'{call.wish}'"] if call.wish.strip() else []))
         lines = [f"{candidate_text(cards[s.listing_id])}\n  score {s.score:.3f}; nearest part ({s.reason.ref}): "

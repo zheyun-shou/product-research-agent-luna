@@ -35,8 +35,8 @@ class CrawlReport:
     missing: Counter = field(default_factory=Counter)
     notes: list[str] = field(default_factory=list)
     unread: list[Candidate] = field(default_factory=list)  # kept candidates past max_details, in order
-    # What happened to each candidate (source id): over_budget, off_topic, stored_before, read, not_loaded or
-    # unread. The hidden-target test finds where its product left the search.
+    # What happened to each candidate (source id): over_budget, off_topic, stored_before, read, not_loaded,
+    # not_parsed or unread. The hidden-target test finds where its product left the search.
     outcomes: dict[str, str] = field(default_factory=dict)
 
 
@@ -125,9 +125,13 @@ def crawl(
     candidates = interleave(orders)
     report.candidates = len(candidates)
     if budget is not None:
-        within = [c for c in candidates if c.price is None or c.price <= budget]
+        within = []
+        for c in candidates:
+            if c.price is None or c.price <= budget:
+                within.append(c)
+            else:
+                report.outcomes[c.source_id] = "over_budget"
         report.over_budget = len(candidates) - len(within)
-        report.outcomes.update({c.source_id: "over_budget" for c in candidates if c not in within})
         candidates = within
     if screen is not None and candidates:
         try:
@@ -208,7 +212,7 @@ def read_details(conn: psycopg.Connection, adapter, category: str, candidates: l
                 rec = adapter.parse(page)
             except ValueError as exc:
                 report.skipped.append(cand.url)
-                report.outcomes[cand.source_id] = "not_loaded"
+                report.outcomes[cand.source_id] = "not_parsed"
                 report.notes.append(str(exc))
                 continue
             report.outcomes[cand.source_id] = "read"

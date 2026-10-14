@@ -210,14 +210,13 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
         budget = needs.budget_sek()
         key = (profile.category, words, page, budget, repr(needs.wanted(profile)))
         if unread.get(key):
-            unread_before = unread[key]
             known = known_source_ids(conn, SOURCE, [c.source_id for c in unread[key]])
             refresh_listings(conn, [c for c in unread[key] if c.source_id in known])
             todo = [c for c in unread[key] if c.source_id not in known]
             report = read_details(conn, adapter, profile.category, todo[:max_details], CrawlReport(),
                                   on_problem=on_problem, enrich=enrich)
             unread[key] = todo[max_details:]
-            report.outcomes.update({c.source_id: "stored_before" for c in unread_before if c.source_id in known})
+            report.outcomes.update({i: "stored_before" for i in known})
             report.outcomes.update({c.source_id: "unread" for c in unread[key]})
             text = (f"Read the next results of '{words}' (result page {page}) without loading the search pages "
                     f"again: {report.saved} new products saved.")

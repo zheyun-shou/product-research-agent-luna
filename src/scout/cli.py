@@ -690,12 +690,13 @@ def eval_hidden(
                     return [by_id.get(i, "") for i in ids]
 
                 def listings(t):
-                    return [r["id"] for r in conn.execute("SELECT id FROM listings WHERE source_id = ANY(%s)",
-                                                          (sorted(t.ids()),)).fetchall()]
+                    """The listings of the hidden product, and of the products that share one with it."""
+                    return [r["id"] for r in conn.execute(
+                        "SELECT id FROM listings WHERE product_id IN (SELECT product_id FROM listings "
+                        "WHERE source_id = ANY(%s))", (sorted(t.ids()),)).fetchall()]
 
                 def seen(t):
-                    return conn.execute("SELECT 1 FROM listings WHERE source_id = ANY(%s)",
-                                        (sorted(t.ids()),)).fetchone() is not None
+                    return bool(listings(t))
 
                 typer.echo(f"\n=== {target.id}: {target.opening}")
                 records.append(run_target(target, graph, llm, source_ids, seen, turns, typer.echo,
