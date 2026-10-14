@@ -393,3 +393,32 @@ def test_a_tool_that_raises_does_not_leave_its_step_running():
         run(build_agent_graph(deps, InMemorySaver()), "Hi")
     think = [s for s in steps if s.get("title") == "Think it over"]
     assert [s["state"] for s in think] == ["run", "fail"] and think[-1]["detail"] == "RuntimeError"
+
+
+def test_find_products_orders_by_the_preferences_and_shows_the_verdicts():
+    from scout.agent.loop import Toolbox
+    from scout.llm.client import LLMUnavailable
+    from scout.picks.wishes import Verdict
+    from scout.text.retrieve import Hit
+    seen = []
+    shop = Shop()
+
+    def judge(cards, wishes):
+        seen.append(([c.listing_id for c in cards], wishes))
+        return {1: {"quiet": Verdict("meets", Hit(11, 1, "review", "review 1", "Product: F\nSilent", {}, 0.9))},
+                4: {"quiet": Verdict("against", Hit(14, 4, "review", "review 2", "Very loud", {}, 0.8))}}
+    deps = shop.deps(FakeLLM([]))
+    deps.judge_wishes = judge
+    box = Toolbox(deps, {"needs": {"category": "fridge", "preferences": ["quiet", " ", "quiet"]}}, "t1")
+    lines = box.find_products(FindProducts(limit=4)).splitlines()
+    assert seen == [([1, 2, 3, 4], ["quiet"])] and "ordered by the rating and the preferences" in lines[0]
+    assert lines[1].startswith("id 1:") and lines[2] == "  meets: quiet (review 1: Silent)"
+    assert lines[-2].startswith("id 4:") and lines[-1] == "  against: quiet (review 2: Very loud)"
+
+    def down(cards, wishes):
+        raise LLMUnavailable("busy")
+    deps.judge_wishes = down
+    text = box.find_products(FindProducts())
+    assert "ordered by the rating. The preferences could not be judged now (busy)." in text
+    plain = Toolbox(shop.deps(FakeLLM([])), {"needs": {"category": "fridge"}}, "t1").find_products(FindProducts())
+    assert "ordered by the rating." in plain and "meets" not in plain

@@ -111,3 +111,16 @@ def test_similar_products_join_the_listings_of_one_product(corpus):
     empty = save_record(db, record(asin="B0AAAAAAA5").model_copy(update={"model": "KG41"}), "fridge").listing_id
     with pytest.raises(NoText):
         similar_products(db, embedder, [empty], ["quiet"], Scope())
+
+
+@pytest.mark.db
+def test_wish_matches_give_the_nearest_chunks_of_each_product_for_each_wish(corpus):
+    from scout.text.retrieve import wish_matches
+    db, embedder, a, b = corpus
+    empty = save_record(db, record(asin="B0AAAAAAA5").model_copy(update={"model": "KG41"}), "fridge").listing_id
+    out = wish_matches(db, embedder, [a, b, empty], ["quiet night", "white door"], n=2)
+    assert set(out) == {a, b} and [len(x) for x in out[a]] == [2, 2]
+    assert out[b][0][0].text.endswith("Very quiet, I hear nothing at night") and out[a][1][0].text.endswith(
+        "white door")
+    assert out[a][0][0].score >= out[a][0][1].score
+    assert wish_matches(db, embedder, [a], [" "]) == {}

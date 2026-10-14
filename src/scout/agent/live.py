@@ -182,6 +182,7 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
     from scout.shops import refetch as refetch_shop_page
     from scout.extract.ondemand import fill_missing as fill
     from scout.picks.rank import Condition
+    from scout.picks.wishes import judge_wishes
 
     screened: dict[tuple[str, int], bool] = {}
     search_text = hybrid_search(conn, make_embedder)
@@ -342,6 +343,7 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
         conn.commit()
         return report.text, report.pages, report.credits
 
+    verdicts: dict = {}  # (wish, listing id) -> the worker's verdict, for the session
     return LoopDeps(
         llm=llm, profile_names=profile_names, load_profile=load_profile,
         cards=lambda ids: load_cards_by_ids(conn, ids),
@@ -351,8 +353,9 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
         restore=lambda thread, ids: restore_products(conn, thread, ids),
         search_shop=search_shop, check_now=check_now,
         page_texts=lambda ids: page_texts(conn, ids), search_text=search_text,
-        similar_products=search_text.similar, read_images=image_reader(llm), find_missing=find_missing,
-        read_reviews=reviews, reviews_read=reviews_read, summarize=summarize,
+        similar_products=search_text.similar, read_images=image_reader(llm),
+        judge_wishes=lambda cards, wishes: judge_wishes(llm, cards, wishes, search_text.wishes, verdicts),
+        find_missing=find_missing, read_reviews=reviews, reviews_read=reviews_read, summarize=summarize,
         search_web=search_web if client is not None else None, read_page=read_page, same_product=same_product,
         web_searched=lambda ids: web_searched(conn, ids, datetime.now(timezone.utc) - week),
         say=say, tracer=tracer,

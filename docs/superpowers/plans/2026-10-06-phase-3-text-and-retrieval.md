@@ -256,6 +256,15 @@ Real check (bge-m3 on my computer, no model API, 65 fridge listings). "tyst kyl"
 
 The preferences in the needs ("quiet", "white") change the order of the picks. For each preference, a retrieval over the chunks of each candidate gives a score. The final score adds these scores to the rating score with fixed weights. The picks say which wishes moved a product up. Price stays out of the score.
 
+Built on 2026-10-14, with one change to the plan. First I used the cosine similarity of the nearest chunk as the wish score. A real check on the 63 stored fridges (bge-m3 on my computer, no cost) showed the fault: for "tyst" the first product was the Bomann KG 320, because its nearest chunk is a review that says "Sehr lautes Kühlgeräusch" (very loud). Near means the same topic, not the same meaning. "vit" (white) also found the French "vite". So, as for the other words of the shopper, a model judges the meaning:
+
+- `wish_matches` gives the 3 chunks of each candidate product that are nearest to each wish (all listings of the product).
+- The worker reads them and gives a verdict for each candidate: meets, against or unclear, with the number of the part that shows it. One call for each 15 candidates and each wish. A candidate that the worker leaves out, or that has no indexed text, is unclear.
+- The wish score is 1 for meets, 0.5 for unclear and 0 for against. The rating score (Bayesian, as before) is scaled from 0 to 1 over the candidates. The final score is 0.5 times the rating score plus 0.5 times the mean wish score. Price is not in it. Candidates with missing values stay after the others, as before.
+- `find_products` uses the preferences of the needs (at most 5). It judges the first 30 candidates by the rating. The result shows "meets" and "against" for each candidate, with the reference and the words of the part. The verdicts are kept for the session, so a second call costs nothing. When the worker is not available, the order is by the rating, and the result says so.
+- The prompt tells the chat model to record soft wishes as preferences and to say in a pick which wishes it meets, with the source.
+- Not checked with the real worker yet; I run it together with the evaluations.
+
 ### Task 13: Memory across conversations
 
 A profile of the shopper: likes, dislikes (with the reasons from removed picks) and facts (for example the size of the kitchen). It is stored in Postgres for each shopper. The clarify step reads it. The shopper can see and delete it.

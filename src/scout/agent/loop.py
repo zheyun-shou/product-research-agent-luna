@@ -16,6 +16,7 @@ from scout.agent.state import ChatState
 from scout.llm.client import LLMOutputError, LLMUnavailable, tool_name
 from scout.needs import ConditionSpec, Needs, check_needs
 from scout.picks.rank import Card
+from scout.picks.wishes import Ranked, rank_by_wishes
 from scout.picks.write import attribute_text
 from scout.profiles import CategoryProfile
 from scout.trace import NoTracer
@@ -43,7 +44,9 @@ How to work:
   the power supply, the type). Ask once, then search with what you know. Do not ask when the shopper says to search
   now. Record the needs with update_needs, with only numbers that the shopper wrote.
 - find_products lists the stored candidates that meet conditions. It does not choose for you. Look there first:
-  products from earlier searches are stored, and reading them costs no shop pages.
+  products from earlier searches are stored, and reading them costs no shop pages. Record the soft wishes that are
+  not numbers (quiet, white, a modern look) as preferences: find_products orders by them and shows which ones the
+  stored text of a candidate meets or goes against. Say in a pick which wishes it meets, with the source.
 - Search before you recommend. search_shop reads amazon.se. Use Swedish search words. Read more results, more
   pages or search with other words when the stored and the new candidates are weak or too few.
 - Look things up before you guess: read_product, search_text, read_images, find_missing. find_products also lists
@@ -98,7 +101,8 @@ class UpdateNeeds(BaseModel):
     budget: float | None = Field(None, description="SEK")
     budget_note: str | None = Field(None, description="A budget in another currency: the amount, the currency, "
                                                       "the rate used")
-    preferences: list[str] = Field(default_factory=list)
+    preferences: list[str] = Field(default_factory=list, description="Soft wishes in a few words each, for "
+                                   "example quiet or white. find_products orders the candidates by them")
     web_tests: bool = Field(True, description="False only when the shopper does not want web searches for tests")
 
 
@@ -136,7 +140,9 @@ class SameProduct(BaseModel):
 
 
 class FindProducts(BaseModel):
-    """List the stored products of the category that meet conditions, with their facts and ids."""
+    """List the stored products of the category that meet conditions, with their facts and ids. The order comes
+    from the rating and from the preferences in the needs (never the price); each candidate shows which
+    preferences moved it up, with the stored words that match best."""
     kind: str | None = None
     conditions: list[ConditionSpec] = Field(default_factory=list)
     budget: float | None = Field(None, description="Highest price in SEK, or null for the shopper's budget")
@@ -263,6 +269,8 @@ class LoopDeps:
     search_text: Callable[..., list] | None = None
     # (like listing ids, wishes, scope, k, removed product ids) -> [Similar], one for each product; raises NoText
     similar_products: Callable[..., list] | None = None
+    # (cards, wishes) -> {listing id: {wish: Verdict}}; the worker judges the nearest stored text (picks.wishes)
+    judge_wishes: Callable[[list[Card], list[str]], dict] | None = None
     read_images: Callable[[list[str], str], Any] | None = None
     find_missing: Callable[[list[Card], list[str], CategoryProfile], str] | None = None
     # -> (report, review pages, ids whose reviews cannot be read: not on amazon.se, or the shopper skipped the login)
@@ -288,6 +296,19 @@ def candidate_text(card: Card) -> str:
     stock = {True: "yes", False: "no", None: "not known"}[card.in_stock]
     return (f"id {card.listing_id}: {card.title} | price={card.price} {card.currency or ''} | in_stock={stock} | "
             f"rating={card.rating} | review_count={card.review_count} | {attrs or 'no attributes'}")
+
+
+def ranked_text(r: Ranked) -> str:
+    """A candidate of find_products, with the preferences that its stored text meets or goes against, and the
+    words that show it."""
+    def shown(wish: str) -> str:
+        hit = r.verdicts[wish].hit
+        return f"{wish} ({hit.ref}: {_without_title(hit.text)[:120]})" if hit else wish
+    text = candidate_text(r.card)
+    for name, wishes in (("meets", r.moved_by()), ("against", r.against())):
+        if wishes:
+            text += f"\n  {name}: " + "; ".join(map(shown, wishes))
+    return text
 
 
 def _without_title(chunk: str) -> str:
@@ -604,9 +625,19 @@ class Toolbox:
         needs = self.needs.model_copy(update={
             "kind": call.kind or self.needs.kind, "conditions": [*self.needs.conditions, *call.conditions],
             "budget": call.budget if call.budget is not None else self.needs.budget})
-        found = self.deps.find(profile, needs, self.deps.eliminated(self.thread))[:max(1, min(call.limit, 30))]
-        return (f"{len(found)} stored products ({needs.text() or 'no conditions'}). A missing value is not shown; "
-                "it can be looked for with find_missing.\n" + ("\n".join(map(candidate_text, found)) or "none"))
+        found = self.deps.find(profile, needs, self.deps.eliminated(self.thread))
+        wishes = list(dict.fromkeys(w.strip() for w in needs.preferences if w.strip()))[:5]
+        verdicts, note = {}, ""
+        if wishes and found and self.deps.judge_wishes:
+            try:
+                verdicts = self.deps.judge_wishes(found, wishes)
+            except (LLMUnavailable, LLMOutputError) as exc:
+                note = f" The preferences could not be judged now ({exc})."
+        ranked = rank_by_wishes(found, wishes if verdicts else [], verdicts)[:max(1, min(call.limit, 30))]
+        order = "the rating and the preferences" if verdicts else "the rating"
+        return (f"{len(ranked)} stored products ({needs.text() or 'no conditions'}), ordered by {order}.{note} A "
+                "missing value is not shown; it can be looked for with find_missing.\n"
+                + ("\n".join(map(ranked_text, ranked)) or "none"))
 
     def read_product(self, call: ReadProduct) -> str:
         from scout.agent.lookup import product_text

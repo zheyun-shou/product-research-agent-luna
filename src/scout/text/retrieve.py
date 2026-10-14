@@ -242,11 +242,38 @@ def similar_products(conn, embedder: Embedder, like: list[int], wishes: list[str
     return [Similar(r["listing_id"], r["score"], reasons[r["product_id"]]) for r in rows]
 
 
+def wish_matches(conn, embedder: Embedder, listing_ids: list[int], wishes: list[str],
+                 n: int = 3) -> dict[int, list[list[Hit]]]:
+    """For each listing and each wish, the n chunks of its product (all its listings) that are nearest to the wish,
+    nearest first, with the cosine similarity as the score. The outer list of a listing has the order of the wishes.
+    A listing without indexed chunks is not in the result. Near means the same topic: a review that says "very
+    loud" is near the wish "quiet", so a model must judge the chunks."""
+    wishes = [w for w in wishes if w.strip()]
+    if not listing_ids or not wishes:
+        return {}
+    out: dict[int, list[list[Hit]]] = {}
+    for i, vector in enumerate(str(e.dense) for e in embedder.embed(wishes)):
+        rows = conn.execute(
+            """WITH asked AS (SELECT id AS listing_id, product_id FROM listings WHERE id = ANY(%s)),
+                    near AS (SELECT a.listing_id AS asked, c.id, c.listing_id, c.kind, c.ref, c.text, c.meta,
+                                    c.embedding <=> %s::vector AS distance,
+                                    row_number() OVER (PARTITION BY a.listing_id
+                                                       ORDER BY c.embedding <=> %s::vector, c.id) AS place
+                             FROM asked a JOIN listings l ON l.product_id = a.product_id
+                             JOIN chunks c ON c.listing_id = l.id WHERE c.embedding IS NOT NULL)
+               SELECT * FROM near WHERE place <= %s ORDER BY asked, place""",
+            [listing_ids, vector, vector, n]).fetchall()
+        for r in rows:
+            lists = out.setdefault(r["asked"], [[] for _ in wishes])
+            lists[i].append(_hit(r, 1 - r["distance"]))
+    return out
+
+
 def hybrid_search(conn, make_embedder) -> Callable[[str, Scope, int], list[Hit]]:
     """The search of the search_text tool: vectors and BM25 with RRF, for each query (since 2026-10-13: the
     multi-query method was best in eval-retrieval). The embedder loads at the first search.
-    Chunks of newly stored pages get their vectors before each search. `search.similar` is similar_products with the
-    same embedder."""
+    Chunks of newly stored pages get their vectors before each search. `search.similar` and `search.wishes` are
+    similar_products and wish_matches with the same embedder."""
     from scout.text.index import index_chunks
     loaded: list = []
 
@@ -268,5 +295,11 @@ def hybrid_search(conn, make_embedder) -> Callable[[str, Scope, int], list[Hit]]
             loaded.append(make_embedder())
         index_chunks(conn, loaded[0])
         return similar_products(conn, loaded[0], like, wishes, scope, k, exclude)
-    search.similar = similar
+    def wishes(listing_ids: list[int], wishes: list[str]) -> dict[int, list[list[Hit]]]:
+        """wish_matches with the same embedder and the same indexing (find_products with preferences)."""
+        if not loaded:
+            loaded.append(make_embedder())
+        index_chunks(conn, loaded[0])
+        return wish_matches(conn, loaded[0], listing_ids, wishes)
+    search.similar, search.wishes = similar, wishes
     return search
