@@ -155,6 +155,7 @@ def rewrite_retrieval_words(yes: bool = typer.Option(False, help="start without 
     from scout.eval.retrieval import QUESTIONS
 
     rows = yaml.safe_load(QUESTIONS.read_text(encoding="utf-8"))
+    load_settings()  # reads .env with the API keys
     llm = LLM(load_llm_config())
     if not yes and not typer.confirm(f"{len(rows)} calls to {llm.model_for('chat')}. Start?"):
         raise typer.Exit(1)
