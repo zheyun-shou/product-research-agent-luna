@@ -49,6 +49,8 @@ How to work:
 - Look things up before you guess: read_product, search_text, read_images, find_missing. find_products also lists
   candidates that do not show a value of a condition. Do not leave out such a candidate only because the value is
   missing: look for it first (find_missing, read_product).
+- similar_products finds stored products near a product, near a soft wish that is not a number, or both (for example
+  "like pick 2 but quieter", "a modern look"). Check that a near product meets the needs before it is a pick.
 - Read the buyers' reviews of the products that you want to recommend (read_reviews, then summarize_reviews).
 - Search the web for tests and forum views of the products that you want to recommend (search_web with their ids).
   Use short search words: the brand and model and one word such as test, recension, Testbericht, anmeldelse or
@@ -159,6 +161,18 @@ class SearchText(BaseModel):
         default_factory=list, description="test, forum, shop and other are web pages")
 
 
+class SimilarProducts(BaseModel):
+    """Find stored products of the category that are near one product, near a soft wish, or both, for example
+    "like id 12 but quieter" (like 12, wish quiet) or "a modern look". Each product is compared as a whole, by the
+    mean of all its stored text. The best matching part of each product is the reason. Removed products are left
+    out. A near product does not always meet the needs; check it before it is a pick."""
+    like: int | None = Field(None, description="The id of a product to be near, or null")
+    wish: str = Field("", description="The soft wish in a few words, or empty")
+    more: list[str] = Field(default_factory=list, description="The wish in the other languages of Swedish, English "
+                            "and Chinese")
+    limit: int = Field(8, description="At most 15")
+
+
 class ReadImages(BaseModel):
     """Look at the product images of one product. Never read a price from an image."""
     id: int
@@ -214,8 +228,9 @@ class Reply(BaseModel):
     text: str
 
 
-WORK_TOOLS = [UpdateNeeds, SearchShop, SearchWeb, ReadPage, SameProduct, FindProducts, ReadProduct, SearchText, ReadImages, FindMissing, ReadReviews,
-              SummarizeReviews, RemoveProducts, RestoreProducts, Think]
+WORK_TOOLS = [UpdateNeeds, SearchShop, SearchWeb, ReadPage, SameProduct, FindProducts, ReadProduct, SearchText,
+              SimilarProducts, ReadImages, FindMissing, ReadReviews, SummarizeReviews, RemoveProducts,
+              RestoreProducts, Think]
 FINAL_TOOLS = [ShowPicks, Reply]
 BY_NAME = {tool_name(t): t for t in WORK_TOOLS + FINAL_TOOLS}
 
@@ -246,6 +261,7 @@ class LoopDeps:
     check_now: Callable[[list[int], Needs], dict[int, str]]
     page_texts: Callable[[list[int]], dict[int, dict]] | None = None
     search_text: Callable[..., list] | None = None
+    similar_products: Callable[..., list] | None = None  # (like ids, wishes, scope, k) -> [Similar]
     read_images: Callable[[list[str], str], Any] | None = None
     find_missing: Callable[[list[Card], list[str], CategoryProfile], str] | None = None
     # -> (report, review pages, ids whose reviews cannot be read: not on amazon.se, or the shopper skipped the login)
@@ -271,6 +287,12 @@ def candidate_text(card: Card) -> str:
     stock = {True: "yes", False: "no", None: "not known"}[card.in_stock]
     return (f"id {card.listing_id}: {card.title} | price={card.price} {card.currency or ''} | in_stock={stock} | "
             f"rating={card.rating} | review_count={card.review_count} | {attrs or 'no attributes'}")
+
+
+def _without_title(chunk: str) -> str:
+    """A chunk starts with the line "Product: <title>"; the card already gives the title."""
+    first, _, rest = chunk.partition("\n")
+    return rest.strip() if first.startswith("Product:") and rest.strip() else chunk
 
 
 def context_text(state: dict, deps: LoopDeps, thread: str) -> str:
@@ -420,6 +442,10 @@ def step_title(call: BaseModel) -> tuple[str, str]:
         return "db", f"Read the stored pages of {_products(call.ids)}"
     if isinstance(call, SearchText):
         return "db", f"Search the stored text for '{call.question}'"
+    if isinstance(call, SimilarProducts):
+        near = " and ".join(([f"product {call.like}"] if call.like is not None else [])
+                            + ([f"'{call.wish}'"] if call.wish.strip() else []))
+        return "db", f"Find products near {near or 'nothing'}"
     if isinstance(call, ReadImages):
         return "db", f"Look at the images of product {call.id}"
     if isinstance(call, FindMissing):
@@ -605,6 +631,33 @@ class Toolbox:
         lines = [f"[chunk {h.chunk_id}] id {h.listing_id}, {h.ref}:\n{h.text}" for h in hits]
         return (f"({call.question}) the {len(hits)} best parts. Reviews are a sample.\n\n"
                 + ("\n\n".join(lines) or "nothing matches."))
+
+    def similar_products(self, call: SimilarProducts) -> str:
+        from scout.text.retrieve import Scope
+        if self.deps.similar_products is None:
+            return "not available."
+        if self.needs.category is None:
+            return "record the category with update_needs first."
+        if call.like is None and not call.wish.strip():
+            return "give a product id, a wish or both."
+        like = []
+        if call.like is not None:
+            cards, unknown = self.cards([call.like])
+            if unknown:
+                return f"there is no product with id {call.like}."
+            like = [cards[0].listing_id]
+        limit = max(1, min(call.limit, 15))
+        removed = self.deps.eliminated(self.thread)
+        found = self.deps.similar_products(like, [call.wish, *call.more[:3]], Scope(category=self.needs.category),
+                                           limit + len(removed))
+        cards = {c.listing_id: c for c in self.deps.cards([s.listing_id for s in found])}
+        found = [s for s in found if s.listing_id in cards and cards[s.listing_id].product_id not in removed][:limit]
+        near = " and ".join(([f"id {call.like}"] if call.like is not None else [])
+                            + ([f"'{call.wish}'"] if call.wish.strip() else []))
+        lines = [f"{candidate_text(cards[s.listing_id])}\n  score {s.score:.3f}; nearest part ({s.reason.ref}): "
+                 f"{_without_title(s.reason.text)[:300]}" for s in found]
+        return (f"{len(found)} stored products nearest to {near}, nearest first. Near is not the same as fit.\n"
+                + ("\n".join(lines) or "none"))
 
     def read_images(self, call: ReadImages) -> str:
         from scout.agent.lookup import IMAGE_HOSTS, MAX_IMAGES

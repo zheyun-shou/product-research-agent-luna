@@ -247,6 +247,10 @@ On 2026-10-14 I stopped the paid grader for now, to save cost. I read the replie
 
 A lookup tool `similar_products(pick=None, wish)`: products that are near a pick or a wish ("like pick 2 but quieter", "a modern look"). Each product gets one vector from its chunks (the mean). The result also gives the reason (the best matching chunk of each product).
 
+Done on 2026-10-14. The tool is `similar_products(like, wish, more, limit)`. `like` is a product id, `wish` is the soft wish, and `more` is the wish in the other languages. The vectors of the wish in each language give one mean vector. Each listing of the category gets the mean of the vectors of its chunks (pgvector `avg`). The score adds the cosine similarity to the product and the cosine similarity to the wish. The listings of the product in `like` and the removed products are left out. The reason is the chunk of each listing that is nearest to the wish, without its title line. The result says that near is not the same as fit, and the prompt tells the chat model to check the needs before a near product is a pick.
+
+Real check (bge-m3 on my computer, no model API, 65 fridge listings). "tyst kyl" with "quiet fridge" and "安静" gave 5 products that say quiet or tyst in their titles or reviews. "modern look, sleek design" gave weak results: a smart device for a fridge and a retro fridge are at places 1 and 2. A mean over all chunks of a product (mostly reviews) does not show the look well. Not measured with a test set yet.
+
 ### Task 12: Rank by the shopper's wishes
 
 The preferences in the needs ("quiet", "white") change the order of the picks. For each preference, a retrieval over the chunks of each candidate gives a score. The final score adds these scores to the rating score with fixed weights. The picks say which wishes moved a product up. Price stays out of the score.

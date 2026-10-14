@@ -345,3 +345,26 @@ def test_think_runs_nothing_counts_as_a_call_and_shows_no_note():
     done = [s for s in steps if s.get("title") == "Think it over" and s["state"] == "done"]
     assert done[0]["used"]["calls"] == 1 and done[0]["kind"] == "note"
     assert not any("Two of five" in str(s) for s in steps)
+
+
+def test_similar_products_leaves_out_removed_products_and_gives_the_reason():
+    from scout.agent.loop import SimilarProducts, Toolbox, step_title
+    from scout.text.retrieve import Hit, Similar
+    seen = []
+    shop = Shop()
+    shop.removed.add(shop.cards[3].product_id)
+
+    def similar(like, wishes, scope, k):
+        seen.append((like, wishes, scope.category, k))
+        return [Similar(i, 1.5 - i / 10, Hit(10 + i, i, "review", "review 1", f"Product: Fridge {i}\nVery quiet at night"))
+                for i in (3, 2, 4)]
+    deps = shop.deps(FakeLLM([]))
+    deps.similar_products = similar
+    box = Toolbox(deps, {"needs": {"category": "fridge"}}, "t1")
+    text = box.similar_products(SimilarProducts(like=1, wish="tyst", more=["quiet"], limit=1))
+    assert seen == [([1], ["tyst", "quiet"], "fridge", 2)]
+    assert "1 stored products nearest to id 1 and 'tyst'" in text and "id 2:" in text and "id 3:" not in text
+    assert "score 1.300; nearest part (review 1): Very quiet at night" in text
+    assert box.similar_products(SimilarProducts(like=9)) == "there is no product with id 9."
+    assert box.similar_products(SimilarProducts()) == "give a product id, a wish or both."
+    assert step_title(SimilarProducts(like=2, wish="quieter")) == ("db", "Find products near product 2 and 'quieter'")

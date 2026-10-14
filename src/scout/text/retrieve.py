@@ -181,10 +181,58 @@ class LongContext:
         return [_hit(r) for r in _rows(self.conn, scope)]
 
 
+@dataclass
+class Similar:
+    listing_id: int
+    score: float  # the sum of the cosine similarities to the product and to the wish
+    reason: Hit  # the chunk of the listing that is nearest to the wish, or to the product without a wish
+
+
+def _mean(vectors: list[list[float]]) -> list[float]:
+    return [sum(xs) / len(vectors) for xs in zip(*vectors)]
+
+
+def similar_products(conn, embedder: Embedder, like: list[int], wishes: list[str], scope: Scope,
+                     k: int = 10) -> list[Similar]:
+    """The listings that are near the listings `like` and near the soft wish (the same wish in more languages).
+    Each listing has one vector, the mean of the vectors of its chunks. The listings of the products of `like` are
+    left out. The reason of each listing is its chunk that is nearest to the wish."""
+    targets = []
+    if like:
+        row = conn.execute("SELECT avg(embedding)::text AS v FROM chunks WHERE embedding IS NOT NULL"
+                           " AND listing_id = ANY(%s)", [like]).fetchone()
+        if row["v"] is not None:
+            targets.append(row["v"])
+    wishes = list(dict.fromkeys(w.strip() for w in wishes if w.strip()))
+    if wishes:
+        targets.append(str(_mean([e.dense for e in embedder.embed(wishes)])))
+    if not targets:
+        return []
+    where, args = _where(scope)
+    near = " + ".join("(1 - (v <=> %s::vector))" for _ in targets)
+    rows = conn.execute(
+        f"""WITH m AS (SELECT listing_id, avg(embedding) AS v FROM chunks WHERE embedding IS NOT NULL AND {where}
+                       AND listing_id NOT IN (SELECT l.id FROM listings l WHERE l.product_id IN
+                                              (SELECT product_id FROM listings WHERE id = ANY(%s)))
+                       GROUP BY listing_id)
+            SELECT listing_id, {near} AS score FROM m ORDER BY score DESC, listing_id LIMIT %s""",
+        [*args, like, *targets, k]).fetchall()
+    if not rows:
+        return []
+    where, args = _where(Scope(listing_ids=[r["listing_id"] for r in rows], kinds=scope.kinds, since=scope.since))
+    best = conn.execute(
+        f"""SELECT DISTINCT ON (listing_id) id, listing_id, kind, ref, text, meta, embedding <=> %s::vector AS distance
+            FROM chunks WHERE embedding IS NOT NULL AND {where} ORDER BY listing_id, distance, id""",
+        [targets[-1], *args]).fetchall()
+    reasons = {r["listing_id"]: _hit(r, 1 - r["distance"]) for r in best}
+    return [Similar(r["listing_id"], r["score"], reasons[r["listing_id"]]) for r in rows]
+
+
 def hybrid_search(conn, make_embedder) -> Callable[[str, Scope, int], list[Hit]]:
     """The search of the search_text tool: vectors and BM25 with RRF, for each query (since 2026-10-13: the
     multi-query method was best in eval-retrieval). The embedder loads at the first search.
-    Chunks of newly stored pages get their vectors before each search."""
+    Chunks of newly stored pages get their vectors before each search. `search.similar` is similar_products with the
+    same embedder."""
     from scout.text.index import index_chunks
     loaded: list = []
 
@@ -198,4 +246,12 @@ def hybrid_search(conn, make_embedder) -> Callable[[str, Scope, int], list[Hit]]
         queries = [query] if isinstance(query, str) else query
         return MultiQueryRetriever([VectorRetriever(conn, loaded[0]), Bm25Retriever(conn, loaded[0])]).search_many(
             queries, scope, k)
+
+    def similar(like: list[int], wishes: list[str], scope: Scope, k: int = 10) -> list[Similar]:
+        """similar_products with the same embedder and the same indexing (the similar_products tool)."""
+        if not loaded:
+            loaded.append(make_embedder())
+        index_chunks(conn, loaded[0])
+        return similar_products(conn, loaded[0], like, wishes, scope, k)
+    search.similar = similar
     return search

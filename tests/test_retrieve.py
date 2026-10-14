@@ -77,3 +77,20 @@ def test_more_queries_join_with_rrf(corpus):
     top = multi.search_many(["kg39nxibf", "loud compressor", "  ", "kg39nxibf"], Scope(), k=2)
     assert {h.text.split("\n")[1] for h in top} == {"Model KG39NXIBF height 203 cm", "The compressor is loud at night"}
     assert multi.name == "multi:bm25" and multi.search("kg39nxibf", Scope(), k=1)[0].listing_id == b
+
+
+@pytest.mark.db
+def test_similar_products_compare_the_mean_of_the_chunks(corpus):
+    from scout.text.retrieve import similar_products
+    db, embedder, a, b = corpus
+    c = save_record(db, record(asin="B0AAAAAAA3").model_copy(update={"model": "KG36"}), "fridge").listing_id
+    save_chunks(db, c, [Chunk("review", "review 1", "Product: C\nThe compressor is loud at night"),
+                        Chunk("review", "review 2", "Product: C\nNice white door")], NOW)
+    index_chunks(db, embedder)
+    near = similar_products(db, embedder, [a], [], Scope(), k=5)
+    assert [s.listing_id for s in near] == [c, b] and near[0].score > near[1].score
+    quiet = similar_products(db, embedder, [], ["very quiet", "  "], Scope(), k=1)
+    assert quiet[0].listing_id == b and quiet[0].reason.text.endswith("Very quiet, I hear nothing at night")
+    both = similar_products(db, embedder, [a], ["quiet"], Scope(kinds=["review"]), k=5)
+    assert {s.listing_id for s in both} == {b, c} and both[0].reason.kind == "review"
+    assert similar_products(db, embedder, [], [""], Scope()) == []
