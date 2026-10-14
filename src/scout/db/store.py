@@ -427,3 +427,31 @@ def web_searched(conn: psycopg.Connection, listing_ids: list[int], since) -> set
                SELECT 1 FROM web_searches w JOIN listings o ON o.id = ANY(w.listing_ids)
                WHERE o.product_id = l.product_id AND w.searched_at >= %s)""", (listing_ids, since)).fetchall()
     return {row["id"] for row in rows}
+
+
+def add_memory(conn: psycopg.Connection, shopper: str, kind: str, text: str, category: str | None,
+               thread_id: str = "") -> int:
+    """Store one memory of the shopper and give its id. The same text of the same kind is stored one time."""
+    text = " ".join(text.split())
+    row = conn.execute("SELECT id FROM shopper_memory WHERE shopper = %s AND kind = %s AND lower(text) = lower(%s)",
+                       (shopper, kind, text)).fetchone()
+    if row is None:
+        row = conn.execute("INSERT INTO shopper_memory (shopper, kind, text, category, thread_id)"
+                           " VALUES (%s, %s, %s, %s, %s) RETURNING id",
+                           (shopper, kind, text, category, thread_id)).fetchone()
+    conn.commit()
+    return row["id"]
+
+
+def memories(conn: psycopg.Connection, shopper: str) -> list[dict]:
+    """The memories of the shopper, oldest first: id, kind, text, category, created_at."""
+    return conn.execute("SELECT id, kind, text, category, created_at FROM shopper_memory WHERE shopper = %s"
+                        " ORDER BY id", (shopper,)).fetchall()
+
+
+def forget_memories(conn: psycopg.Connection, shopper: str, ids: list[int]) -> list[int]:
+    """Delete memories of the shopper and give the ids that were deleted."""
+    rows = conn.execute("DELETE FROM shopper_memory WHERE shopper = %s AND id = ANY(%s) RETURNING id",
+                        (shopper, ids)).fetchall()
+    conn.commit()
+    return sorted(r["id"] for r in rows)

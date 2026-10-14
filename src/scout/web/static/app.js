@@ -339,6 +339,37 @@ $("new-chat").addEventListener("click", () => { if (!busy) { history.pushState(n
 $("brand").addEventListener("click", (e) => { e.preventDefault(); $("new-chat").click(); });
 $("picks-toggle").addEventListener("click", () => openPanel(!document.body.classList.contains("panel-open")));
 $("panel-close").addEventListener("click", () => openPanel(false));
+// The memory of the shopper across conversations: see and delete
+async function showMemory() {
+  const list = $("memory-list");
+  const response = await fetch("/api/memory");
+  if (!response.ok) {
+    list.replaceChildren(el("li", "empty-note", (await response.json()).detail || "The memory could not be loaded."));
+    return;
+  }
+  const items = await response.json();
+  if (!items.length) { list.replaceChildren(el("li", "empty-note", "Nothing yet.")); return; }
+  list.replaceChildren(...items.map((m) => {
+    const li = el("li");
+    const body = el("div", "m-body");
+    const meta = el("div", "m-meta");
+    meta.append(el("span", `m-kind ${m.kind}`, m.kind), ` · ${m.category || "all categories"} · ${m.date}`);
+    body.append(meta, el("div", null, m.text));
+    const remove = el("button", "ghost", "Delete");
+    remove.type = "button";
+    remove.setAttribute("aria-label", `Delete: ${m.text}`);
+    remove.addEventListener("click", async () => {
+      const r = await fetch(`/api/memory/${m.id}`, { method: "DELETE" });
+      if (r.ok) showMemory();
+      else remove.textContent = "Try later";
+    });
+    li.append(body, remove);
+    return li;
+  }));
+}
+
+$("memory-open").addEventListener("click", () => { $("memory").showModal(); showMemory(); });
+$("memory-close").addEventListener("click", () => $("memory").close());
 $("problem-done").addEventListener("click", () => answerProblem(false));
 $("problem-skip").addEventListener("click", () => answerProblem(true));
 window.addEventListener("popstate", () => { if (!busy) load(); });

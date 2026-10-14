@@ -175,6 +175,21 @@ class ChatService:
             self._end()
             return {"message": message, **self._picks(thread)}
 
+    def memories(self) -> list[dict]:
+        """What the agent remembers about the shopper, newest first."""
+        with self._idle():
+            items = getattr(self.deps, "memories", lambda: [])()
+            self._end()
+            return [{"id": m["id"], "kind": m["kind"], "text": m["text"], "category": m["category"],
+                     "date": f"{m['created_at']:%Y-%m-%d}"} for m in reversed(items)]
+
+    def forget(self, memory_id: int) -> None:
+        with self._idle():
+            gone = self.deps.forget([memory_id]) if getattr(self.deps, "forget", None) else []
+            self._end()
+            if memory_id not in gone:
+                raise KeyError(memory_id)
+
     def _picks(self, thread: str) -> dict:
         values = self._values(thread)
         return {"picks": self.pick_views(values.get("picks", [])),

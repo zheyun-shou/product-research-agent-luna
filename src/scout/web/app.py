@@ -62,6 +62,23 @@ def create_app(service: ChatService) -> FastAPI:
         except KeyError:
             raise HTTPException(404, "This product is not a pick of the thread.")
 
+    @app.get("/api/memory")
+    def memory():
+        try:
+            return service.memories()
+        except Busy:
+            raise HTTPException(409, BUSY)
+
+    @app.delete("/api/memory/{memory_id}")
+    def forget(memory_id: int):
+        try:
+            service.forget(memory_id)
+        except Busy:
+            raise HTTPException(409, BUSY)
+        except KeyError:
+            raise HTTPException(404, "There is no such memory.")
+        return {"ok": True}
+
     @app.post("/api/problem")
     def problem(answer: ProblemAnswer):
         if not service.answer_problem(answer.skip):

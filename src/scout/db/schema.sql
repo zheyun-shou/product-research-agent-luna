@@ -150,3 +150,16 @@ CREATE TABLE IF NOT EXISTS web_searches (
     searched_at  timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS web_searches_question ON web_searches (lower(question), searched_at);
+
+-- What the agent remembers about a shopper across conversations (phase 3 Task 13): likes, dislikes and facts such
+-- as the size of the kitchen. The shopper sees and deletes them on the web page. category NULL: all categories.
+CREATE TABLE IF NOT EXISTS shopper_memory (
+    id          bigserial PRIMARY KEY,
+    shopper     text NOT NULL,
+    kind        text NOT NULL CHECK (kind IN ('like', 'dislike', 'fact')),
+    text        text NOT NULL,
+    category    text,
+    thread_id   text NOT NULL DEFAULT '',
+    created_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS shopper_memory_shopper ON shopper_memory (shopper);

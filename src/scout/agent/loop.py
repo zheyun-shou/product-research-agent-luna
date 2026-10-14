@@ -54,6 +54,10 @@ How to work:
   missing: look for it first (find_missing, read_product).
 - similar_products finds stored products near a product, near a soft wish that is not a number, or both (for example
   "like pick 2 but quieter", "a modern look"). Check that a near product meets the needs before it is a pick.
+- The context lists what you remember about the shopper from earlier conversations. Use it, and do not ask again
+  for what you know, but say what you use, because it can be old. Keep with remember what the shopper says that will
+  still be true in a later conversation: a size of the space, a brand or a feature that they want or do not want.
+  When the shopper says that a memory is wrong or asks to forget it, use forget.
 - Read the buyers' reviews of the products that you want to recommend (read_reviews, then summarize_reviews).
 - Search the web for tests and forum views of the products that you want to recommend (search_web with their ids).
   Use short search words: the brand and model and one word such as test, recension, Testbericht, anmeldelse or
@@ -207,6 +211,20 @@ class RemoveProducts(BaseModel):
     reason: str = ""
 
 
+class Remember(BaseModel):
+    """Keep a like, a dislike or a fact of the shopper for later conversations, for example "the kitchen niche is
+    60 cm wide" or "does not want Bomann". Only what the shopper said and what will still be true later. Never a
+    name, an address, health or money matters. The shopper sees and deletes it on the web page."""
+    kind: Literal["like", "dislike", "fact"]
+    text: str = Field(description="One short sentence in the words of the shopper, with the reason when there is one")
+    all_categories: bool = Field(False, description="True when it is not only for the category of the needs")
+
+
+class Forget(BaseModel):
+    """Delete memories of the shopper, when the shopper asks or says that one is not true now."""
+    ids: list[int] = Field(description="Memory ids from the context")
+
+
 class RestoreProducts(BaseModel):
     """Bring back products that were removed in this conversation."""
     ids: list[int]
@@ -236,7 +254,7 @@ class Reply(BaseModel):
 
 WORK_TOOLS = [UpdateNeeds, SearchShop, SearchWeb, ReadPage, SameProduct, FindProducts, ReadProduct, SearchText,
               SimilarProducts, ReadImages, FindMissing, ReadReviews, SummarizeReviews, RemoveProducts,
-              RestoreProducts, Think]
+              RestoreProducts, Remember, Forget, Think]
 FINAL_TOOLS = [ShowPicks, Reply]
 BY_NAME = {tool_name(t): t for t in WORK_TOOLS + FINAL_TOOLS}
 
@@ -284,6 +302,10 @@ class LoopDeps:
     # (url, profile) -> (report, pages loaded, the listing id or None); stores the product of another shop
     read_page: Callable[[str, CategoryProfile], tuple[str, int, int | None]] | None = None
     same_product: Callable[[int, int], str | None] | None = None  # (id, same as) -> the problem or None
+    # The memory of the shopper across conversations (Task 13). remember(kind, text, category, thread) -> id
+    memories: Callable[[], list[dict]] = lambda: []
+    remember: Callable[[str, str, str | None, str], int] | None = None
+    forget: Callable[[list[int]], list[int]] | None = None
     say: Callable[[str], None] = print
     step: Callable[[dict], None] = lambda event: None  # the progress of a turn, for the web page
     tracer: Any = field(default_factory=NoTracer)
@@ -328,6 +350,11 @@ def context_text(state: dict, deps: LoopDeps, thread: str) -> str:
     ]
     if needs.category:
         lines.append(profile_text(deps.load_profile(needs.category)))
+    remembered = [m for m in deps.memories()
+                  if not needs.category or m["category"] in (None, needs.category)][-MAX_MEMORIES:]
+    if remembered:
+        lines.append("What you remember about the shopper from earlier conversations (the shopper can delete it):\n"
+                     + "\n".join(memory_text(m) for m in remembered))
     lines.append("Current picks:\n" + ("\n".join(f"{n}. {candidate_text(c)}" for n, c in enumerate(picks, 1))
                                        or "none"))
     lines.append("Removed in this conversation: " + (", ".join(f"id {r['listing_id']} {r['title'][:50]}"
@@ -341,6 +368,20 @@ def context_text(state: dict, deps: LoopDeps, thread: str) -> str:
     if web:
         lines.append("Web searches in this conversation: " + ", ".join(f"'{q}'" for q in web))
     return "\n".join(lines)
+
+
+MAX_MEMORIES = 30
+
+
+def memory_text(m: dict) -> str:
+    where = f" ({m['category']})" if m["category"] else ""
+    return f"[memory {m['id']}] {m['kind']}{where}, {m['created_at']:%Y-%m-%d}: {m['text']}"
+
+
+def memory_numbers(deps: LoopDeps) -> set:
+    """The numbers in the memories. They count as numbers that the shopper wrote, in update_needs."""
+    from scout.picks.write import numbers_in
+    return set().union(*(numbers_in(m["text"]) for m in deps.memories()))
 
 
 def profile_text(profile: CategoryProfile) -> str:
@@ -480,6 +521,10 @@ def step_title(call: BaseModel) -> tuple[str, str]:
         return "needs", f"Remove {_products(call.ids)}"
     if isinstance(call, RestoreProducts):
         return "needs", f"Bring back {_products(call.ids)}"
+    if isinstance(call, Remember):
+        return "needs", f"Remember a {call.kind}"
+    if isinstance(call, Forget):
+        return "needs", f"Forget {len(call.ids)} memor{'y' if len(call.ids) == 1 else 'ies'}"
     if isinstance(call, Think):
         return "note", "Think it over"  # the note itself is not for the shopper
     return "db", tool_name(type(call))
@@ -488,7 +533,7 @@ def step_title(call: BaseModel) -> tuple[str, str]:
 # The first words of a tool report when the tool did nothing: a failure or a refusal
 FAILED = ("failed (", "not available", "the model for this tool is not available", "not run", "not recorded",
           "record the category", "there is no product", "give a product id", "the product pages of this turn",
-          "the web searches of this turn", "the web pages of this turn")
+          "the web searches of this turn", "the web pages of this turn", "there is no memory")
 
 
 def step_detail(report: str) -> tuple[str, str]:
@@ -536,7 +581,7 @@ class Toolbox:
             return f"'{category}' is not a category. Use one of: {', '.join(names)}."
         needs = Needs(category=category, **call.model_dump(exclude={"category"}))
         profile = self.deps.load_profile(category)
-        errors = check_needs(needs, profile, user_numbers(self.state))
+        errors = check_needs(needs, profile, user_numbers(self.state) | memory_numbers(self.deps))
         if errors:
             return "not recorded: " + "; ".join(errors)
         new_category = category != self.needs.category
@@ -746,8 +791,27 @@ class Toolbox:
             self.update["removed"] = removed
             gone = {c.listing_id for c in cards}
             self.update["picks"] = [p for p in self.current("picks") if p["listing_id"] not in gone]
+            if call.reason.strip() and self.deps.remember:  # the reason is a dislike for later conversations
+                for c in cards:
+                    self.deps.remember("dislike", f"{c.title[:80]}: {call.reason.strip()}", self.needs.category,
+                                       self.thread)
         return (f"removed {', '.join(str(c.listing_id) for c in cards) or 'nothing'}."
                 + "".join(f" There is no product with id {i}." for i in unknown))
+
+    def remember(self, call: Remember) -> str:
+        if self.deps.remember is None:
+            return "not available."
+        category = None if call.all_categories else self.needs.category
+        memory_id = self.deps.remember(call.kind, call.text, category, self.thread)
+        return f"kept as memory {memory_id} ({call.kind}, {category or 'all categories'})."
+
+    def forget(self, call: Forget) -> str:
+        if self.deps.forget is None:
+            return "not available."
+        gone = self.deps.forget(call.ids)
+        missing = [i for i in call.ids if i not in gone]
+        return (f"deleted memory {', '.join(map(str, gone)) or 'nothing'}."
+                + "".join(f" There is no memory {i}." for i in missing))
 
     def restore_products(self, call: RestoreProducts) -> str:
         removed = self.current("removed")

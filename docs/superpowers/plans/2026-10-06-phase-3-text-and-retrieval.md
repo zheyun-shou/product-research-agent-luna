@@ -269,6 +269,17 @@ Built on 2026-10-14, with one change to the plan. First I used the cosine simila
 
 A profile of the shopper: likes, dislikes (with the reasons from removed picks) and facts (for example the size of the kitchen). It is stored in Postgres for each shopper. The clarify step reads it. The shopper can see and delete it.
 
+Built on 2026-10-14.
+
+- The table `shopper_memory` keeps each memory with its shopper, kind (like, dislike or fact), text, category (none: all categories), conversation and date. The same text of the same kind is kept one time.
+- The agent loop has no clarify step, so the context of each turn lists the memories (at most 30, of the category of the needs and of all categories), with their ids and dates. The prompt tells the chat model to use them and not to ask again, but to say what it uses, because a memory can be old.
+- Two new tools. `remember(kind, text, all_categories)` keeps what the shopper says that will still be true later (a size of the space, a brand or a feature that they want or do not want). Its description forbids names, addresses, health and money matters. `forget(ids)` deletes memories when the shopper asks or says that one is wrong.
+- `remove_products` with a reason keeps a dislike: the title and the reason.
+- A number in a memory counts as a number that the shopper wrote, so `update_needs` accepts "height <= 175" from the memory "the niche is 175 cm high".
+- The web page has a Memory button in the header. It lists the memories, newest first, and each one has a Delete button (`GET /api/memory`, `DELETE /api/memory/{id}`).
+- There is one shopper on this computer ("me"), because the page has no login. eval-hidden gives each target its own shopper, so a run does not remember the other targets.
+- The verdicts of Task 12 and the memories are not measured yet.
+
 ### Task 14: Evaluation with a simulated shopper
 
 Method of InteRecAgent: take one stored product as the hidden target. A cheap model plays a shopper whose wishes come from the attributes and reviews of that product. It talks with the agent for at most 5 turns. Metrics: hit@5 (the target is in the picks) and the mean number of turns. This measures if the agent finds a product that fits the wishes, not if the product is the best. The run uses paid models, so I say when.

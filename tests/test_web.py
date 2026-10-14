@@ -171,3 +171,24 @@ def test_the_web_page_gets_each_step_of_the_agent_loop():
     search = next(e for e in events if e["kind"] == "shop" and e["state"] == "done")
     assert search["used"]["calls"] == 2 and search["limits"]["calls"] == 25 and search["seconds"] >= 0
     assert all(len(e.get("detail", "")) <= 160 for e in events)
+
+
+def test_the_memory_routes():
+    from fastapi.testclient import TestClient
+
+    from scout.agent.loop import build_agent_graph
+    from scout.web.app import create_app
+    from tests.test_memory import deps_with_memory
+
+    def build(say, on_problem):
+        deps, memory = deps_with_memory()
+        memory.remember("fact", "The niche is 60 cm wide", "fridge", "t0")
+        memory.remember("dislike", "No Bomann", None, "t0")
+        return build_agent_graph(deps, InMemorySaver()), deps
+    client = TestClient(create_app(ChatService(build)))
+    items = client.get("/api/memory").json()
+    assert [(m["id"], m["kind"], m["category"], m["date"]) for m in items] == [
+        (2, "dislike", None, "2026-10-14"), (1, "fact", "fridge", "2026-10-14")]
+    assert client.delete("/api/memory/1").json() == {"ok": True}
+    assert client.delete("/api/memory/1").status_code == 404
+    assert [m["id"] for m in client.get("/api/memory").json()] == [2]

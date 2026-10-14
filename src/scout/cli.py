@@ -453,6 +453,7 @@ def chat(thread: Optional[str] = typer.Option(None, help="the ID of a conversati
     config = {"configurable": {"thread_id": thread_id}}
     browser = LazyBrowser(settings)
     with connect(settings.database_url) as conn, connect_checkpoints(settings.database_url) as cp_conn:
+        init_schema(conn)  # new tables, for example the memory of the shopper
         saver = PostgresSaver(cp_conn)
         saver.setup()
         if pipeline:
@@ -509,6 +510,7 @@ def web(port: int = 9000, k: int = 5,
     llm = LLM(load_llm_config(), tracer=tracer)
     browser = LazyBrowser(settings)
     with connect(settings.database_url) as conn, connect_checkpoints(settings.database_url) as cp_conn:
+        init_schema(conn)  # new tables, for example the memory of the shopper
         saver = PostgresSaver(cp_conn)
         saver.setup()
 
@@ -674,7 +676,7 @@ def eval_hidden(
                 if not keep:
                     empty_tables(conn)
                 deps = loop_deps(conn, llm, browser, ask_user, lambda text: typer.echo(f"  {text}"), tracer,
-                                 make_embedder=embedder)
+                                 make_embedder=embedder, shopper=f"eval-{target.id}")  # no memory of other targets
                 graph = build_agent_graph(deps, InMemorySaver())
 
                 def source_ids(ids):

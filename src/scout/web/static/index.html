@@ -16,6 +16,7 @@
     <a class="brand" href="/" id="brand"><span class="mark" aria-hidden="true"></span>product-scout</a>
     <div class="top-actions">
       <button class="ghost" id="new-chat" type="button">New chat</button>
+      <button class="ghost" id="memory-open" type="button">Memory</button>
       <button class="ghost picks-toggle" id="picks-toggle" type="button" hidden>Picks <span class="count" id="picks-count">0</span></button>
     </div>
   </header>
@@ -72,6 +73,16 @@
     </details>
   </aside>
 </div>
+<dialog class="memory" id="memory" aria-labelledby="memory-title">
+  <div class="panel-head">
+    <h2 id="memory-title">What I remember</h2>
+    <button class="icon" id="memory-close" type="button" aria-label="Close the memory">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </div>
+  <p class="panel-hint">I keep what you tell me that will still be true in a later chat, and the reasons when you remove a pick. Delete what is wrong.</p>
+  <ul class="memory-list" id="memory-list"></ul>
+</dialog>
 <script src="/static/app.js"></script>
 </body>
 </html>

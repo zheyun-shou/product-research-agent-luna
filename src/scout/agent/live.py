@@ -45,6 +45,9 @@ class LazyBrowser:
             self._session, self._adapter = None, None
 
 
+SHOPPER = "me"  # one shopper on this computer; the web page has no login
+
+
 def shared_deps(conn, llm, crawl, refetch, k: int = 5, size_check: bool = True, find_missing: bool = True,
                 write_opinions: bool = True, **rest) -> Deps:
     """The parts of the dependencies of the picks pipeline (scout chat --pipeline).
@@ -165,12 +168,14 @@ def web_client():
 
 
 def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_embedder=BgeM3Embedder,
-              web="env"):
+              web="env", shopper: str = SHOPPER):
     """The dependencies of the agent loop (agent/loop.py): the same stores, browser and checks as the pipeline.
     make_embedder: a run with many conversations gives one that returns the same embedder, so bge-m3 loads once.
-    web: a search client, None for no web search, or "env" for the back ends of web_client()."""
+    web: a search client, None for no web search, or "env" for the back ends of web_client().
+    shopper: whose memories the agent reads and keeps. An evaluation gives each target its own."""
     from datetime import datetime, timedelta, timezone
 
+    from scout.db.store import add_memory, forget_memories, memories
     from scout.db.store import save_web_chunks, save_web_search, stored_web_results, web_searched
     from scout.websearch import ProductRef, WebResult, WebStore, fetch_texts, url_ref
     from scout.websearch import search_web as run_web_search
@@ -358,5 +363,8 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
         find_missing=find_missing, read_reviews=reviews, reviews_read=reviews_read, summarize=summarize,
         search_web=search_web if client is not None else None, read_page=read_page, same_product=same_product,
         web_searched=lambda ids: web_searched(conn, ids, datetime.now(timezone.utc) - week),
+        memories=lambda: memories(conn, shopper),
+        remember=lambda kind, text, category, thread: add_memory(conn, shopper, kind, text, category, thread),
+        forget=lambda ids: forget_memories(conn, shopper, ids),
         say=say, tracer=tracer,
     )
