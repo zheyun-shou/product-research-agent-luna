@@ -331,3 +331,17 @@ def test_search_text_gives_the_words_of_each_language_to_one_search():
     box.search_text(SearchText(question="tyst kompressor", more=["quiet compressor", "压缩机 安静"]))
     box.search_text(SearchText(question="tyst"))
     assert seen == [["tyst kompressor", "quiet compressor", "压缩机 安静"], "tyst"]
+
+
+def test_think_runs_nothing_counts_as_a_call_and_shows_no_note():
+    from scout.agent.loop import Think
+    shop = Shop()
+    steps = []
+    deps = shop.deps(llm := FakeLLM([[Think(note="Two of five fit: ids 1 and 2")], "Ok."]))
+    deps.step = steps.append
+    graph = build_agent_graph(deps, InMemorySaver())
+    run(graph, "Which fit?")
+    assert "noted." in llm.requests[1][1]
+    done = [s for s in steps if s.get("title") == "Think it over" and s["state"] == "done"]
+    assert done[0]["used"]["calls"] == 1 and done[0]["kind"] == "note"
+    assert not any("Two of five" in str(s) for s in steps)

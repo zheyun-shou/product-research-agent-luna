@@ -67,6 +67,9 @@ How to work:
   from amazon.se.
 - Say clearly when data is missing, doubtful or in conflict, and what you did about it. You can leave out a
   candidate whose data cannot be right; say why.
+- Use think to reason before a conclusion, mainly before show_picks: list the candidates that fit and count
+  them, check each claim against the tool result that it comes from (the site, the number, the variant), and note
+  what is still missing. The shopper does not see it.
 - show_picks gives the final picks, best first. Usually 5. Fewer when fewer fit well; then say why.
 - remove_products and restore_products change which products the shopper has rejected in this conversation.
 
@@ -189,6 +192,12 @@ class RestoreProducts(BaseModel):
     ids: list[int]
 
 
+class Think(BaseModel):
+    """Write down your reasoning, for example which candidates fit and from which tool result each claim comes.
+    Nothing runs, and the shopper does not see it. It counts as a tool call."""
+    note: str
+
+
 class Pick(BaseModel):
     id: int
     text: str = Field(description="Why it fits, and what to watch out for")
@@ -206,7 +215,7 @@ class Reply(BaseModel):
 
 
 WORK_TOOLS = [UpdateNeeds, SearchShop, SearchWeb, ReadPage, SameProduct, FindProducts, ReadProduct, SearchText, ReadImages, FindMissing, ReadReviews,
-              SummarizeReviews, RemoveProducts, RestoreProducts]
+              SummarizeReviews, RemoveProducts, RestoreProducts, Think]
 FINAL_TOOLS = [ShowPicks, Reply]
 BY_NAME = {tool_name(t): t for t in WORK_TOOLS + FINAL_TOOLS}
 
@@ -423,6 +432,8 @@ def step_title(call: BaseModel) -> tuple[str, str]:
         return "needs", f"Remove {_products(call.ids)}"
     if isinstance(call, RestoreProducts):
         return "needs", f"Bring back {_products(call.ids)}"
+    if isinstance(call, Think):
+        return "note", "Think it over"  # the note itself is not for the shopper
     return "db", tool_name(type(call))
 
 
@@ -630,6 +641,9 @@ class Toolbox:
         if self.deps.summarize is None or profile is None:
             return "not available." if profile else "record the category with update_needs first."
         return self.deps.summarize(profile, call.ids, last_language(self.state))
+
+    def think(self, call: Think) -> str:
+        return "noted."
 
     def remove_products(self, call: RemoveProducts) -> str:
         cards, unknown = self.cards(call.ids)

@@ -239,6 +239,10 @@ The worker is now Gemma 4 26B on OpenRouter, with the free Gemini key as the fal
 
 A tool `think(note)` that does nothing. It lets the chat model write its reasoning between lookups. It counts as a lookup in the limit. The note is in the trace, never shown to the shopper. A "research complete" tool is not necessary: a reply in text ends the turn.
 
+Done on 2026-10-14. `Think(note)` returns "noted." and counts as one tool call. The web page shows the step as "Think it over", without the note. The note stays in the tool calls of the turn, so eval-hidden keeps it. The prompt tells the chat model to think before a conclusion, mainly before show_picks: list and count the candidates that fit, check each claim against its tool result (the site, the number, the variant), and note what is missing. This is for the most common fact faults of the Haiku run. Not measured yet.
+
+On 2026-10-14 I stopped the paid grader for now, to save cost. I read the replies of a run myself. The flowcharts still show the grader, and `scout grade` stays.
+
 ### Task 11: Find products by soft wishes
 
 A lookup tool `similar_products(pick=None, wish)`: products that are near a pick or a wish ("like pick 2 but quieter", "a modern look"). Each product gets one vector from its chunks (the mean). The result also gives the reason (the best matching chunk of each product).
