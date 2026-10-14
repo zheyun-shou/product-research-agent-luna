@@ -50,6 +50,7 @@ def test_budget_drops_known_prices_above_it(db, tmp_path):
     report = crawl(db, AmazonSeAdapter(site(), tmp_path), "fridge", "kylskåp",
                    on_problem=never_called, budget=Decimal("7000"))
     assert (report.over_budget, report.saved) == (1, 2)
+    assert sorted(report.outcomes.values()) == ["over_budget", "read", "read"]
 
 
 def test_captcha_pauses_then_retries_the_same_url(db, tmp_path):
@@ -165,6 +166,7 @@ def test_screening_drops_off_topic_candidates_before_fetching(db, tmp_path):
                    screen=lambda cands: [c for c in cands if c.source_id != "B0AAAAAAA3"])
     assert (report.off_topic, report.saved) == (1, 2)
     assert [c.source_id for c in report.dropped] == ["B0AAAAAAA3"]
+    assert report.outcomes["B0AAAAAAA3"] == "off_topic"
     assert product_url("B0AAAAAAA3") not in browser.fetched
 
 
@@ -196,6 +198,7 @@ def test_a_later_crawl_can_start_at_page_2_and_skip_stored_listings(db, tmp_path
                    first_page=2, skip_known=True)
     assert browser.fetched == [search_url("kylskåp", 2)]
     assert (report.known, report.detail_pages) == (3, 0)
+    assert set(report.outcomes.values()) == {"stored_before"}
 
 
 def test_stored_listings_get_the_rating_of_the_result_card(db, tmp_path):
@@ -244,8 +247,10 @@ def test_candidates_past_the_limit_are_kept_and_can_be_read_later(db, tmp_path):
     adapter = AmazonSeAdapter(site(), tmp_path)
     report = crawl(db, adapter, "fridge", "kylskåp", on_problem=never_called, max_details=1)
     assert report.saved == 1 and len(report.unread) == 2
+    assert sorted(report.outcomes.values()) == ["read", "unread", "unread"]
     later = read_details(db, adapter, "fridge", report.unread, CrawlReport(), on_problem=never_called)
     assert later.saved == 2 and count(db, "listings") == 3
+    assert later.outcomes == {c.source_id: "read" for c in report.unread}
 
 
 def test_a_server_error_is_fetched_again_without_asking(db, tmp_path):

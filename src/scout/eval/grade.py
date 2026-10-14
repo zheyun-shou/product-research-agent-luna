@@ -27,8 +27,9 @@ The result is pass, fail or not_applicable (the criterion has nothing to grade i
 
 - answers: the messages answer what the shopper asked in the last message, or ask one clear question when the
   message is not clear. Fail when they answer another question, or do something that the shopper did not ask for.
-- facts: each fact about a product is in the sources, or in the shopper's words. A number can be rounded (166 cm
-  for 166.5 cm). A test result or a forum view must be in the results of a web search, and the message must name
+- facts: each fact about a product is in the sources, or in the shopper's words. A fact that repeats an earlier
+  message of the assistant in the conversation passes: that message was graded in its own turn. A number can be
+  rounded (166 cm for 166.5 cm). A test result or a forum view must be in the results of a web search, and the message must name
   the site. Fail when a fact is not in the sources, differs from them, or belongs to another product. In the reason,
   name each fact that fails.
 - arithmetic: each calculated number and each comparison ("half", "twice", "more than", "fits") is correct. It
@@ -101,14 +102,15 @@ def tool_line(tool: dict) -> str:
 
 def hidden_turns(run: dict) -> list[dict]:
     """The turns of one eval-hidden run in the form of turn_prompt. The sources of a turn are its context and the
-    results of the tool calls of this turn and of the turns before: what Luna saw in this conversation. A turn with
-    no tool call is a Python text (for example a model that did not answer), so it gets no grade."""
-    evidence: list[str] = []
+    results of the tool calls of this turn: what Luna saw in this turn. The loop starts each turn with the context
+    and the conversation only, so the results of the turns before are not sources (until 2026-10-15 they were, and
+    the grader could pass a fact that Luna did not see). A turn with no tool call is a Python text (for example a
+    model that did not answer), so it gets no grade."""
     items = []
     for turn in run.get("turns") or []:
         tools = turn.get("tools") or []
-        evidence += [f"Result of {t['tool']} {t['args']}:\n{t['report']}" for t in tools
-                     if t["tool"] not in FINAL_TOOLS]
+        evidence = [f"Result of {t['tool']} {t['args']}:\n{t['report']}" for t in tools
+                    if t["tool"] not in FINAL_TOOLS]
         context = [f"Context at the start of the turn:\n{turn['context']}"] if turn.get("context") else []
         model = []
         for t in tools:
@@ -118,7 +120,7 @@ def hidden_turns(run: dict) -> list[dict]:
                 except ValueError:
                     pass
         items.append({"say": turn["say"], "replies": turn.get("replies") or [], "error": turn.get("error"),
-                      "sources": context + list(evidence), "model_texts": model, "luna": bool(tools),
+                      "sources": context + evidence, "model_texts": model, "luna": bool(tools),
                       "tools": [tool_line(t) for t in tools]})
     return items
 

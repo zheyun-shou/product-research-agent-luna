@@ -29,7 +29,7 @@ def test_the_grader_sees_the_sources_the_history_and_the_tool_calls():
     items = hidden_turns(RUN)
     assert items[0]["model_texts"] == ["Which height?"]
     assert items[0]["sources"] == ["Context at the start of the turn:\nConversation:\nShopper: a fridge"]
-    # The results of the turns before stay sources; the arguments of the final calls are not sources
+    # The results of the tool calls of the turn are sources; the arguments of the final calls are not
     assert items[1]["sources"][1] == ('Result of search_shop {"words": "kylskåp"}:\nsearch_shop: id 1: Fridge 1 | '
                                       'height=170 cm')
     assert not any("show_picks" in source for source in items[1]["sources"])
@@ -39,6 +39,16 @@ def test_the_grader_sees_the_sources_the_history_and_the_tool_calls():
     assert "[Picks] Conditions: height<=180" in prompt
     assert "[Model] Which height?" in turn_prompt(items[0], [])
     assert "[Python] Removed." in turn_prompt({"say": "x", "replies": ["Removed."]}, [])
+
+
+def test_the_results_of_the_turns_before_are_not_sources():
+    # Luna starts each turn with the context and the conversation only, so the grader must not see more
+    run = copy.deepcopy(RUN)
+    run["turns"][0]["tools"].insert(0, {"tool": "search_web", "args": '{"question": "test"}',
+                                        "report": "search_web: the KG 320 is 44 dB"})
+    items = hidden_turns(run)
+    assert any("44 dB" in s for s in items[0]["sources"])
+    assert not any("44 dB" in s for s in items[1]["sources"])
 
 
 def test_only_turns_without_an_error_are_graded_and_counted():

@@ -676,7 +676,9 @@ def eval_hidden(
             for target in todo:
                 if not keep:
                     empty_tables(conn)
+                search_log: list[dict] = []
                 deps = loop_deps(conn, llm, browser, ask_user, lambda text: typer.echo(f"  {text}"), tracer,
+                                 search_log=search_log,
                                  make_embedder=embedder,
                                  # a new shopper for each target and run: no memory of other targets or runs
                                  shopper=f"eval-{target.id}-{uuid.uuid4().hex[:8]}")
@@ -687,17 +689,22 @@ def eval_hidden(
                     by_id = {r["id"]: r["source_id"] for r in rows}
                     return [by_id.get(i, "") for i in ids]
 
+                def listings(t):
+                    return [r["id"] for r in conn.execute("SELECT id FROM listings WHERE source_id = ANY(%s)",
+                                                          (sorted(t.ids()),)).fetchall()]
+
                 def seen(t):
                     return conn.execute("SELECT 1 FROM listings WHERE source_id = ANY(%s)",
                                         (sorted(t.ids()),)).fetchone() is not None
 
                 typer.echo(f"\n=== {target.id}: {target.opening}")
                 records.append(run_target(target, graph, llm, source_ids, seen, turns, typer.echo,
+                                          search_log=search_log, listings=listings,
                                           after_turn=lambda: end_transaction(conn)))
                 end_transaction(conn)
                 r = records[-1]
                 typer.echo(f"{target.id}: {'found at place ' + str(r['rank']) if r['found'] else 'not found'}"
-                           f"{', stored' if r['seen'] else ''}, {r['totals']['seconds']} s, "
+                           f"{'' if r['found'] else ', stopped at ' + r['stage']}, {r['totals']['seconds']} s, "
                            f"{r['totals']['cost_usd']:.4f} USD" + (f", error {r['error']}" if r["error"] else ""))
     finally:
         browser.close()

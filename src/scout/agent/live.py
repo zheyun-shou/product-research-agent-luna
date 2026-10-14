@@ -168,11 +168,12 @@ def web_client():
 
 
 def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_embedder=BgeM3Embedder,
-              web="env", shopper: str = SHOPPER):
+              web="env", shopper: str = SHOPPER, search_log: list | None = None):
     """The dependencies of the agent loop (agent/loop.py): the same stores, browser and checks as the pipeline.
     make_embedder: a run with many conversations gives one that returns the same embedder, so bge-m3 loads once.
     web: a search client, None for no web search, or "env" for the back ends of web_client().
-    shopper: whose memories the agent reads and keeps. An evaluation gives each target its own."""
+    shopper: whose memories the agent reads and keeps. An evaluation gives each target its own.
+    search_log: when given, each shop search adds what happened to each of its results (CrawlReport.outcomes)."""
     from datetime import datetime, timedelta, timezone
 
     from scout.db.store import add_memory, forget_memories, memories
@@ -209,12 +210,15 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
         budget = needs.budget_sek()
         key = (profile.category, words, page, budget, repr(needs.wanted(profile)))
         if unread.get(key):
+            unread_before = unread[key]
             known = known_source_ids(conn, SOURCE, [c.source_id for c in unread[key]])
             refresh_listings(conn, [c for c in unread[key] if c.source_id in known])
             todo = [c for c in unread[key] if c.source_id not in known]
             report = read_details(conn, adapter, profile.category, todo[:max_details], CrawlReport(),
                                   on_problem=on_problem, enrich=enrich)
             unread[key] = todo[max_details:]
+            report.outcomes.update({c.source_id: "stored_before" for c in unread_before if c.source_id in known})
+            report.outcomes.update({c.source_id: "unread" for c in unread[key]})
             text = (f"Read the next results of '{words}' (result page {page}) without loading the search pages "
                     f"again: {report.saved} new products saved.")
             text = "\n".join([text, *report.notes])
@@ -225,6 +229,8 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
                                screen=lambda cands: screen_titles(cands, profile, llm, needs.wanted(profile)))
             unread[key] = report.unread
             text = crawl_text(report, words, page)
+        if search_log is not None:
+            search_log.append({"words": words, "page": page, "outcomes": dict(report.outcomes)})
         if report.skipped:
             text += f"\n{len(report.skipped)} product pages did not load: " + ", ".join(report.skipped)
         if unread[key]:

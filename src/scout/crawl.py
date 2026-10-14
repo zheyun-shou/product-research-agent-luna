@@ -35,6 +35,9 @@ class CrawlReport:
     missing: Counter = field(default_factory=Counter)
     notes: list[str] = field(default_factory=list)
     unread: list[Candidate] = field(default_factory=list)  # kept candidates past max_details, in order
+    # What happened to each candidate (source id): over_budget, off_topic, stored_before, read, not_loaded or
+    # unread. The hidden-target test finds where its product left the search.
+    outcomes: dict[str, str] = field(default_factory=dict)
 
 
 def fetch_checked(
@@ -124,22 +127,26 @@ def crawl(
     if budget is not None:
         within = [c for c in candidates if c.price is None or c.price <= budget]
         report.over_budget = len(candidates) - len(within)
+        report.outcomes.update({c.source_id: "over_budget" for c in candidates if c not in within})
         candidates = within
     if screen is not None and candidates:
         try:
             kept = screen(candidates)
             report.off_topic = len(candidates) - len(kept)
             report.dropped = [c for c in candidates if c not in kept]
+            report.outcomes.update({c.source_id: "off_topic" for c in report.dropped})
             candidates = kept
         except (LLMUnavailable, LLMOutputError) as exc:
             report.notes.append(f"Title screening skipped: {exc}")
     if skip_known and candidates:
         known = known_source_ids(conn, candidates[0].source, [c.source_id for c in candidates])
         report.known = len(known)
+        report.outcomes.update({i: "stored_before" for i in known})
         refresh_listings(conn, [c for c in candidates if c.source_id in known])
         candidates = [c for c in candidates if c.source_id not in known]
     read_details(conn, adapter, category, candidates[:max_details], report, on_problem=on_problem, enrich=enrich)
     report.unread = candidates[max_details:]
+    report.outcomes.update({c.source_id: "unread" for c in report.unread})
     return report
 
 
@@ -193,6 +200,7 @@ def read_details(conn: psycopg.Connection, adapter, category: str, candidates: l
             page = fetch_checked(adapter, conn, cand.url, on_problem, report.notes)
             if page is None:
                 report.skipped.append(cand.url)
+                report.outcomes[cand.source_id] = "not_loaded"
                 store_done(wait=False)
                 continue
             report.detail_pages += 1
@@ -200,8 +208,10 @@ def read_details(conn: psycopg.Connection, adapter, category: str, candidates: l
                 rec = adapter.parse(page)
             except ValueError as exc:
                 report.skipped.append(cand.url)
+                report.outcomes[cand.source_id] = "not_loaded"
                 report.notes.append(str(exc))
                 continue
+            report.outcomes[cand.source_id] = "read"
             if state["enrich"] is None or stopped.is_set():
                 store(rec, cand.url, None)
             else:

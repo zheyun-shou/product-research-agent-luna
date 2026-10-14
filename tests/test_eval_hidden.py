@@ -64,6 +64,41 @@ def test_the_run_ends_after_the_last_shopper_turn_without_picks():
     assert not record["found"] and record["rank"] is None and record["measured"]
 
 
+def test_the_record_says_where_the_hidden_product_stopped():
+    assert run(FakeLLM(list(TO_PICKS)))["stage"] == "picked"
+    other = TARGET.model_copy(update={"source_id": "B9"})
+    log = [{"words": "kyl och frys", "page": 1, "outcomes": {"B1": "read", "B9": "unread"}}]
+    llm = FakeLLM(list(TO_PICKS))
+    record = run_target(other, build_agent_graph(Shop().deps(llm), InMemorySaver()), llm, asins, lambda t: False, 4,
+                        search_log=log, listings=lambda t: [])
+    assert not record["found"] and record["stage"] == "not_read"
+    assert record["target_searches"] == [{"words": "kyl och frys", "page": 1, "outcome": "unread"}]
+
+
+def test_funnel_stages():
+    from scout.eval.hidden import funnel_stage
+    shown = [{"used": {"read": []}, "tools": [{"tool": "find_products", "args": "{}",
+                                               "report": "find_products: 2 stored products\nid 7: Fridge | 5000 SEK"}]}]
+    read = [{"used": {"read": [7]}, "tools": []}]
+    none = [{"used": {}, "tools": []}]
+    log = [{"words": "kyl", "page": 1, "outcomes": {"B1": "unread", "B2": "read"}},
+           {"words": "kyl", "page": 1, "outcomes": {"B1": "read"}}]
+    assert funnel_stage(TARGET, True, True, none, log, [7])[0] == "picked"
+    assert funnel_stage(TARGET, False, True, shown, log, [7])[0] == "considered"
+    assert funnel_stage(TARGET, False, True, read, log, [7])[0] == "considered"
+    assert funnel_stage(TARGET, False, True, shown, log, [8])[0] == "stored"  # "id 7:" is another product
+    stage, searches = funnel_stage(TARGET, False, True, none, log, [7])
+    assert stage == "stored" and searches == [{"words": "kyl", "page": 1, "outcome": "unread"},
+                                              {"words": "kyl", "page": 1, "outcome": "read"}]
+    assert funnel_stage(TARGET, False, False, none, log[:1], [])[0] == "not_read"
+    over = [{"words": "kyl", "page": 1, "outcomes": {"B1": "over_budget"}}]
+    assert funnel_stage(TARGET, False, False, none, over, [])[0] == "left_out"
+    assert funnel_stage(TARGET, False, False, none, [], [])[0] == "not_in_results"
+    also = TARGET.model_copy(update={"also": ["B5"]})
+    assert funnel_stage(also, False, False, none, [{"words": "k", "page": 2, "outcomes": {"B5": "unread"}}],
+                        [])[0] == "not_read"
+
+
 def test_pick_rank_counts_the_other_listings_of_the_product():
     target = TARGET.model_copy(update={"also": ["B7"]})
     assert pick_rank(["B3", "B7"], target) == 2 and pick_rank(["B3"], target) is None
@@ -90,6 +125,11 @@ def test_the_summary_gives_the_most_of_one_turn_in_the_runs_that_found_the_produ
     assert summary["at_limit"]["calls"] == 1
     assert summary["totals"]["seconds"] == {"median": 200, "max": 400}
     assert "found in the picks 2" in summary_text(summary)
+    assert summary["stages"] == {} and "stopped: not recorded" in summary_text(summary)  # results before the stages
+    staged = [{**record(True, 1, 10, 100), "stage": "picked"}, {**record(False, None, 10, 100), "stage": "not_read"},
+              {**record(False, None, 10, 100), "stage": "not_read"}]
+    assert summarize(staged)["stages"] == {"picked": 1, "not_read": 2}
+    assert "where the hidden product stopped: picked 1, not_read 2" in summary_text(summarize(staged))
 
 
 def test_the_targets_file_is_valid_and_never_names_the_products():

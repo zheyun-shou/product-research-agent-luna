@@ -25,6 +25,12 @@ MEASURES = ("tool_calls", "product_pages", "review_pages", "web_pages", "web_sea
 STOP_KINDS = (("shop_floor", "no shop search"), ("reviews_floor", "the reviews of id"),
               ("web_floor", "had no web search"), ("removed", "was removed by the shopper"),
               ("no_pick", "show_picks has no pick"), ("no_product", "there is no product"))
+# Where the hidden product stopped, from the end of the funnel to its start: in the picks; shown to Luna by
+# find_products or similar_products, or read by her, but not picked; stored but never shown; in the results of a shop
+# search but past the pages read; in the results but left out (over the budget, off topic by title, or the page did
+# not load); in no result of a shop search
+STAGES = ("picked", "considered", "stored", "not_read", "left_out", "not_in_results")
+LEFT_OUT = ("over_budget", "off_topic", "not_loaded")
 
 
 def turn_tools(messages: list[dict]) -> list[dict]:
@@ -97,12 +103,39 @@ def pick_rank(pick_ids: list[str], target: Target) -> int | None:
     return next((n for n, i in enumerate(pick_ids, 1) if i in target.ids()), None)
 
 
+def funnel_stage(target: Target, found: bool, seen: bool, turns: list[dict], search_log: list[dict],
+                 listing_ids: list[int]) -> tuple[str, list[dict]]:
+    """The stage of STAGES where the hidden product stopped, and what each shop search did with it. listing_ids are
+    the stored listings of the hidden product."""
+    searches = [{"words": s["words"], "page": s["page"], "outcome": s["outcomes"][i]}
+                for s in search_log for i in sorted(target.ids()) if i in s["outcomes"]]
+    if found:
+        return "picked", searches
+    shown = {f"id {i}:" for i in listing_ids}
+    for turn in turns:
+        if set(turn["used"].get("read") or []) & set(listing_ids):
+            return "considered", searches
+        for tool in turn.get("tools") or []:
+            if tool["tool"] in ("find_products", "similar_products") and any(
+                    line.startswith(tuple(shown)) for line in tool["report"].splitlines()):
+                return "considered", searches
+    if seen:
+        return "stored", searches
+    outcomes = {s["outcome"] for s in searches}
+    if "unread" in outcomes:
+        return "not_read", searches
+    return ("left_out" if outcomes & set(LEFT_OUT) else "not_in_results"), searches
+
+
 def run_target(target: Target, graph, llm, source_ids: Callable[[list[int]], list[str]],
                seen: Callable[[Target], bool], max_shopper_turns: int = MAX_SHOPPER_TURNS,
-               progress=lambda text: None, after_turn=lambda: None) -> dict:
+               progress=lambda text: None, after_turn=lambda: None, search_log: list[dict] | None = None,
+               listings: Callable[[Target], list[int]] = lambda target: []) -> dict:
     """One conversation from the opening message to the first picks. The shopper answers each reply that is not
     the picks. source_ids gives the ASIN of each listing id. seen tells if the hidden product was stored in the run.
-    after_turn runs after each turn, for example to end the database transaction."""
+    after_turn runs after each turn, for example to end the database transaction. search_log is the list that the
+    shop searches of the run fill (loop_deps), and listings gives the stored listings of the hidden product: with
+    them the record says where the product stopped (funnel_stage)."""
     config = {"configurable": {"thread_id": f"hidden-{target.id}"}}
     conversation: list[tuple[str, str]] = []
     turns, error, leaked = [], None, []
@@ -154,9 +187,13 @@ def run_target(target: Target, graph, llm, source_ids: Callable[[list[int]], lis
     for call in agent_calls:
         model_calls[call.role] = model_calls.get(call.role, 0) + 1
     rank = pick_rank(pick_ids, target)
+    stored = seen(target)
+    stage, searches = funnel_stage(target, rank is not None, stored, turns, search_log or [],
+                                   listings(target) if stored else [])
     return {
         "target": target.id, "source_id": target.source_id, "found": rank is not None, "rank": rank,
-        "seen": seen(target), "picks": pick_ids, "shopper_turns": len(turns) - 1, "error": error,
+        "seen": stored, "stage": stage, "target_searches": searches, "picks": pick_ids,
+        "shopper_turns": len(turns) - 1, "error": error,
         "leaked": leaked, "measured": error is None and not leaked,
         "totals": {
             "tool_calls": sum(t["used"].get("calls", 0) for t in turns),
@@ -196,6 +233,8 @@ def summarize(records: list[dict]) -> dict:
         "measured": len(measured),
         "found": len(found),
         "seen_not_picked": sum(1 for r in measured if r["seen"] and not r["found"]),
+        # results from before 2026-10-15 have no stage
+        "stages": {s: n for s in STAGES if (n := sum(1 for r in measured if r.get("stage") == s))},
         "ranks": {str(n): sum(1 for r in found if r["rank"] == n) for n in sorted({r["rank"] for r in found})},
         "errors": sum(1 for r in records if r["error"]),
         "leaked": sum(1 for r in records if r["leaked"]),
@@ -211,6 +250,8 @@ def summarize(records: list[dict]) -> dict:
 def summary_text(summary: dict) -> str:
     lines = [f"targets {summary['targets']}, measured {summary['measured']} (no error and no leaked name), "
              f"found in the picks {summary['found']}, stored but not picked {summary['seen_not_picked']}",
+             "where the hidden product stopped: " + (", ".join(f"{s} {n}" for s, n in summary.get("stages", {}).items())
+                                                     or "not recorded"),
              "places of the found products: " + (", ".join(f"{place}: {n}" for place, n in summary["ranks"].items())
                                                  or "none"),
              f"runs with an error {summary['errors']}, runs where the shopper named the product {summary['leaked']}",
