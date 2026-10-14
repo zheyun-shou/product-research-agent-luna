@@ -405,15 +405,17 @@ def test_find_products_orders_by_the_preferences_and_shows_the_verdicts():
 
     def judge(cards, wishes):
         seen.append(([c.listing_id for c in cards], wishes))
-        return {1: {"quiet": Verdict("meets", Hit(11, 1, "review", "review 1", "Product: F\nSilent", {}, 0.9))},
-                4: {"quiet": Verdict("against", Hit(14, 4, "review", "review 2", "Very loud", {}, 0.8))}}
+        return {1: {"quiet": Verdict("meets", Hit(11, 1, "review", "review 1", "Product: F\nSilent", {}, 0.9),
+                                     "Silent")},
+                4: {"quiet": Verdict("against", Hit(14, 4, "review", "review 2", "Nice. Very loud", {}, 0.8),
+                                     "Very loud")}}
     deps = shop.deps(FakeLLM([]))
     deps.judge_wishes = judge
     box = Toolbox(deps, {"needs": {"category": "fridge", "preferences": ["quiet", " ", "quiet"]}}, "t1")
     lines = box.find_products(FindProducts(limit=4)).splitlines()
     assert seen == [([1, 2, 3, 4], ["quiet"])] and "ordered by the rating and the preferences" in lines[0]
-    assert lines[1].startswith("id 1:") and lines[2] == "  meets: quiet (review 1: Silent)"
-    assert lines[3].startswith("id 4:") and lines[4] == "  against: quiet (review 2: Very loud)"
+    assert lines[1].startswith("id 1:") and lines[2] == '  meets: quiet (review 1: "Silent")'
+    assert lines[3].startswith("id 4:") and lines[4] == '  against: quiet (review 2: "Very loud")'
     # 2 and 3 were not judged, so they come after the judged ones
     assert lines[5].startswith("id 2:") and lines[6].startswith("id 3:")
 

@@ -3,13 +3,15 @@
 For each wish, retrieval gives the chunks of each candidate that are nearest to the wish
 (scout.text.retrieve.wish_matches). Near only means the same topic: "very loud" is near "quiet". So the worker
 model reads these chunks and judges if they show that the candidate meets the wish, shows the opposite, or does not
-say. The final score adds the scaled rating score and the mean wish score with fixed weights. Price is never in
-the score."""
+say. The worker copies the words that show its verdict, and Python finds them in the part; a verdict without
+such words is unclear. The final score adds the scaled rating score and the mean wish score with fixed weights.
+Price is never in the score."""
 from dataclasses import dataclass, field
 from typing import Callable, Literal
 
 from pydantic import BaseModel, Field
 
+from scout.extract.verify import verify_raw
 from scout.picks.rank import Card
 from scout.text.retrieve import Hit
 
@@ -28,14 +30,18 @@ in any language.
 - meets: the parts show that the product has it, for example a specification or buyers say that it is quiet.
 - against: the parts show the opposite, for example buyers say that it is very loud.
 - unclear: the parts do not say, they are about something else, or the buyers disagree about equally.
-Judge only from the parts, not from what you know about the product. A word that only looks like the wish in
-another language does not count (the French "vite" is not the Swedish "vit")."""
+For meets and against, give the number of the part and copy the words of that part that show it, as they are.
+Without such words the verdict is unclear. Judge only from the parts, not from what you know about the product.
+A word that only looks like the wish in another language does not count (the French "vite" is not the Swedish
+"vit")."""
 
 
 class WishVerdict(BaseModel):
     id: int = Field(description="The product id")
     verdict: Label
     part: int = Field(0, description="The number of the part that shows it best, or 0 when unclear")
+    quote: str = Field("", description="The words of that part that show it, copied as they are, at most 25 words. "
+                                       "Empty when unclear")
 
 
 class WishVerdicts(BaseModel):
@@ -46,6 +52,7 @@ class WishVerdicts(BaseModel):
 class Verdict:
     label: Label
     hit: Hit | None = None  # the part that shows it
+    quote: str = ""  # the words of the part that show it
 
 
 @dataclass
@@ -63,7 +70,7 @@ class Ranked:
 
 def judge_wish(llm, wish: str, items: dict[int, tuple[str, list[Hit]]]) -> dict[int, Verdict]:
     """items: listing id -> (title, nearest chunks). One worker call for each BATCH products. A product that the
-    model leaves out is unclear."""
+    model leaves out is unclear, and so is a verdict whose quote is not in its part."""
     out: dict[int, Verdict] = {}
     ids = list(items)
     for start in range(0, len(ids), BATCH):
@@ -75,9 +82,12 @@ def judge_wish(llm, wish: str, items: dict[int, tuple[str, list[Hit]]]) -> dict[
             blocks.append(f"Product id {i}: {title[:150]}\n{parts}")
         result = llm.structured("worker", SYSTEM, f"The wish: {wish}\n\n" + "\n\n".join(blocks), WishVerdicts)
         for v in result.verdicts:
-            if v.id in batch:
-                hits = items[v.id][1]
-                out[v.id] = Verdict(v.verdict, hits[v.part - 1] if 1 <= v.part <= len(hits) else None)
+            if v.id not in batch or v.verdict == "unclear":
+                continue
+            hits = items[v.id][1]
+            hit = hits[v.part - 1] if 1 <= v.part <= len(hits) else None
+            if hit and verify_raw(v.quote, hit.text[:PART_CHARS]):
+                out[v.id] = Verdict(v.verdict, hit, v.quote.strip())
     return {i: out.get(i, Verdict("unclear")) for i in ids}
 
 

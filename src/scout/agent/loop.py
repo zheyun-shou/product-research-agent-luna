@@ -327,8 +327,8 @@ def ranked_text(r: Ranked) -> str:
     """A candidate of find_products, with the preferences that its stored text meets or goes against, and the
     words that show it."""
     def shown(wish: str) -> str:
-        hit = r.verdicts[wish].hit
-        return f"{wish} ({hit.ref}: {_without_title(hit.text)[:120]})" if hit else wish
+        verdict = r.verdicts[wish]
+        return f'{wish} ({verdict.hit.ref}: "{verdict.quote}")' if verdict.hit else wish
     text = candidate_text(r.card)
     for name, wishes in (("meets", r.moved_by()), ("against", r.against())):
         if wishes:
