@@ -342,12 +342,12 @@ $("panel-close").addEventListener("click", () => openPanel(false));
 // The memory of the shopper across conversations: see and delete
 async function showMemory() {
   const list = $("memory-list");
-  const response = await fetch("/api/memory");
-  if (!response.ok) {
-    list.replaceChildren(el("li", "empty-note", (await response.json()).detail || "The memory could not be loaded."));
-    return;
-  }
-  const items = await response.json();
+  let items = null;
+  try {
+    const response = await fetch("/api/memory");
+    if (response.ok) items = await response.json();
+  } catch (e) { /* the message below */ }
+  if (!items) { list.replaceChildren(el("li", "empty-note", "The memory could not be loaded. Try again later.")); return; }
   if (!items.length) { list.replaceChildren(el("li", "empty-note", "Nothing yet.")); return; }
   list.replaceChildren(...items.map((m) => {
     const li = el("li");

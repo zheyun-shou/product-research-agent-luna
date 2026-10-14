@@ -261,7 +261,7 @@ Built on 2026-10-14, with one change to the plan. First I used the cosine simila
 - `wish_matches` gives the 3 chunks of each candidate product that are nearest to each wish (all listings of the product).
 - The worker reads them and gives a verdict for each candidate: meets, against or unclear, with the number of the part that shows it. One call for each 15 candidates and each wish. A candidate that the worker leaves out, or that has no indexed text, is unclear.
 - The wish score is 1 for meets, 0.5 for unclear and 0 for against. The rating score (Bayesian, as before) is scaled from 0 to 1 over the candidates. The final score is 0.5 times the rating score plus 0.5 times the mean wish score. Price is not in it. Candidates with missing values stay after the others, as before.
-- `find_products` uses the preferences of the needs (at most 5). It judges the first 30 candidates by the rating. The result shows "meets" and "against" for each candidate, with the reference and the words of the part. The verdicts are kept for the session, so a second call costs nothing. When the worker is not available, the order is by the rating, and the result says so.
+- `find_products` uses the preferences of the needs (at most 5). It judges the first 30 candidates by the rating; the others come after them, in the order of the rating. The result shows "meets" and "against" for each candidate, with the reference and the words of the part. A verdict is kept with the wish and the ids of the chunks that the worker read, so the same text is not judged again, and new text (for example new reviews) is judged again. When the worker is not available, the order is by the rating, and the result says so.
 - The prompt tells the chat model to record soft wishes as preferences and to say in a pick which wishes it meets, with the source.
 - Not checked with the real worker yet; I run it together with the evaluations.
 
@@ -274,10 +274,11 @@ Built on 2026-10-14.
 - The table `shopper_memory` keeps each memory with its shopper, kind (like, dislike or fact), text, category (none: all categories), conversation and date. The same text of the same kind is kept one time.
 - The agent loop has no clarify step, so the context of each turn lists the memories (at most 30, of the category of the needs and of all categories), with their ids and dates. The prompt tells the chat model to use them and not to ask again, but to say what it uses, because a memory can be old.
 - Two new tools. `remember(kind, text, all_categories)` keeps what the shopper says that will still be true later (a size of the space, a brand or a feature that they want or do not want). Its description forbids names, addresses, health and money matters. `forget(ids)` deletes memories when the shopper asks or says that one is wrong.
-- `remove_products` with a reason keeps a dislike: the title and the reason.
-- A number in a memory counts as a number that the shopper wrote, so `update_needs` accepts "height <= 175" from the memory "the niche is 175 cm high".
+- `remove_products` keeps a dislike (the title and the reason) only when the chat model marks the reason as a lasting dislike (`dislike`), not for the stock, the budget or a duplicate. When the product comes back with `restore_products`, its dislike is deleted.
+- A number in a memory that `remember` kept, of the category of the needs or of all categories, counts as a number that the shopper wrote. So `update_needs` accepts "height <= 175" from the memory "the niche is 175 cm high". The numbers in the titles of removed products do not count.
+- The same text of the same kind is one memory; when it comes again, it gets the new category.
 - The web page has a Memory button in the header. It lists the memories, newest first, and each one has a Delete button (`GET /api/memory`, `DELETE /api/memory/{id}`).
-- There is one shopper on this computer ("me"), because the page has no login. eval-hidden gives each target its own shopper, so a run does not remember the other targets.
+- There is one shopper on this computer ("me"), because the page has no login. eval-hidden gives each target and each run its own shopper, so a run does not remember other targets or earlier runs, also with `--keep`.
 - The verdicts of Task 12 and the memories are not measured yet.
 
 ### Task 14: Evaluation with a simulated shopper

@@ -209,6 +209,8 @@ class RemoveProducts(BaseModel):
     """The shopper rejects products. They stay out for the rest of the conversation."""
     ids: list[int]
     reason: str = ""
+    dislike: bool = Field(False, description="True when the reason is a lasting dislike of the shopper, for example "
+                          "too loud. False for the stock, the budget or a duplicate")
 
 
 class Remember(BaseModel):
@@ -302,9 +304,10 @@ class LoopDeps:
     # (url, profile) -> (report, pages loaded, the listing id or None); stores the product of another shop
     read_page: Callable[[str, CategoryProfile], tuple[str, int, int | None]] | None = None
     same_product: Callable[[int, int], str | None] | None = None  # (id, same as) -> the problem or None
-    # The memory of the shopper across conversations (Task 13). remember(kind, text, category, thread) -> id
+    # The memory of the shopper across conversations (Task 13). remember(kind, text, category, thread, source) -> id;
+    # source is "remember" (the remember tool) or "removed" (the reason of a removed product)
     memories: Callable[[], list[dict]] = lambda: []
-    remember: Callable[[str, str, str | None, str], int] | None = None
+    remember: Callable[..., int] | None = None
     forget: Callable[[list[int]], list[int]] | None = None
     say: Callable[[str], None] = print
     step: Callable[[dict], None] = lambda event: None  # the progress of a turn, for the web page
@@ -378,10 +381,12 @@ def memory_text(m: dict) -> str:
     return f"[memory {m['id']}] {m['kind']}{where}, {m['created_at']:%Y-%m-%d}: {m['text']}"
 
 
-def memory_numbers(deps: LoopDeps) -> set:
-    """The numbers in the memories. They count as numbers that the shopper wrote, in update_needs."""
+def memory_numbers(deps: LoopDeps, category: str | None) -> set:
+    """The numbers in the memories that the remember tool kept, of the category and of all categories. They count
+    as numbers that the shopper wrote, in update_needs. The titles of removed products do not count."""
     from scout.picks.write import numbers_in
-    return set().union(*(numbers_in(m["text"]) for m in deps.memories()))
+    return set().union(*(numbers_in(m["text"]) for m in deps.memories()
+                         if m.get("source", "remember") == "remember" and m["category"] in (None, category)))
 
 
 def profile_text(profile: CategoryProfile) -> str:
@@ -581,7 +586,7 @@ class Toolbox:
             return f"'{category}' is not a category. Use one of: {', '.join(names)}."
         needs = Needs(category=category, **call.model_dump(exclude={"category"}))
         profile = self.deps.load_profile(category)
-        errors = check_needs(needs, profile, user_numbers(self.state) | memory_numbers(self.deps))
+        errors = check_needs(needs, profile, user_numbers(self.state) | memory_numbers(self.deps, category))
         if errors:
             return "not recorded: " + "; ".join(errors)
         new_category = category != self.needs.category
@@ -791,10 +796,10 @@ class Toolbox:
             self.update["removed"] = removed
             gone = {c.listing_id for c in cards}
             self.update["picks"] = [p for p in self.current("picks") if p["listing_id"] not in gone]
-            if call.reason.strip() and self.deps.remember:  # the reason is a dislike for later conversations
+            if call.dislike and call.reason.strip() and self.deps.remember:  # for later conversations
                 for c in cards:
                     self.deps.remember("dislike", f"{c.title[:80]}: {call.reason.strip()}", self.needs.category,
-                                       self.thread)
+                                       self.thread, "removed")
         return (f"removed {', '.join(str(c.listing_id) for c in cards) or 'nothing'}."
                 + "".join(f" There is no product with id {i}." for i in unknown))
 
@@ -810,8 +815,9 @@ class Toolbox:
             return "not available."
         gone = self.deps.forget(call.ids)
         missing = [i for i in call.ids if i not in gone]
-        return (f"deleted memory {', '.join(map(str, gone)) or 'nothing'}."
-                + "".join(f" There is no memory {i}." for i in missing))
+        if not gone:
+            return f"there is no memory {', '.join(map(str, missing))}."
+        return f"deleted memory {', '.join(map(str, gone))}." + "".join(f" There is no memory {i}." for i in missing)
 
     def restore_products(self, call: RestoreProducts) -> str:
         removed = self.current("removed")
@@ -819,6 +825,11 @@ class Toolbox:
         not_removed = [i for i in call.ids if i not in {r["listing_id"] for r in back}]
         if back:
             self.deps.restore(self.thread, [r["product_id"] for r in back])
+            if self.deps.forget:  # the dislike of a product that comes back is not true now
+                titles = tuple(f"{r['title'][:80]}:" for r in back)
+                self.deps.forget([m["id"] for m in self.deps.memories()
+                                  if m.get("source") == "removed" and " ".join(m["text"].split()).startswith(
+                                      tuple(" ".join(t.split()) for t in titles))])
             self.update["removed"] = [r for r in removed if r not in back]
         return (f"brought back {', '.join(str(r['listing_id']) for r in back) or 'nothing'}."
                 + "".join(f" Id {i} was not removed in this conversation." for i in not_removed))

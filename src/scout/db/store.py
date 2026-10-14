@@ -430,22 +430,23 @@ def web_searched(conn: psycopg.Connection, listing_ids: list[int], since) -> set
 
 
 def add_memory(conn: psycopg.Connection, shopper: str, kind: str, text: str, category: str | None,
-               thread_id: str = "") -> int:
-    """Store one memory of the shopper and give its id. The same text of the same kind is stored one time."""
+               thread_id: str = "", source: str = "remember") -> int:
+    """Store one memory of the shopper and give its id. The same text of the same kind is stored one time; it gets
+    the new category, so a memory can become one for all categories."""
     text = " ".join(text.split())
-    row = conn.execute("SELECT id FROM shopper_memory WHERE shopper = %s AND kind = %s AND lower(text) = lower(%s)",
-                       (shopper, kind, text)).fetchone()
+    row = conn.execute("UPDATE shopper_memory SET category = %s WHERE shopper = %s AND kind = %s"
+                       " AND lower(text) = lower(%s) RETURNING id", (category, shopper, kind, text)).fetchone()
     if row is None:
-        row = conn.execute("INSERT INTO shopper_memory (shopper, kind, text, category, thread_id)"
-                           " VALUES (%s, %s, %s, %s, %s) RETURNING id",
-                           (shopper, kind, text, category, thread_id)).fetchone()
+        row = conn.execute("INSERT INTO shopper_memory (shopper, kind, text, category, thread_id, source)"
+                           " VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+                           (shopper, kind, text, category, thread_id, source)).fetchone()
     conn.commit()
     return row["id"]
 
 
 def memories(conn: psycopg.Connection, shopper: str) -> list[dict]:
-    """The memories of the shopper, oldest first: id, kind, text, category, created_at."""
-    return conn.execute("SELECT id, kind, text, category, created_at FROM shopper_memory WHERE shopper = %s"
+    """The memories of the shopper, oldest first: id, kind, text, category, source, created_at."""
+    return conn.execute("SELECT id, kind, text, category, source, created_at FROM shopper_memory WHERE shopper = %s"
                         " ORDER BY id", (shopper,)).fetchall()
 
 

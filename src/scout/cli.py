@@ -676,7 +676,9 @@ def eval_hidden(
                 if not keep:
                     empty_tables(conn)
                 deps = loop_deps(conn, llm, browser, ask_user, lambda text: typer.echo(f"  {text}"), tracer,
-                                 make_embedder=embedder, shopper=f"eval-{target.id}")  # no memory of other targets
+                                 make_embedder=embedder,
+                                 # a new shopper for each target and run: no memory of other targets or runs
+                                 shopper=f"eval-{target.id}-{uuid.uuid4().hex[:8]}")
                 graph = build_agent_graph(deps, InMemorySaver())
 
                 def source_ids(ids):

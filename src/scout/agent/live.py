@@ -364,7 +364,8 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
         search_web=search_web if client is not None else None, read_page=read_page, same_product=same_product,
         web_searched=lambda ids: web_searched(conn, ids, datetime.now(timezone.utc) - week),
         memories=lambda: memories(conn, shopper),
-        remember=lambda kind, text, category, thread: add_memory(conn, shopper, kind, text, category, thread),
+        remember=lambda kind, text, category, thread, source="remember": add_memory(
+            conn, shopper, kind, text, category, thread, source),
         forget=lambda ids: forget_memories(conn, shopper, ids),
         say=say, tracer=tracer,
     )

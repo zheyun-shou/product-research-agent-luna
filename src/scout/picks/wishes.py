@@ -83,18 +83,21 @@ def judge_wish(llm, wish: str, items: dict[int, tuple[str, list[Hit]]]) -> dict[
 
 def judge_wishes(llm, cards: list[Card], wishes: list[str],
                  matches: Callable[[list[int], list[str]], dict[int, list[list[Hit]]]],
-                 cache: dict[tuple[str, int], Verdict]) -> dict[int, dict[str, Verdict]]:
-    """The verdicts of the first MAX_JUDGED cards for each wish. The cache keeps the verdicts of a session, so a
-    second find_products with the same wish costs nothing. A card without indexed text is unclear."""
+                 cache: dict[tuple, Verdict]) -> dict[int, dict[str, Verdict]]:
+    """The verdicts of the first MAX_JUDGED cards for each wish. The cache key is the wish and the ids of the chunks
+    that the worker reads, so the same text is judged one time in a session, and new text (new reviews) is judged
+    again. A card without indexed text is unclear."""
     cards = cards[:MAX_JUDGED]
-    todo = [c for c in cards if any((w, c.listing_id) not in cache for w in wishes)]
-    found = matches([c.listing_id for c in todo], wishes) if todo else {}
+    found = matches([c.listing_id for c in cards], wishes)
+    keys = {(w, c.listing_id): (w, tuple(h.chunk_id for h in found[c.listing_id][i]))
+            for c in cards if found.get(c.listing_id) for i, w in enumerate(wishes) if found[c.listing_id][i]}
     for i, wish in enumerate(wishes):
-        items = {c.listing_id: (c.title, found[c.listing_id][i]) for c in todo
-                 if (wish, c.listing_id) not in cache and found.get(c.listing_id) and found[c.listing_id][i]}
+        items = {c.listing_id: (c.title, found[c.listing_id][i]) for c in cards
+                 if (wish, c.listing_id) in keys and keys[(wish, c.listing_id)] not in cache}
         if items:
-            cache.update({(wish, k): v for k, v in judge_wish(llm, wish, items).items()})
-    return {c.listing_id: {w: cache.get((w, c.listing_id), Verdict("unclear")) for w in wishes} for c in cards}
+            cache.update({keys[(wish, k)]: v for k, v in judge_wish(llm, wish, items).items()})
+    return {c.listing_id: {w: cache.get(keys.get((w, c.listing_id)), Verdict("unclear")) for w in wishes}
+            for c in cards}
 
 
 def _scaled(values: list[float]) -> list[float]:
@@ -104,7 +107,8 @@ def _scaled(values: list[float]) -> list[float]:
 
 def rank_by_wishes(cards: list[Card], wishes: list[str], verdicts: dict[int, dict[str, Verdict]]) -> list[Ranked]:
     """The cards in the order of the final score. Without wishes, the order of rank() stays. The candidates with
-    missing values come after the others, as in rank(). A card without a verdict is unclear for each wish."""
+    missing values come after the others, as in rank(). The cards that were not judged (after the first
+    MAX_JUDGED) come after the judged ones, in the order of rank()."""
     if not cards:
         return []
     rating = _scaled([c.score for c in cards])
@@ -115,4 +119,6 @@ def rank_by_wishes(cards: list[Card], wishes: list[str], verdicts: dict[int, dic
         mine = {w: (verdicts.get(card.listing_id) or {}).get(w, Verdict("unclear")) for w in wishes}
         wish_score = sum(LABEL_SCORE[v.label] for v in mine.values()) / len(wishes)
         ranked.append(Ranked(card, RATING_WEIGHT * rating[n] + WISHES_WEIGHT * wish_score, mine))
-    return sorted(ranked, key=lambda r: (bool(r.card.missing), -r.score))
+    judged = [r for r in ranked if r.card.listing_id in verdicts]
+    rest = [r for r in ranked if r.card.listing_id not in verdicts]
+    return sorted(judged, key=lambda r: (bool(r.card.missing), -r.score)) + rest

@@ -50,8 +50,14 @@ def test_price_is_not_in_the_score_and_missing_values_stay_last():
     cards = cards_with_scores(4.0, 4.0, 4.0)
     cards[0].price, cards[1].price = 1, 100000
     cards[1].missing = ["height"]
-    verdicts = {2: {"quiet": Verdict("meets")}, 3: {"quiet": Verdict("meets")}}
+    verdicts = {1: {"quiet": Verdict("unclear")}, 2: {"quiet": Verdict("meets")}, 3: {"quiet": Verdict("meets")}}
     assert [r.card.listing_id for r in rank_by_wishes(cards, ["quiet"], verdicts)] == [3, 1, 2]
+
+
+def test_cards_that_were_not_judged_come_after_the_judged_ones():
+    cards = cards_with_scores(4.0, 4.9, 3.0)
+    verdicts = {1: {"quiet": Verdict("against")}, 3: {"quiet": Verdict("unclear")}}
+    assert [r.card.listing_id for r in rank_by_wishes(cards, ["quiet"], verdicts)] == [1, 3, 2]
 
 
 def test_the_worker_judges_the_nearest_parts_and_a_left_out_product_is_unclear():
@@ -77,4 +83,8 @@ def test_judge_wishes_keeps_the_verdicts_of_the_session():
     first = judge_wishes(llm, cards, ["quiet"], matches, cache)
     assert first[1]["quiet"].label == "meets" and first[3]["quiet"] == Verdict("unclear")
     again = judge_wishes(llm, cards[:2], ["quiet"], matches, cache)
-    assert again == {1: first[1], 2: first[2]} and len(asked) == 1 and len(llm.prompts) == 1
+    assert again == {1: first[1], 2: first[2]} and len(llm.prompts) == 1  # the same text is not judged again
+    llm.answers.append([(1, "against", 1)])
+    newer = judge_wishes(llm, cards[:1], ["quiet"],
+                         lambda ids, w: {1: [[Hit(999, 1, "review", "review 9", "Loud", {}, 0.5)]]}, cache)
+    assert newer[1]["quiet"].label == "against" and len(llm.prompts) == 2  # new text is judged again

@@ -163,3 +163,5 @@ CREATE TABLE IF NOT EXISTS shopper_memory (
     created_at  timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS shopper_memory_shopper ON shopper_memory (shopper);
+-- remember: the chat model kept what the shopper said; removed: the reason of a removed product, with its title
+ALTER TABLE shopper_memory ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'remember';

@@ -413,7 +413,9 @@ def test_find_products_orders_by_the_preferences_and_shows_the_verdicts():
     lines = box.find_products(FindProducts(limit=4)).splitlines()
     assert seen == [([1, 2, 3, 4], ["quiet"])] and "ordered by the rating and the preferences" in lines[0]
     assert lines[1].startswith("id 1:") and lines[2] == "  meets: quiet (review 1: Silent)"
-    assert lines[-2].startswith("id 4:") and lines[-1] == "  against: quiet (review 2: Very loud)"
+    assert lines[3].startswith("id 4:") and lines[4] == "  against: quiet (review 2: Very loud)"
+    # 2 and 3 were not judged, so they come after the judged ones
+    assert lines[5].startswith("id 2:") and lines[6].startswith("id 3:")
 
     def down(cards, wishes):
         raise LLMUnavailable("busy")
