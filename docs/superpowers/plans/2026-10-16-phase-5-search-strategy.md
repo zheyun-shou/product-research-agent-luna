@@ -1,6 +1,6 @@
 # Phase 5 Search Strategy
 
-> **How to use this plan.** I read this plan before the work starts. Commit at the end of each task. Do not run a paid evaluation until I ask.
+> **How to use this plan.** I read this plan on 2026-10-16 and changed decisions 2 and 6. Commit at the end of each task. Do not run a paid evaluation until I ask.
 
 **Goal:** The agent reads the right product pages first. The search uses the filters of amazon.se for the conditions of the shopper, and the order of the candidates comes from the needs, not only from the sort orders of the shop.
 
@@ -25,11 +25,11 @@
 ## Decisions
 
 1. **Filters from the page, not fixed in the code.** Python reads the filter groups and options from a search page and keeps them for each source and category. Thus a new category gets its filters without new code.
-2. **Python sets the number filters.** For each hard condition of the needs (height, width, depth) Python selects all steps that overlap the allowed range. Example: width at most 62 cm selects "up to 47.9", "48 to 60.9" and "61 to 73.9". So a product of 61.5 cm stays in. Price uses the budget as an exact range. The match between a profile attribute and a filter group is by name ("Height" and `height`), set in the profile when the names differ.
+2. **Python sets the number filters.** For each hard condition of the needs (height, width, depth) Python selects all steps that overlap the allowed range. Example: width at most 62 cm selects "up to 47.9", "48 to 60.9" and "61 to 73.9". So a product of 61.5 cm stays in. Price uses the budget as an exact range. The match between a profile attribute and a filter group is by name ("Height" and `height`), set in the profile when the names differ. **Python also keeps its own check of the number conditions** (my decision, 2026-10-16), because other shops can have no filters. It applies the budget and each hard condition to the values on the search cards (the price, and the sizes that the title gives, for example "H x W x D: 180 x 55.6 cm"). A card with a value outside the condition is left out (outcome `off_condition`); a card without the value stays. This check runs for each shop, with or without filters, so a filter that the shop applies wrongly is caught too.
 3. **Luna chooses the word filters.** The result of search_shop lists the word filters of the page (colour, configuration, defrost, installation, features). Luna can give some of them in the next search_shop call. Python checks that each one exists on the page. This follows the rule that the model judges the words.
 4. **Filters can drop good products.** A product without the tag on amazon.se is not in a filtered list. Thus the filtered orders come first, and the unfiltered default order comes after them in the read order. A product that is only in the unfiltered list can still be read.
 5. **The worker orders the candidates.** The title screen exists. It now also returns the kept numbers in order, the best match to the needs first. It gets the full needs (kind, conditions, budget, preferences), not only the kind. Many titles have the sizes and the colour, so this order is useful before a product page is read. When the worker fails, the order of the shop stays.
-6. **No Threshold Algorithm in v1.** All sort orders of amazon.se show the rating and the review count on the cards, so a second list costs nothing to read. The algorithm has a value after v1, when a list (for example review mentions) is expensive to read. Section 4.3 of the spec gets this note.
+6. **The Threshold Algorithm is in v1** (my decision, 2026-10-16, for the same reason as decision 2: other shops and other lists come later, and the code must be ready for them). It decides how many result pages of each list to read. The lists are the sort orders that a shop has, each with a score that falls down the list: the rating order gives the Bayesian rating of the card, the sales order and the default order give a score from the place in the list. The total score of a candidate is the sum of its list scores; a candidate that is not yet seen in a list gets the score of the last card read in that list (the threshold). The search stops when k candidates (k = 10) have a total score at least as high as the threshold, or at the page limit. On amazon.se the algorithm mostly stops after page 1 of each list. Its full value comes with lists that cost more to read. The read order of the product pages still comes from the worker (decision 5).
 
 ## Tasks
 
@@ -64,20 +64,26 @@
 - `read_details` reads in this order. `report.outcomes` stays the same.
 - Tests with a fake worker: the order of the reads follows the worker; a worker error keeps the order of the shop.
 
-### Task 6: A free search evaluation
+### Task 6: The Threshold Algorithm
+
+- `threshold_search(lists, k, max_pages)` in `scout/search/threshold.py`, with no shop code in it. A list gives its cards page by page and a score for each card.
+- The amazon.se adapter declares its lists: the default order, the rating order and the sales order, each with and without the filters.
+- Tests with fake lists: it stops when k candidates reach the threshold, it stops at the page limit, a list that does not load is left out.
+- The result text of search_shop says how many pages of each list were read and why the search stopped.
+
+### Task 7: A free search evaluation
 
 - `scout eval-search`: for each target of `eval/hidden/targets.yaml`, it runs the searches with fixed words and needs (new fields `search_words` and `needs` in the target), and gives the place of the target in the read order, with and without the filters. It loads search pages only and uses no model, so the worker order of Task 5 is not in it.
 - Before the search, it loads the product page of the target and checks the price against the budget and the stored sizes against the hard conditions. A target that does not fit any more is marked "not valid now" and is not counted.
-- New field `budget` in each target. I fix tall-top-freezer: a new budget or a new product (my choice when the task starts).
+- New field `budget` in each target. tall-top-freezer gets a new product in the budget of 6500 SEK (my decision, 2026-10-16). An LLM writes its opening and facts from the stored page, as for the other targets, and the hidden words are its brand and model.
 - Report: for each target, the place without filters, the place with filters, and the calls of 8 product pages to reach it. Saved in `eval/results/search-<date>.json`.
 
-### Task 7: eval-hidden with the new search (paid, after my OK)
+### Task 8: eval-hidden with the new search (paid, after my OK)
 
 - The same 4 targets as on 2026-10-14, then all 12 when the 4 look good.
 - The funnel stages show where each target stops.
 
 ## Not in this plan
 
-- The Threshold Algorithm (decision 6).
 - Filters for other shops than amazon.se.
 - Page limits and a money limit stay as they are (30 product pages for each turn).
