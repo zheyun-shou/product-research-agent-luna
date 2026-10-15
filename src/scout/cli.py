@@ -638,13 +638,15 @@ def eval_search(
         for target in chosen:
             profile = load_profile(target.category)
             notes: list[str] = []
+            loaded: dict[str, object] = {}  # the search before and the one with filters share the default page
 
             def fetch(url):
-                page = fetch_checked(adapter, conn, url, ask_user, notes)
-                if page is None:
-                    return None
-                save_filters(conn, adapter.name, profile.category, adapter.parse_filters(page))
-                return adapter.parse_search(page)
+                if url not in loaded:
+                    page = fetch_checked(adapter, conn, url, ask_user, notes)
+                    if page is not None:
+                        save_filters(conn, adapter.name, profile.category, adapter.parse_filters(page))
+                    loaded[url] = None if page is None else adapter.parse_search(page)
+                return loaded[url]
             page = fetch_checked(adapter, conn, product_url(target.source_id), ask_user, notes)
             why = "the product page did not load" if page is None else not_valid(target, adapter.parse(page))
             if why:
