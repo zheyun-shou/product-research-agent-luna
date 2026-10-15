@@ -29,17 +29,27 @@
     filters: ["Colour: Red"]
 
 - id: tall-top-freezer
-  source_id: B088MGYH4V
+  # Replaced the Gorenje RK 4182 (B088MGYH4V) on 2026-10-16: its price went from 5916 to 7702 SEK, over the budget.
+  # The facts are of the new product, from its stored page (2026-10-14). The id stays, so older results still match.
+  source_id: B0CTKNJJGG
   category: fridge
   kind: fridge_freezer
   opening: I need a fridge freezer for a family of four. At most 180 cm high and 56 cm wide. Budget 6500 kr.
   facts:
     - The space is 56 cm wide, 180 cm high and 60 cm deep.
-    - You want the freezer part at the top.
-    - The freezer part must hold at least 60 litres. In all at least 250 litres.
-    - It must be quiet, 40 dB or less.
-    - Colour does not matter.
-  hidden_words: [Gorenje, RK 4182, RK4182, RK4182PS4, PS4]
+    - The freezer part is at the bottom.
+    - In all at least 250 litres.
+    - Quiet, 41 dB or less is fine.
+    - White.
+  hidden_words: [Candy, CCG1S 518EW, CCG1S518EW, CCG1S, "34005403"]
+  search:
+    words: kyl frys kombiskåp 180 cm
+    budget: 6500
+    conditions:
+      - {attribute: width, op: "<=", value: 56}
+      - {attribute: height, op: "<=", value: 180}
+      - {attribute: depth, op: "<=", value: 60}
+    filters: ["Colour: White"]
 
 - id: frost-free-wide
   # Replaced frost-free-55 on 2026-10-13: a buyer of that Candy says that it needs manual defrost.
