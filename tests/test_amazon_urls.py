@@ -49,3 +49,16 @@ def test_search_url_with_a_sort():
     url = search_url("kylskåp", 1, "sales")
     assert url == "https://www.amazon.se/s?k=kylsk%C3%A5p&s=exact-aware-popularity-rank"
     assert snapshot_key(url) == "kylskåp-p1-exact-aware-popularity-rank"
+
+
+def test_search_url_with_filters_and_its_snapshot_key():
+    from decimal import Decimal
+
+    from scout.sources.amazon_se.urls import price_filter, refinements
+    assert price_filter(Decimal("6500")) == ["p_36:-650000"] and price_filter(None) == []
+    assert refinements(["h:1", "w:7", "h:2", "h:1"]) == "h:1|2,w:7"
+    url = search_url("kylskåp", 2, "rating", ["p_36:-650000", "c:20693852031"])
+    assert url == ("https://www.amazon.se/s?k=kylsk%C3%A5p&rh=p_36%3A-650000%2Cc%3A20693852031&page=2"
+                   "&s=review-rank")
+    key = snapshot_key(url)
+    assert key.startswith("kylskåp-p2-review-rank-f") and key != snapshot_key(search_url("kylskåp", 2, "rating"))

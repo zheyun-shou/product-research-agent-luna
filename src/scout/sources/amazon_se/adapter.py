@@ -32,8 +32,8 @@ class AmazonSeAdapter:
 
     sorts = ("rating", "sales")  # the floor of the agent loop: page 1 of these sort orders too
 
-    def search_url(self, query: str, page: int = 1, sort: str | None = None) -> str:
-        return search_url(query, page, sort)
+    def search_url(self, query: str, page: int = 1, sort: str | None = None, filters: list[str] = ()) -> str:
+        return search_url(query, page, sort, filters)
 
     def reviews_url(self, asin: str, star: str, sort: str = "top") -> str:
         return reviews_url(asin, star, sort)

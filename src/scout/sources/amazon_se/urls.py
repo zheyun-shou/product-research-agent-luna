@@ -1,5 +1,7 @@
 """amazon.se URLs and the keys used to file snapshots."""
+import hashlib
 import re
+from decimal import Decimal
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 BASE_URL = "https://www.amazon.se"
@@ -16,13 +18,32 @@ REVIEW_SORTS = ("top", "recent")
 SEARCH_SORTS = {"rating": "review-rank", "sales": "exact-aware-popularity-rank"}
 
 
-def search_url(query: str, page: int = 1, sort: str | None = None) -> str:
+def search_url(query: str, page: int = 1, sort: str | None = None, filters: list[str] = ()) -> str:
+    """filters: option values "key:value" (see search.parse_filters) and the price range of price_filter."""
     params = {"k": query}
+    if filters:
+        params["rh"] = refinements(filters)
     if page > 1:
         params["page"] = str(page)
     if sort:
         params["s"] = SEARCH_SORTS[sort]
     return f"{BASE_URL}/s?{urlencode(params)}"
+
+
+def refinements(filters: list[str]) -> str:
+    """The rh parameter: the options of one group are joined with |, the groups with commas."""
+    groups: dict[str, list[str]] = {}
+    for f in filters:
+        key, _, value = f.partition(":")
+        groups.setdefault(key, [])
+        if value not in groups[key]:
+            groups[key].append(value)
+    return ",".join(f"{key}:{'|'.join(values)}" for key, values in groups.items())
+
+
+def price_filter(budget: Decimal | None) -> list[str]:
+    """The price range up to the budget. amazon.se counts it in öre."""
+    return [f"p_36:-{int(budget * 100)}"] if budget is not None else []
 
 
 def product_url(asin: str) -> str:
@@ -69,4 +90,6 @@ def snapshot_key(url: str) -> str:
     if asin:
         return asin
     sort = f"-{query['s'][0]}" if "s" in query else ""
-    return f"{query.get('k', ['home'])[0]}-p{query.get('page', ['1'])[0]}{sort}"
+    # A short hash of the filters keeps filtered and unfiltered pages apart
+    rh = f"-f{hashlib.sha1(query['rh'][0].encode()).hexdigest()[:8]}" if "rh" in query else ""
+    return f"{query.get('k', ['home'])[0]}-p{query.get('page', ['1'])[0]}{sort}{rh}"
