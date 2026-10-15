@@ -14,6 +14,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 from scout.agent.loop import MAX_PRODUCT_PAGES, MAX_REVIEW_PAGES, MAX_TOOL_CALLS, MAX_WEB_PAGES, MAX_WEB_SEARCHES
+from scout.needs import ConditionSpec
 
 MAX_SHOPPER_TURNS = 4  # the shopper messages after the first one; then the run ends without picks
 # The per-turn counters of the agent loop (state "used"), and the limit of each
@@ -49,6 +50,16 @@ def stop_kind(problem: str) -> str:
     return "live_check" if problem.startswith("id ") else "other"
 
 
+class SearchCase(BaseModel):
+    """The search of a target for `scout eval-search`: fixed words and needs, so no model is called."""
+    model_config = ConfigDict(extra="forbid")
+
+    words: str = Field(description="Swedish search words, as Luna writes them")
+    budget: float | None = Field(None, description="SEK")
+    conditions: list[ConditionSpec] = Field(default_factory=list)
+    filters: list[str] = Field(default_factory=list, description="Word filters as 'Group: Option'")
+
+
 class Target(BaseModel):
     model_config = ConfigDict(extra="forbid")  # a wrong key in the YAML must fail, not pass silently
 
@@ -60,6 +71,7 @@ class Target(BaseModel):
     opening: str = Field(description="The first message of the shopper")
     facts: list[str] = Field(description="What the shopper knows and wants. All are true of the hidden product")
     hidden_words: list[str] = Field(description="The brand and the model: the shopper must never write them")
+    search: SearchCase | None = None
     note: str = ""
 
     def ids(self) -> set[str]:

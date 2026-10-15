@@ -617,6 +617,49 @@ def check_grader_command(
     typer.echo(f"saved {out}")
 
 
+@app.command("eval-search")
+def eval_search(
+    targets: Path = ROOT / "eval" / "hidden" / "targets.yaml",
+    only: Optional[str] = typer.Option(None, help="run only the targets with these ids, separated by commas"),
+    list_pages: int = typer.Option(2, help="result pages of each list that the Threshold Algorithm can read"),
+) -> None:
+    """Find the place of each hidden product in the read order of its search, before and with the filters of the
+    shop. It loads pages only and calls no model. The evaluation database keeps the fetch log and the filters."""
+    from scout.crawl import fetch_checked
+    from scout.db.store import load_filters, save_filters
+    from scout.eval.hidden import load_targets
+    from scout.eval.search import not_valid, search_target, summary_text
+    settings = load_settings()
+    chosen = [t for t in load_targets(targets) if t.search and (not only or t.id in only.split(","))]
+    results = []
+    with connect(settings.eval_database_url) as conn, BrowserSession(settings.browser_profile_dir) as session:
+        init_schema(conn)
+        adapter = AmazonSeAdapter(session, settings.snapshot_dir)
+        for target in chosen:
+            profile = load_profile(target.category)
+            notes: list[str] = []
+
+            def fetch(url):
+                page = fetch_checked(adapter, conn, url, ask_user, notes)
+                if page is None:
+                    return None
+                save_filters(conn, adapter.name, profile.category, adapter.parse_filters(page))
+                return adapter.parse_search(page)
+            page = fetch_checked(adapter, conn, product_url(target.source_id), ask_user, notes)
+            why = "the product page did not load" if page is None else not_valid(target, adapter.parse(page))
+            if why:
+                results.append({"target": target.id, "valid": False, "why": why})
+            else:
+                rows = search_target(target, profile, fetch, adapter,
+                                     lambda: load_filters(conn, adapter.name, profile.category), list_pages)
+                results.append({"target": target.id, "valid": True, **rows, "notes": notes})
+            typer.echo(summary_text(results[-1:]).splitlines()[0])
+    typer.echo(summary_text(results))
+    out = ROOT / "eval" / "results" / f"search-{datetime.now():%Y%m%d-%H%M}.json"
+    out.write_text(json.dumps(results, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
+    typer.echo(f"saved {out}")
+
+
 @app.command("eval-hidden")
 def eval_hidden(
     targets: Path = ROOT / "eval" / "hidden" / "targets.yaml",
