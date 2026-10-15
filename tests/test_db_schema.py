@@ -23,3 +23,14 @@ def test_pgvector_is_at_least_0_8(db):
 def test_init_schema_can_run_twice(db):
     init_schema(db)
     init_schema(db)
+
+
+def test_the_filters_of_all_search_pages_are_merged(db):
+    from scout.db.store import load_filters, save_filters
+    from scout.sources.base import FilterGroup, FilterOption
+    low = FilterOption(name="Up to 60.9 cm", value="h:1", high=60.9, unit="cm")
+    mid = FilterOption(name="61 to 85.9 cm", value="h:2", low=61, high=85.9, unit="cm")
+    save_filters(db, "amazon_se", "fridge", [FilterGroup(key="h", name="Height", options=[low])])
+    save_filters(db, "amazon_se", "fridge", [FilterGroup(key="h", name="Height", options=[mid])])
+    assert load_filters(db, "amazon_se", "fridge") == [FilterGroup(key="h", name="Height", options=[low, mid])]
+    assert load_filters(db, "amazon_se", "wine") == []

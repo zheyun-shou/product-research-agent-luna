@@ -34,6 +34,25 @@ class Candidate(BaseModel):
     sponsored: bool = False
 
 
+class FilterOption(BaseModel):
+    """One option of a filter group of a search page. low and high: the range of a number option, in unit."""
+    name: str
+    value: str  # the key of the option in the URL of the shop
+    low: float | None = None
+    high: float | None = None
+    unit: str | None = None
+
+
+class FilterGroup(BaseModel):
+    key: str
+    name: str
+    options: list[FilterOption]
+
+    @property
+    def numeric(self) -> bool:
+        return bool(self.options) and all(o.low is not None or o.high is not None for o in self.options)
+
+
 class ProductRecord(BaseModel):
     CORE_FIELDS: ClassVar[tuple[str, ...]] = ("title", "brand", "model", "price", "in_stock")
 

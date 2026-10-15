@@ -51,3 +51,18 @@ def test_rating_link_to_reviews_is_not_the_count():
     </div>"""
     card = parse_search_page(html)[0]
     assert (card.rating, card.review_count) == (Decimal("4.5"), 1234)
+
+
+def test_filters_of_the_page_with_the_ranges_of_number_options():
+    from scout.sources.amazon_se.search import parse_filters
+    groups = {g.name: g for g in parse_filters((FIXTURES / "search_filters.html").read_text(encoding="utf-8"))}
+    # Delivery and price are not product filters; the price has its own range parameter
+    assert list(groups) == ["Customer Review", "Colour", "Width", "Installation"]
+    assert [(o.name, o.value) for o in groups["Colour"].options] == [
+        ("Red", "p_n_size_two_browse-vebin:20693852031"), ("Black", "p_n_size_two_browse-vebin:20693837031")]
+    width = groups["Width"]
+    assert width.numeric and not groups["Colour"].numeric
+    assert [(o.low, o.high, o.unit) for o in width.options] == [(None, 47.9, "cm"), (48.0, 60.9, "cm"),
+                                                                (74.0, None, "cm")]
+    # The name comes from the text when the link has no label; an option without a link is left out
+    assert [o.name for o in groups["Installation"].options] == ["Undercounter"]

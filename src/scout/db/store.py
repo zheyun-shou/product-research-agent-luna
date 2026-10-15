@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import psycopg
 from psycopg.types.json import Jsonb
 
-from scout.sources.base import Candidate, ProductRecord
+from scout.sources.base import Candidate, FilterGroup, ProductRecord
 from scout.text.chunks import Chunk, page_chunks, review_chunks
 
 
@@ -456,3 +456,25 @@ def forget_memories(conn: psycopg.Connection, shopper: str, ids: list[int]) -> l
                         (shopper, ids)).fetchall()
     conn.commit()
     return sorted(r["id"] for r in rows)
+
+
+def save_filters(conn: psycopg.Connection, source: str, category: str, groups: list[FilterGroup]) -> None:
+    """Merge the filter groups of one search page into the stored ones. An option of the page replaces the stored
+    option with the same value; the other stored options stay."""
+    for group in groups:
+        row = conn.execute("SELECT options FROM site_filters WHERE source = %s AND category = %s AND key = %s",
+                           (source, category, group.key)).fetchone()
+        options = {o["value"]: o for o in (row["options"] if row else [])}
+        options.update({o.value: o.model_dump() for o in group.options})
+        conn.execute(
+            """INSERT INTO site_filters (source, category, key, name, options) VALUES (%s, %s, %s, %s, %s)
+               ON CONFLICT (source, category, key) DO UPDATE
+               SET name = EXCLUDED.name, options = EXCLUDED.options, updated_at = now()""",
+            (source, category, group.key, group.name, Jsonb(list(options.values()))))
+    conn.commit()
+
+
+def load_filters(conn: psycopg.Connection, source: str, category: str) -> list[FilterGroup]:
+    rows = conn.execute("SELECT key, name, options FROM site_filters WHERE source = %s AND category = %s ORDER BY key",
+                        (source, category)).fetchall()
+    return [FilterGroup(key=r["key"], name=r["name"], options=r["options"]) for r in rows]
