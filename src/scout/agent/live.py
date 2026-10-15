@@ -239,7 +239,8 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
                                max_pages=LIST_PAGES if page == 1 else 1, max_details=max_details,
                                sorts=adapter.sorts if page == 1 else (), budget=budget, skip_known=True,
                                enrich=enrich, filters=choose, card_check=lambda c: off_condition(c, needs, profile),
-                               screen=lambda cands: screen_titles(cands, profile, llm, needs.wanted(profile)))
+                               screen=lambda cands: screen_titles(cands, profile, llm, needs.wanted(profile),
+                                                                  needs.text() or None))
             unread[key] = report.unread
             groups = load_filters(conn, SOURCE, profile.category)
             text = crawl_text(report, words, page)

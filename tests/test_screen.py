@@ -32,3 +32,13 @@ def test_the_wanted_kind_goes_into_the_prompt():
     llm = FakeLLM([Keep(keep=[0])])
     screen_titles([cand(1, "FOHERE minikylskåp 5 l")], load_profile("fridge"), llm, "Mini fridge for a room or an office")
     assert "The shopper wants: Mini fridge for a room or an office" in llm.requests[0][1]
+
+
+def test_with_the_needs_the_worker_orders_the_kept_items():
+    cands = [cand(1, "Mini fridge 46 l"), cand(2, "Severin retro fridge freezer 61.5 cm, Root"), cand(3, "Thermometer")]
+    llm = FakeLLM([Keep(keep=[1, 0, 1, 7])])
+    kept = screen_titles(cands, load_profile("fridge"), llm, "Fridge with a freezer part",
+                         "width<=62, prefers retro, prefers red")
+    assert [c.source_id for c in kept] == ["B0AAAAAAA2", "B0AAAAAAA1"]
+    prompt = llm.requests[0][1]
+    assert "best match first" in prompt and "The needs: width<=62, prefers retro" in prompt
