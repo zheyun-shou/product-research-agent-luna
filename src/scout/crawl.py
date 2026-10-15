@@ -9,13 +9,18 @@ from typing import Callable
 
 import psycopg
 
-from scout.db.store import known_source_ids, log_fetch, refresh_listings, save_record, stored_attributes
+from scout.db.store import (known_source_ids, load_filters, log_fetch, refresh_listings, save_filters, save_record,
+                             stored_attributes)
 from scout.llm.client import LLMOutputError, LLMTimeout, LLMUnavailable
-from scout.sources.base import Candidate, ProductRecord, RawPage, SessionStatus
+from scout.search.threshold import Page, ResultList, threshold_search
+from scout.sources.base import Candidate, FilterGroup, ProductRecord, RawPage, SessionStatus
 
 OnProblem = Callable[[SessionStatus, str], bool]
 Enricher = Callable[[ProductRecord], "tuple[ProductRecord, bool]"]
 Screener = Callable[[list[Candidate]], list[Candidate]]
+FilterChooser = Callable[[list[FilterGroup]], list[str]]
+CardCheck = Callable[[Candidate], bool]
+TOP_K = 10  # the Threshold Algorithm stops when the best 10 candidates are known
 MAX_ATTEMPTS = 3
 EXTRACT_WORKERS = 4  # LLM extractions that run while the browser loads the next pages
 
@@ -35,8 +40,12 @@ class CrawlReport:
     missing: Counter = field(default_factory=Counter)
     notes: list[str] = field(default_factory=list)
     unread: list[Candidate] = field(default_factory=list)  # kept candidates past max_details, in order
-    # What happened to each candidate (source id): over_budget, off_topic, stored_before, read, not_loaded,
-    # not_parsed or unread. The hidden-target test finds where its product left the search.
+    off_condition: int = 0
+    filters: list[str] = field(default_factory=list)  # the filters of the site that the search used
+    list_pages: dict[str, int] = field(default_factory=dict)  # the result pages read in each list
+    stop: str = ""  # why the Threshold Algorithm stopped
+    # What happened to each candidate (source id): over_budget, off_condition, off_topic, stored_before, read,
+    # not_loaded, not_parsed or unread. The hidden-target test finds where its product left the search.
     outcomes: dict[str, str] = field(default_factory=dict)
 
 
@@ -67,18 +76,6 @@ def fetch_checked(
     return None
 
 
-def interleave(orders: list[list[Candidate]]) -> list[Candidate]:
-    """One list from the result lists of the sort orders: the first of each order, then the second of each, and so
-    on, without repeats. So the best rated and the best selling results are in the first detail pages too."""
-    merged, seen = [], set()
-    for rank in range(max((len(o) for o in orders), default=0)):
-        for order in orders:
-            if rank < len(order) and order[rank].source_id not in seen:
-                seen.add(order[rank].source_id)
-                merged.append(order[rank])
-    return merged
-
-
 def crawl(
     conn: psycopg.Connection,
     adapter,
@@ -94,45 +91,70 @@ def crawl(
     first_page: int = 1,
     skip_known: bool = False,
     sorts: tuple[str, ...] = (),
+    filters: FilterChooser | None = None,
+    card_check: CardCheck | None = None,
+    k: int = TOP_K,
 ) -> CrawlReport:
-    """sorts: also read the first result page of these sort orders of the site, for example ("rating", "sales").
-    The orders take turns in the list of candidates; the detail pages keep the limit max_details. The kept
-    candidates past the limit are in report.unread, for read_details later."""
+    """sorts: also read these sort orders of the site, for example ("rating", "sales"). filters: chooses the filters
+    of the site from its filter groups; the filtered lists come first in the read order, then the unfiltered default
+    order (a product without the tag of the site is not in a filtered list). The Threshold Algorithm decides how many
+    of the max_pages pages of each list to read. card_check: True for a card whose values are outside the needs.
+    The detail pages keep the limit max_details. The kept candidates past the limit are in report.unread, for
+    read_details later."""
     if not getattr(adapter, "terms_check", ""):
         raise RuntimeError(f"Adapter {adapter.name} has no terms check recorded, so it stays disabled.")
     report = CrawlReport()
-    default: list[Candidate] = []
-    for number in range(first_page, first_page + max_pages):
-        url = adapter.search_url(query, number)
-        page = fetch_checked(adapter, conn, url, on_problem, report.notes)
-        if page is None:
-            report.notes.append(f"search stopped at page {number}: {url} did not load")
-            break
-        report.search_pages += 1
-        found, has_next = adapter.parse_search(page)
-        default += found
-        if not has_next:
-            break
-    orders = [default]
-    for sort in sorts:
-        url = adapter.search_url(query, 1, sort)
-        page = fetch_checked(adapter, conn, url, on_problem, report.notes)
-        if page is None:
-            report.notes.append(f"the {sort} order did not load: {url}")
-            continue
-        report.search_pages += 1
-        orders.append(adapter.parse_search(page)[0])
-    candidates = interleave(orders)
+    loaded: dict[tuple, Page] = {}
+
+    def fetcher(sort: str | None, chosen: list[str], name: str):
+        def fetch(number: int) -> Page | None:
+            key = (sort, tuple(chosen), number)
+            if key in loaded:
+                return loaded[key]
+            url = adapter.search_url(query, number, sort, chosen)
+            page = fetch_checked(adapter, conn, url, on_problem, report.notes)
+            if page is None:
+                report.notes.append(f"the {name} order did not load at page {number}: {url}")
+                return None
+            report.search_pages += 1
+            if hasattr(adapter, "parse_filters"):
+                save_filters(conn, adapter.name, category, adapter.parse_filters(page))
+            loaded[key] = adapter.parse_search(page)
+            return loaded[key]
+        return fetch
+
+    chosen: list[str] = []
+    if filters is not None and hasattr(adapter, "parse_filters"):
+        groups = load_filters(conn, adapter.name, category)
+        if not groups:  # the first search of the category: its page gives the filters
+            fetcher(None, [], "default")(first_page)
+            groups = load_filters(conn, adapter.name, category)
+        chosen = filters(groups)
+    report.filters = chosen
+    orders = [None, *sorts]
+    if chosen:
+        lists = [ResultList(f"{s or 'default'} with filters", fetcher(s, chosen, f"{s or 'default'} with filters"))
+                 for s in orders]
+        lists.append(ResultList("default", fetcher(None, [], "default"), first=False))
+    else:
+        lists = [ResultList(s or "default", fetcher(s, [], s or "default")) for s in orders]
+    found = threshold_search(lists, k=k, max_pages=max_pages, first_page=first_page)
+    report.list_pages, report.stop = found.pages, found.stop
+    if found.failed and len(found.failed) == len(lists):
+        report.notes.append(f"search stopped at page {first_page}: no result list loaded")
+    candidates = found.order
     report.candidates = len(candidates)
-    if budget is not None:
-        within = []
-        for c in candidates:
-            if c.price is None or c.price <= budget:
-                within.append(c)
-            else:
-                report.outcomes[c.source_id] = "over_budget"
-        report.over_budget = len(candidates) - len(within)
-        candidates = within
+    kept = []
+    for c in candidates:
+        if budget is not None and c.price is not None and c.price > budget:
+            report.outcomes[c.source_id] = "over_budget"
+        elif card_check is not None and card_check(c):
+            report.outcomes[c.source_id] = "off_condition"
+        else:
+            kept.append(c)
+    report.over_budget = sum(v == "over_budget" for v in report.outcomes.values())
+    report.off_condition = sum(v == "off_condition" for v in report.outcomes.values())
+    candidates = kept
     if screen is not None and candidates:
         try:
             kept = screen(candidates)

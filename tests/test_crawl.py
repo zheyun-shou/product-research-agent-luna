@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from scout.crawl import crawl, interleave, read_details, CrawlReport
+from scout.crawl import crawl, read_details, CrawlReport
 from scout.llm.client import LLMOutputError, LLMTimeout, QuotaExhausted
 from scout.sources.amazon_se.adapter import AmazonSeAdapter
 from scout.sources.amazon_se.urls import product_url, search_url
@@ -234,15 +234,6 @@ def test_a_slow_extraction_on_one_page_does_not_stop_the_others(db, tmp_path):
     assert any("B0AAAAAAA1" in n and "60 seconds" in n for n in report.notes)
 
 
-def test_the_sort_orders_take_turns():
-    from scout.sources.base import Candidate
-
-    def cands(*ids):
-        return [Candidate(source="amazon_se", source_id=i, url=f"u/{i}", title=i) for i in ids]
-    merged = interleave([cands("a", "b", "c"), cands("x", "a"), cands("y", "z")])
-    assert [c.source_id for c in merged] == ["a", "x", "y", "b", "z", "c"]
-
-
 def test_candidates_past_the_limit_are_kept_and_can_be_read_later(db, tmp_path):
     adapter = AmazonSeAdapter(site(), tmp_path)
     report = crawl(db, adapter, "fridge", "kylskåp", on_problem=never_called, max_details=1)
@@ -259,3 +250,35 @@ def test_a_server_error_is_fetched_again_without_asking(db, tmp_path):
     report = crawl(db, AmazonSeAdapter(browser, tmp_path), "fridge", "kylskåp", on_problem=never_called)
     assert report.saved == 3
     assert browser.fetched.count(product_url("B0AAAAAAA1")) == 2
+
+
+def test_filtered_lists_come_first_and_the_default_page_is_loaded_once(db, tmp_path):
+    browser = site()
+    browser.pages[search_url("kylskåp", 1, None, ["c:1"])] = [html("search_basic.html")]
+    seen = []
+
+    def choose(groups):
+        seen.append(groups)
+        return ["c:1"]
+    report = crawl(db, AmazonSeAdapter(browser, tmp_path), "fridge", "kylskåp", on_problem=never_called,
+                   filters=choose)
+    # No stored filters yet: the default page gives them (the fixture has none), then the filtered list is read
+    assert seen == [[]] and report.filters == ["c:1"]
+    assert report.list_pages == {"default with filters": 1, "default": 1} and report.search_pages == 2
+    assert report.stop == "the page limit" and report.saved == 3
+
+
+def test_the_filters_of_a_search_page_are_stored(db, tmp_path):
+    from scout.db.store import load_filters
+    browser = FakeBrowser({search_url("kylskåp"): [html("search_filters.html")]})
+    crawl(db, AmazonSeAdapter(browser, tmp_path), "fridge", "kylskåp", on_problem=never_called)
+    assert [g.name for g in load_filters(db, "amazon_se", "fridge")] == ["Customer Review", "Colour", "Width",
+                                                                          "Installation"] or \
+        {g.name for g in load_filters(db, "amazon_se", "fridge")} == {"Customer Review", "Colour", "Width",
+                                                                        "Installation"}
+
+
+def test_a_card_outside_the_needs_is_not_read(db, tmp_path):
+    report = crawl(db, AmazonSeAdapter(site(), tmp_path), "fridge", "kylskåp", on_problem=never_called,
+                   card_check=lambda c: "203 cm" in c.title)
+    assert report.off_condition == 1 and report.outcomes["B0AAAAAAA1"] == "off_condition" and report.saved == 2

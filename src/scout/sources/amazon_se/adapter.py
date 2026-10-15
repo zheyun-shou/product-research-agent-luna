@@ -1,13 +1,15 @@
 """The amazon.se adapter: fetch through the browser, snapshot, check and parse."""
+from decimal import Decimal
 from pathlib import Path
 from typing import Protocol
 
 from scout.sources.amazon_se.check import check_page
 from scout.sources.amazon_se.product import parse_product_page
 from scout.sources.amazon_se.reviews import parse_review_page
-from scout.sources.amazon_se.search import has_next_page, parse_search_page
-from scout.sources.amazon_se.urls import BASE_URL, SOURCE, page_kind, reviews_url, search_url, snapshot_key
-from scout.sources.base import Candidate, ProductRecord, RawPage, SessionStatus
+from scout.sources.amazon_se.search import has_next_page, parse_filters, parse_search_page
+from scout.sources.amazon_se.urls import (BASE_URL, SOURCE, page_kind, price_filter, reviews_url, search_url,
+                                         snapshot_key)
+from scout.sources.base import Candidate, FilterGroup, ProductRecord, RawPage, SessionStatus
 from scout.sources.snapshots import save_html
 
 
@@ -54,6 +56,12 @@ class AmazonSeAdapter:
 
     def parse_search(self, page: RawPage) -> tuple[list[Candidate], bool]:
         return parse_search_page(page.html), has_next_page(page.html)
+
+    def parse_filters(self, page: RawPage) -> list[FilterGroup]:
+        return parse_filters(page.html)
+
+    def price_filter(self, budget: Decimal | None) -> list[str]:
+        return price_filter(budget)
 
     def parse(self, page: RawPage) -> ProductRecord:
         return parse_product_page(page.html, page.url, page.fetched_at)
