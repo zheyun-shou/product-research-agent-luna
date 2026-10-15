@@ -37,8 +37,11 @@ roles:
       rpm: 15
   judge:  # the grader. Haiku 5.5 from 2026-10-11 (check-grader: all faults found, no correct reply failed). Since
           # the chat model is Haiku, the grader must be another maker: GPT-6 Luna Pro from 2026-10-13. check-grader:
-          # all 37 planted faults found, but 6 correct replies failed (honest 2, plain 3, facts 1). So honest and
+          # all 32 planted faults found, but 6 correct replies failed (honest 2, plain 3, facts 1). So honest and
           # plain are not good enough; use answers, facts, arithmetic and said_did. 665 s, 0.06 USD.
+          # 2026-10-15, after the grader sees one turn: 31 of 32 faults found (facts missed ok-recheck), 7 correct
+          # replies failed (facts 2, honest 1, plain 3, answers 1). Other items than on 2026-10-13 flip, so this is
+          # the noise of one run. 861 s, 0.07 USD.
     provider: openrouter
     model: openai/gpt-6-luna-pro
     rpm: 60
