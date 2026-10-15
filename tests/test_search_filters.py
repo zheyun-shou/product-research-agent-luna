@@ -59,3 +59,12 @@ def test_a_card_outside_a_condition_is_left_out_and_an_unknown_value_stays():
     assert off_condition(card("Bomann SBS 7344 Side-by-Side, 90 cm wide"), wanted, PROFILE)
     assert not off_condition(card("Gorenje RK 4182 Height 180 cm, 55.6 cm wide"), wanted, PROFILE)
     assert not off_condition(card("Severin RKG 8930 Retro Kühl-Gefrier Combination"), wanted, PROFILE)
+
+
+def test_word_filters_are_found_by_their_names():
+    from scout.search.filters import filter_names, word_filters, word_filters_text
+    assert word_filters(["colour:  red", "Colour: Purple"], GROUPS) == (["c:1"], ["Colour: Purple"])
+    assert word_filters(["Width: 48-60.9"], GROUPS) == ([], ["Width: 48-60.9"])  # Python sets the sizes
+    assert filter_names(["p_36:-650000", "w:1", "c:1"], GROUPS) == ["price up to the budget", "Width: 48-60.9",
+                                                                     "Colour: Red"]
+    assert word_filters_text(GROUPS) == "Colour: Red"

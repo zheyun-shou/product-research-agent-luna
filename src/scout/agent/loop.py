@@ -48,7 +48,8 @@ How to work:
   not numbers (quiet, white, a modern look) as preferences: find_products orders by them and shows which ones the
   stored text of a candidate meets or goes against. Say in a pick which wishes it meets, with the source.
 - Search before you recommend. search_shop reads amazon.se. Use Swedish search words. Read more results, more
-  pages or search with other words when the stored and the new candidates are weak or too few.
+  pages or search with other words when the stored and the new candidates are weak or too few. For a colour, a
+  type or a feature, give a word filter of the shop instead of a search word.
 - Look things up before you guess: read_product, search_text, read_images, find_missing. find_products also lists
   candidates that do not show a value of a condition. Do not leave out such a candidate only because the value is
   missing: look for it first (find_missing, read_product).
@@ -111,11 +112,17 @@ class UpdateNeeds(BaseModel):
 
 
 class SearchShop(BaseModel):
-    """Search amazon.se and store the new products (up to 8 product pages). Page 1 also reads the first pages
-    sorted by customer rating and by sales. When more results fit, the result says so: call again with the same
-    words and page to read the next ones, without loading the search pages again. Takes one or two minutes."""
+    """Search amazon.se and store the new products (up to 8 product pages). Page 1 also reads the pages sorted by
+    customer rating and by sales. Python sets the filters of the shop for the budget and the sizes of the needs,
+    and the worker reads the best matches first. When more results fit, the result says so: call again with the
+    same words, page and filters to read the next ones, without loading the search pages again. Takes one or two
+    minutes."""
     words: str = Field(description="Swedish search words, one phrase")
     page: int = Field(1, description="The result page, from 1")
+    filters: list[str] = Field(default_factory=list, description="Word filters of the shop as 'Group: Option', "
+                               "from the list in an earlier search_shop result, for example 'Colour: Red'. A filter "
+                               "finds products whose title is in another language; a word in the search words does "
+                               "not")
 
 
 class SearchWeb(BaseModel):
@@ -282,7 +289,7 @@ class LoopDeps:
     eliminated: Callable[[str], set[int]]
     restore: Callable[[str, list[int]], None]
     # (profile, needs, words, page, at most this many product pages) -> (report text, product pages fetched)
-    search_shop: Callable[[CategoryProfile, Needs, str, int, int], tuple[str, int]]
+    search_shop: Callable[[CategoryProfile, Needs, str, int, int, list[str]], tuple[str, int]]
     # listing ids -> {listing_id: problem or ""}; opens each page again and stores it
     check_now: Callable[[list[int], Needs], dict[int, str]]
     page_texts: Callable[[list[int]], dict[int, dict]] | None = None
@@ -606,7 +613,8 @@ class Toolbox:
         if left <= 0:
             return "the product pages of this turn are used up."
         self.deps.say(f"Searching amazon.se for '{call.words}', result page {call.page}. This can take a few minutes.")
-        report, pages = self.deps.search_shop(profile, self.needs, call.words, call.page, min(SEARCH_DETAILS, left))
+        report, pages = self.deps.search_shop(profile, self.needs, call.words, call.page, min(SEARCH_DETAILS, left),
+                                              call.filters)
         self.used["product_pages"] = self.used.get("product_pages", 0) + pages
         searches = dict(self.update["searches"] if "searches" in self.update else self.state.get("searches") or {})
         searches[call.words] = {"page": max(call.page, (searches.get(call.words) or {}).get("page", 0)),

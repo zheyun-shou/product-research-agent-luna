@@ -53,10 +53,14 @@ class Deps:
 
 
 def crawl_text(report: CrawlReport, terms: str, page: int) -> str:
-    pages = f"result page {page}" if report.search_pages <= 1 else \
-        f"result page {page}, and page 1 sorted by rating and by sales"
+    if report.list_pages:
+        read = ", ".join(f"{name} {n} page{'s' if n != 1 else ''}" for name, n in report.list_pages.items())
+        pages = f"from result page {page}: {read}; stopped at {report.stop}"
+    else:
+        pages = f"result page {page}"
+    outside = f"{report.off_condition} outside the sizes of the needs by their title, " if report.off_condition else ""
     line = (f"Searched amazon.se for '{terms}' ({pages}): {report.candidates} results, "
-            f"{report.off_topic} left out by title, {report.over_budget} over budget, "
+            f"{report.off_topic} left out by title, {report.over_budget} over budget, {outside}"
             f"{report.known} already stored (rating and review count updated), {report.saved} new products saved.")
     return "\n".join([line, *report.notes])
 

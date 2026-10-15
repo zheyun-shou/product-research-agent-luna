@@ -31,8 +31,9 @@ class Shop:
             search_shop=self.search, check_now=self.check, read_reviews=self.read,
             reviews_read=lambda ids: {i for i in ids if i in self.reviewed}, say=self.said.append)
 
-    def search(self, profile, needs, words, page, max_details=20):
+    def search(self, profile, needs, words, page, max_details=20, filters=()):
         self.searched.append((words, page))
+        self.filters = list(filters)
         self.max_details = max_details
         return f"'{words}' page {page}: 48 results, 4 stored.", self.pages
 

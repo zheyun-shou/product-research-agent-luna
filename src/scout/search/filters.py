@@ -3,7 +3,6 @@
 Python selects the number filters: for each condition, all options whose range overlaps the allowed range. A card
 value is checked by Python too, because other shops can have no filters, and a shop can tag a product wrongly."""
 import re
-from decimal import Decimal
 
 from scout.needs import Needs
 from scout.profiles import CategoryProfile, ProfileAttribute
@@ -72,5 +71,22 @@ def off_condition(card: Candidate, needs: Needs, profile: CategoryProfile) -> bo
     return False
 
 
-def within_budget(card: Candidate, budget: Decimal | None) -> bool:
-    return budget is None or card.price is None or card.price <= budget
+def word_filters(names: list[str], groups: list[FilterGroup]) -> tuple[list[str], list[str]]:
+    """The option values of filters given as "Group: Option", and the names that are not on the pages."""
+    options = {f"{g.name}: {o.name}".lower(): o.value for g in groups if not g.numeric for o in g.options}
+    values, unknown = [], []
+    for name in names:
+        value = options.get(" ".join(name.split()).lower())
+        (values if value else unknown).append(value or name)
+    return values, unknown
+
+
+def filter_names(values: list[str], groups: list[FilterGroup]) -> list[str]:
+    """The values of filters as "Group: Option", for the result text."""
+    names = {o.value: f"{g.name}: {o.name}" for g in groups for o in g.options}
+    return [names.get(v, "price up to the budget" if v.startswith("p_36:") else v) for v in values]
+
+
+def word_filters_text(groups: list[FilterGroup], per_group: int = 8) -> str:
+    lines = [f"{g.name}: {', '.join(o.name for o in g.options[:per_group])}" for g in groups if not g.numeric]
+    return "; ".join(lines)

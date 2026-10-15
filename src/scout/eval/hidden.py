@@ -30,7 +30,7 @@ STOP_KINDS = (("shop_floor", "no shop search"), ("reviews_floor", "the reviews o
 # results of a shop search but past the pages read; in the results but left out (over the budget, off topic by
 # title, or the page did not load or parse); in no result of a shop search
 STAGES = ("picked", "considered", "stored", "not_read", "left_out", "not_in_results")
-LEFT_OUT = ("over_budget", "off_topic", "not_loaded", "not_parsed")
+LEFT_OUT = ("over_budget", "off_condition", "off_topic", "not_loaded", "not_parsed")
 
 
 def turn_tools(messages: list[dict]) -> list[dict]:
