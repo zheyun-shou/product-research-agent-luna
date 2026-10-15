@@ -18,6 +18,8 @@ class ProfileAttribute(BaseModel):
     kind: Literal["hard", "soft"]
     unit: str | None = None
     values: list[str] | None = None
+    site_filter: str | None = None  # the name of the filter group of the shop, when it is not the label
+    title_words: list[str] = Field(default_factory=list)  # words next to the value in a search title, any language
 
     @model_validator(mode="after")
     def _enum_values(self) -> "ProfileAttribute":

@@ -23,21 +23,25 @@ attributes:
     type: number
     unit: cm
     kind: hard
+    title_words: [height, high, tall, höjd, hög, höhe, hoch, hauteur]
   - name: width
     label: Width
     type: number
     unit: cm
     kind: hard
+    title_words: [width, wide, bredd, bred, breite, breit, largeur]
   - name: depth
     label: Depth
     type: number
     unit: cm
     kind: hard
+    title_words: [depth, deep, djup, tiefe, tief, profondeur]
   - name: total_volume
     label: Total volume
     type: number
     unit: l
     kind: soft
+    site_filter: Capacity
   - name: freezer_volume
     label: Freezer volume
     type: number
