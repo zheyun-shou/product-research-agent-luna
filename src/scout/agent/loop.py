@@ -100,7 +100,7 @@ Rules:
 class UpdateNeeds(BaseModel):
     """Record the shopper's needs. Give the full needs each time, not only the change."""
     category: str | None = Field(None, description="One of the categories that the context lists")
-    kind: str | None = None
+    kind: str | None = Field(None, description="One of the kinds of the category, exactly as the context writes it")
     conditions: list[ConditionSpec] = Field(default_factory=list)
     budget: float | None = Field(None, description="SEK")
     budget_note: str | None = Field(None, description="A budget in another currency: the amount, the currency, "
@@ -347,8 +347,11 @@ def context_text(state: dict, deps: LoopDeps, thread: str) -> str:
     picks = deps.cards([p["listing_id"] for p in state.get("picks", [])])
     removed = state.get("removed", [])
     searches = state.get("searches") or {}
+    # The kinds are given before the first update_needs, so the model writes their names right the first time
+    categories = ", ".join(f"{name} (kinds {', '.join(k.name for k in deps.load_profile(name).kinds)})"
+                           for name in deps.profile_names())
     lines = [
-        f"Categories with a profile: {', '.join(deps.profile_names())}",
+        f"Categories with a profile: {categories}",
         f"Needs so far: {needs.model_dump_json(exclude_none=True)}",
     ]
     if needs.category:

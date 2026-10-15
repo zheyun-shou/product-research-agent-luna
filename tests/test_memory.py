@@ -60,6 +60,7 @@ def test_remember_and_forget_and_the_context():
     assert "[memory 1] fact (fridge), 2026-10-14: The niche is 60 cm wide" in text
     assert "[memory 2] dislike, 2026-10-14: No loud fans" in text and "Black headphones" not in text
     assert "Black headphones" in context_text({}, deps, "t1")  # without a category, all memories
+    assert "Categories with a profile: fridge (kinds fridge_freezer, " in context_text({}, deps, "t1")
     assert box.forget(Forget(ids=[1, 9])) == "deleted memory 1. There is no memory 9."
     assert box.forget(Forget(ids=[9])) == "there is no memory 9."
     assert step_detail("forget: there is no memory 9.")[0] == "fail"
