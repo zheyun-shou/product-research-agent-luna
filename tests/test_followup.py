@@ -71,7 +71,7 @@ def test_a_reply_that_promises_an_action_needs_the_call_now():
         ("I will remove the Bomann.", "remove", {"remove_picks"}),
         ("I rechecked the stock.", "I rechecked", {"next_step:recheck"}),
         ("Sure, I'll bring back the Severin.", "bring back", {"restore_picks"}),
-        # Luna, 2026-10-05: the curly apostrophe and the present tense. The grader found it, Python did not.
+        # GPT-5.6 Luna, 2026-10-05: the curly apostrophe and the present tense. The grader found it, Python did not.
         ("I’m rechecking the current prices and stock.", "rechecking", {"next_step:recheck"}),
         ("I’ll recheck them.", "recheck", {"next_step:recheck"}),
     ]

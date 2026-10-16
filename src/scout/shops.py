@@ -20,7 +20,7 @@ AMAZON_NOTE = "amazon.se pages come through search_shop"
 
 @dataclass
 class PageRead:
-    text: str  # the report for Luna
+    text: str  # the report for the chat model
     pages: int  # pages loaded
     listing_id: int | None = None
 

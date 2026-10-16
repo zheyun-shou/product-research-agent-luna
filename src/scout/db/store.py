@@ -231,8 +231,8 @@ def _insert_product(conn: psycopg.Connection, rec: ProductRecord, category: str)
 
 def same_brand_listings(conn: psycopg.Connection, product_id: int, words: str, limit: int = 5) -> list[dict]:
     """Listings of other products with the same brand and category, from other sources, most words in common with
-    `words` (the title and the model) first. Luna judges if one of them is the same product, because shops write
-    the model in different ways (KG 320.2, or an article number)."""
+    `words` (the title and the model) first. The chat model judges if one of them is the same product, because shops
+    write the model in different ways (KG 320.2, or an article number)."""
     rows = conn.execute(
         """SELECT l.id, l.source, l.title, p.model FROM listings l JOIN products p ON p.id = l.product_id
            JOIN products me ON me.id = %(p)s

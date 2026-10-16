@@ -1,7 +1,7 @@
-"""The grader: a second model scores each answer of Luna against a rubric.
+"""The grader: a second model scores each answer of the chat model against a rubric.
 
-Luna writes her answers freely. The grader checks them against what she saw in the conversation: the context of
-the turn and the results of her tool calls. It checks what Python does not: are the facts in these sources, is the
+The chat model writes its answers freely. The grader checks them against what it saw in the conversation: the
+context of the turn and the results of its tool calls. It checks what Python does not: are the facts in these sources, is the
 arithmetic right, does the answer do what it says, is it honest, does it answer the question, is it clear.
 """
 import json
@@ -103,10 +103,10 @@ def tool_line(tool: dict) -> str:
 
 def hidden_turns(run: dict) -> list[dict]:
     """The turns of one eval-hidden run in the form of turn_prompt. The sources of a turn are its context and the
-    results of the tool calls of this turn: what Luna saw in this turn. The loop starts each turn with the context
-    and the conversation only, so the results of the turns before are not sources (until 2026-10-15 they were, and
-    the grader could pass a fact that Luna did not see). A turn with no tool call is a Python text (for example a
-    model that did not answer), so it gets no grade."""
+    results of the tool calls of this turn: what the chat model saw in this turn. The loop starts each turn with the
+    context and the conversation only, so the results of the turns before are not sources (until 2026-10-15 they
+    were, and the grader could pass a fact that the chat model did not see). A turn with no tool call is a Python text
+    (for example a model that did not answer), so it gets no grade."""
     items = []
     for turn in run.get("turns") or []:
         tools = turn.get("tools") or []
@@ -128,7 +128,7 @@ def hidden_turns(run: dict) -> list[dict]:
 
 def grade_results(llm, results: dict, progress=lambda text: None) -> dict:
     """Add the grades to each turn of an eval-hidden results file, and their counts to the summary. Runs where the
-    shopper named the product, turns with an error, and turns with no message of Luna get no grade."""
+    shopper named the product, turns with an error, and turns with no message of the chat model get no grade."""
     if "runs" not in results:
         raise ValueError("this is not an eval-hidden results file")
     if not any("tools" in t for run in results["runs"] for t in run.get("turns") or []):

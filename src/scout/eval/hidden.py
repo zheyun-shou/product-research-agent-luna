@@ -1,5 +1,5 @@
 """The hidden-target test (agent-loop design, section 10). A simulated shopper wants one real product of amazon.se.
-The shopper knows only the facts of that product, not its name. Luna does not know which product it is. Python
+The shopper knows only the facts of that product, not its name. The chat model does not know which product it is. Python
 measures if the product is in the picks, at which place, and what the conversation used. This is the idea of the
 WebShop benchmark (Yao et al., 2022)."""
 import re
@@ -26,8 +26,8 @@ MEASURES = ("tool_calls", "product_pages", "review_pages", "web_pages", "web_sea
 STOP_KINDS = (("shop_floor", "no shop search"), ("reviews_floor", "the reviews of id"),
               ("web_floor", "had no web search"), ("removed", "was removed by the shopper"),
               ("no_pick", "show_picks has no pick"), ("no_product", "there is no product"))
-# Where the hidden product stopped, from the end of the funnel to its start: in the picks; shown to Luna by
-# find_products, search_text or similar_products, or read by her, but not picked; stored but never shown; in the
+# Where the hidden product stopped, from the end of the funnel to its start: in the picks; shown to the chat model by
+# find_products, search_text or similar_products, or read by it, but not picked; stored but never shown; in the
 # results of a shop search but past the pages read; in the results but left out (over the budget, off topic by
 # title, or the page did not load or parse); in no result of a shop search
 STAGES = ("picked", "considered", "stored", "not_read", "left_out", "not_in_results")
@@ -35,8 +35,8 @@ LEFT_OUT = ("over_budget", "off_condition", "off_topic", "not_loaded", "not_pars
 
 
 def turn_tools(messages: list[dict]) -> list[dict]:
-    """The tool calls of one turn with their results, in order: what Luna saw. The grader checks the answer against
-    them."""
+    """The tool calls of one turn with their results, in order: what the chat model saw. The grader checks the
+    answer against them."""
     reports = {m.get("tool_call_id"): m.get("content") or "" for m in messages if m.get("role") == "tool"}
     return [{"tool": c["function"]["name"], "args": c["function"]["arguments"], "report": reports.get(c["id"], "")}
             for m in messages if m.get("role") == "assistant" for c in m.get("tool_calls") or []]
@@ -54,7 +54,7 @@ class SearchCase(BaseModel):
     """The search of a target for `scout eval-search`: fixed words and needs, so no model is called."""
     model_config = ConfigDict(extra="forbid")
 
-    words: str = Field(description="Swedish search words, as Luna writes them")
+    words: str = Field(description="Swedish search words, as the chat model writes them")
     budget: float | None = Field(None, description="SEK")
     conditions: list[ConditionSpec] = Field(default_factory=list)
     filters: list[str] = Field(default_factory=list, description="Word filters as 'Group: Option'")
@@ -184,7 +184,7 @@ def run_target(target: Target, graph, llm, source_ids: Callable[[list[int]], lis
             error = f"shopper: {type(exc).__name__}: {exc}"
             break
         leaked = leaked_words(target, text)
-        if leaked:  # the shopper named the product, so the run says nothing about Luna
+        if leaked:  # the shopper named the product, so the run says nothing about the chat model
             conversation.append(("shopper", text))
             break
     state = graph.get_state(config).values

@@ -586,7 +586,7 @@ class Toolbox:
             return f"{name}: " + getattr(self, name)(call)
         except (LLMUnavailable, LLMOutputError) as exc:
             return f"{name}: the model for this tool is not available now ({exc})."
-        except Exception as exc:  # a browser, database or index problem: Luna gets it as a result
+        except Exception as exc:  # a browser, database or index problem: the chat model gets it as a result
             return f"{name}: failed ({type(exc).__name__}: {exc})."
 
     def update_needs(self, call: UpdateNeeds) -> str:

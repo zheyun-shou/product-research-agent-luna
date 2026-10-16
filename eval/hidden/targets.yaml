@@ -4,8 +4,8 @@
 # are the brand and the model: Python stops the run when the shopper writes one.
 # Prices are those of the first week of October 2026; a budget leaves a margin of 10 to 25 percent.
 # Only the fridge category has a full profile now. Other categories need a profile first.
-# search: the fixed search of `scout eval-search` (2026-10-16): Swedish words as Luna writes them, the needs from
-# the facts, and the word filters that the facts ask for (my choice, as Luna would choose them).
+# search: the fixed search of `scout eval-search` (2026-10-16): Swedish words as the chat model writes them, the needs from
+# the facts, and the word filters that the facts ask for (my choice, as the chat model would choose them).
 
 - id: red-bottom-freezer
   source_id: B08PL233S8

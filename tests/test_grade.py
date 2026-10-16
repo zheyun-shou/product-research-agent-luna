@@ -42,7 +42,7 @@ def test_the_grader_sees_the_sources_the_history_and_the_tool_calls():
 
 
 def test_the_results_of_the_turns_before_are_not_sources():
-    # Luna starts each turn with the context and the conversation only, so the grader must not see more
+    # The chat model starts each turn with the context and the conversation only, so the grader must not see more
     run = copy.deepcopy(RUN)
     run["turns"][0]["tools"].insert(0, {"tool": "search_web", "args": '{"question": "test"}',
                                         "report": "search_web: the KG 320 is 44 dB"})

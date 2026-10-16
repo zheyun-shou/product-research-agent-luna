@@ -675,7 +675,7 @@ def eval_hidden(
     keep: bool = typer.Option(False, help="keep the products of the earlier targets in the evaluation database"),
     yes: bool = typer.Option(False, help="start without the question"),
 ) -> None:
-    """The hidden-target test: a simulated shopper wants one real product, and Luna must find it on amazon.se.
+    """The hidden-target test: a simulated shopper wants one real product, and the chat model must find it on amazon.se.
     Uses the evaluation database (EVAL_DATABASE_URL), which is emptied before each target. Costs money."""
     from functools import cache
 
