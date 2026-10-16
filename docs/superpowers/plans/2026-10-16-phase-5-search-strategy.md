@@ -87,3 +87,35 @@
 
 - Filters for other shops than amazon.se.
 - Page limits and a money limit stay as they are (30 product pages for each turn).
+
+## Progress (2026-10-16)
+
+- Tasks 1 to 7 are done: `parse_filters` and the table `site_filters` (45264ec), the filters in the search URL and the snapshot key (8f44ca8), the number filters and the card check (c15893b), the Threshold Algorithm in the crawl (d3e7fd6), search_shop with filters (761dbbd), the worker order (9f359d5), `scout eval-search` (948ebf8) and the new product of tall-top-freezer (a117a07).
+- The amazon.se pages show only the options that have results for the search words. For example, the height step "86 to 111.9 cm" was not on one page. So `site_filters` merges the options of all pages.
+- The sizes in a title are read only with a word next to them ("170 cm High", "Height 180 cm", "54 cm breit"). "144 x 47.5 x 49.5 cm" has no fixed order: some titles give H x W x D, others W x D x H. On 612 cards of 2026-10-14 and 2026-10-15, the check left out 16 cards for a height of at most 180 cm and a width of at most 56 cm, and all 16 were right. Wrong values exist ("72 mm High" for a fridge of 183 cm); they can only leave out a card for a condition "at least".
+- New product of tall-top-freezer: the Candy CCG1S 518EW (B0CTKNJJGG), 5489 SEK, 179.5 x 54.5 x 54.6 cm, 252 l, freezer at the bottom, 41 dB, 331 ratings. I did not use the FrigeluX RC262XE: it fits, but Luna picked it in the run of 2026-10-14, so it would favour the agent. Its page also says "Freezer-on-Top" while its pictures show the freezer at the bottom.
+
+### First result of eval-search (2026-10-16, no model, about 15 minutes of page loads)
+
+"before" is page 1 of the default, rating and sales orders with the budget, in the order of the place scores of the Threshold Algorithm. It is near the search of 2026-10-14, but not the same: that search took the orders in turns. "with filters" is the new search without the worker order. The word filters are my choice from the facts, as Luna would choose them.
+
+| Target | before | with filters |
+|---|---|---|
+| red-bottom-freezer | 3 of 19 | 2 of 17 |
+| tall-top-freezer | not in 31 | not in 24 |
+| frost-free-wide | 2 of 59 | 1 of 31 |
+| retro-red | 16 of 108 | 2 of 106 |
+| dark-no-frost | 20 of 40 | 2 of 32 |
+| narrow-cheap | 25 of 46 | 7 of 33 |
+| side-by-side | 2 of 48 | 1 of 22 |
+| under-counter-quiet | 4 of 54 | 8 of 52 |
+| skincare-mini | 17 of 43 | 2 of 131 |
+| wine-24 | 3 of 83 | 4 of 101 |
+| small-freezer-or-fridge | not in 102 | not in 165 |
+| car-compressor-box | not in 59 | 86 of 156 |
+
+- In the first 8 product pages (one search_shop call): before 5 of 12 targets, with filters 9 of 12.
+- The Threshold Algorithm stopped after page 1 of each list for 7 targets (4 search pages). It read a second page of some lists for the other 5.
+- The 3 misses are not in the results of their words: tall-top-freezer ("kyl frys kombiskåp 180 cm"), small-freezer-or-fridge and car-compressor-box (only on the second page of the filtered lists, at place 86). Their cause is the search words, not the read order. In the agent, Luna can search again with other words.
+- under-counter-quiet moved from place 4 to place 8: the filtered lists put other small fridges first. It is still in the first call.
+- These are 12 targets and one run on one day. The results of amazon.se change from day to day.
