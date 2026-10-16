@@ -617,8 +617,10 @@ class Toolbox:
                                               call.filters)
         self.used["product_pages"] = self.used.get("product_pages", 0) + pages
         searches = dict(self.update["searches"] if "searches" in self.update else self.state.get("searches") or {})
-        searches[call.words] = {"page": max(call.page, (searches.get(call.words) or {}).get("page", 0)),
-                                "budget": self.needs.budget}
+        # A search with word filters is another search than the same words without them
+        name = call.words + (f" [{', '.join(call.filters)}]" if call.filters else "")
+        searches[name] = {"page": max(call.page, (searches.get(name) or {}).get("page", 0)),
+                          "budget": self.needs.budget}
         self.update["searches"] = searches
         return report
 

@@ -44,6 +44,8 @@ class CrawlReport:
     filters: list[str] = field(default_factory=list)  # the filters of the site that the search used
     list_pages: dict[str, int] = field(default_factory=dict)  # the result pages read in each list
     stop: str = ""  # why the Threshold Algorithm stopped
+    last_page: int = 0  # the last result page read in any list
+    page_filters: list[FilterGroup] = field(default_factory=list)  # the filters on the first page without filters
     # What happened to each candidate (source id): over_budget, off_condition, off_topic, stored_before, read,
     # not_loaded, not_parsed or unread. The hidden-target test finds where its product left the search.
     outcomes: dict[str, str] = field(default_factory=dict)
@@ -74,6 +76,32 @@ def fetch_checked(
         if status.problem not in ("incomplete", "unavailable") and not on_problem(status, url):
             return None
     return None
+
+
+def result_lists(fetcher: Callable[[str | None, list[str], str], Callable[[int], Page | None]],
+                 sorts: tuple[str, ...], chosen: list[str]) -> list[ResultList]:
+    """The result lists of one search: the default order and the sorts, with the filters when there are some, and
+    then the default order without them. fetcher(sort, filters, name) gives the fetch of the pages of one list."""
+    orders = [None, *sorts]
+    if not chosen:
+        return [ResultList(s or "default", fetcher(s, [], s or "default")) for s in orders]
+    lists = [ResultList(f"{s or 'default'} with filters", fetcher(s, chosen, f"{s or 'default'} with filters"))
+             for s in orders]
+    return lists + [ResultList("default", fetcher(None, [], "default"), first=False)]
+
+
+def keep_cards(cards: list[Candidate], budget: Decimal | None, card_check: CardCheck | None,
+               outcomes: dict[str, str]) -> list[Candidate]:
+    """The cards within the budget whose values are not outside the needs. The others get their outcome."""
+    kept = []
+    for c in cards:
+        if budget is not None and c.price is not None and c.price > budget:
+            outcomes[c.source_id] = "over_budget"
+        elif card_check is not None and card_check(c):
+            outcomes[c.source_id] = "off_condition"
+        else:
+            kept.append(c)
+    return kept
 
 
 def crawl(
@@ -117,8 +145,10 @@ def crawl(
                 report.notes.append(f"the {name} order did not load at page {number}: {url}")
                 return None
             report.search_pages += 1
-            if hasattr(adapter, "parse_filters"):
-                save_filters(conn, adapter.name, category, adapter.parse_filters(page))
+            # The filters of the shop come from the first page without filters: a filtered page shows fewer
+            if not chosen and not report.page_filters and hasattr(adapter, "parse_filters"):
+                report.page_filters = adapter.parse_filters(page)
+                save_filters(conn, adapter.name, category, report.page_filters)
             loaded[key] = adapter.parse_search(page)
             return loaded[key]
         return fetch
@@ -131,33 +161,20 @@ def crawl(
             groups = load_filters(conn, adapter.name, category)
         chosen = filters(groups)
     report.filters = chosen
-    orders = [None, *sorts]
-    if chosen:
-        lists = [ResultList(f"{s or 'default'} with filters", fetcher(s, chosen, f"{s or 'default'} with filters"))
-                 for s in orders]
-        lists.append(ResultList("default", fetcher(None, [], "default"), first=False))
-    else:
-        lists = [ResultList(s or "default", fetcher(s, [], s or "default")) for s in orders]
+    lists = result_lists(fetcher, sorts, chosen)
     found = threshold_search(lists, k=k, max_pages=max_pages, first_page=first_page)
-    report.list_pages, report.stop = found.pages, found.stop
+    report.list_pages, report.stop, report.last_page = found.pages, found.stop, found.last_page
     if found.failed and len(found.failed) == len(lists):
         report.notes.append(f"search stopped at page {first_page}: no result list loaded")
-    candidates = found.order
-    report.candidates = len(candidates)
-    kept = []
-    for c in candidates:
-        if budget is not None and c.price is not None and c.price > budget:
-            report.outcomes[c.source_id] = "over_budget"
-        elif card_check is not None and card_check(c):
-            report.outcomes[c.source_id] = "off_condition"
-        else:
-            kept.append(c)
+    report.candidates = len(found.order)
+    candidates = keep_cards(found.order, budget, card_check, report.outcomes)
     report.over_budget = sum(v == "over_budget" for v in report.outcomes.values())
     report.off_condition = sum(v == "off_condition" for v in report.outcomes.values())
-    candidates = kept
     if screen is not None and candidates:
         try:
             kept = screen(candidates)
+            if chosen:  # the worker orders within the filtered results, then within the others
+                kept.sort(key=lambda c: c.source_id not in found.first)
             report.off_topic = len(candidates) - len(kept)
             report.dropped = [c for c in candidates if c not in kept]
             report.outcomes.update({c.source_id: "off_topic" for c in report.dropped})

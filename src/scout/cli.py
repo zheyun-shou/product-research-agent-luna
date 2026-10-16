@@ -643,7 +643,7 @@ def eval_search(
             def fetch(url):
                 if url not in loaded:
                     page = fetch_checked(adapter, conn, url, ask_user, notes)
-                    if page is not None:
+                    if page is not None and "rh=" not in url:  # as the crawl: from pages without filters
                         save_filters(conn, adapter.name, profile.category, adapter.parse_filters(page))
                     loaded[url] = None if page is None else adapter.parse_search(page)
                 return loaded[url]

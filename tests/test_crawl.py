@@ -282,3 +282,16 @@ def test_a_card_outside_the_needs_is_not_read(db, tmp_path):
     report = crawl(db, AmazonSeAdapter(site(), tmp_path), "fridge", "kylskåp", on_problem=never_called,
                    card_check=lambda c: "203 cm" in c.title)
     assert report.off_condition == 1 and report.outcomes["B0AAAAAAA1"] == "off_condition" and report.saved == 2
+
+
+def test_the_worker_orders_within_the_filtered_results_first(db, tmp_path):
+    browser = site()
+    # The filtered page has only the second card
+    only_2 = html("search_basic.html").replace('data-asin="B0AAAAAAA1"', 'data-asin=""').replace(
+        'data-asin="B0AAAAAAA3"', 'data-asin=""')
+    browser.pages[search_url("kylskåp", 1, None, ["c:1"])] = [only_2]
+    report = crawl(db, AmazonSeAdapter(browser, tmp_path), "fridge", "kylskåp", on_problem=never_called,
+                   filters=lambda groups: ["c:1"], max_details=1,
+                   screen=lambda cands: sorted(cands, key=lambda c: c.source_id))  # the worker puts 1 first
+    assert report.outcomes["B0AAAAAAA2"] == "read"
+    assert [c.source_id for c in report.unread] == ["B0AAAAAAA1", "B0AAAAAAA3"]

@@ -14,7 +14,7 @@ SKIP_GROUPS = ("p_36", "p_6", "p_90", "p_98", "p_n_availability", "p_n_condition
 _APPLY = re.compile(r"Apply the filter (.+) to narrow results|Använd filtret (.+) för att begränsa resultaten")
 _NUMBER = r"(\d+(?:[.,]\d+)?)"
 _UP_TO = re.compile(rf"^(?:Up to|Upp till|Under)\s+{_NUMBER}\s*(\S+)$", re.I)
-_BETWEEN = re.compile(rf"^{_NUMBER}\s*(?:\S+\s+)?(?:to|till|-|–)\s+{_NUMBER}\s*(\S+)$", re.I)
+_BETWEEN = re.compile(rf"^{_NUMBER}\s*(?:[^\s\d-]+\s+)?(?:(?:to|till)\s+|[-–]\s*){_NUMBER}\s*(\S+)$", re.I)
 _ABOVE = re.compile(rf"^{_NUMBER}\s*(\S+)\s*(?:&|och)\s*(?:above|över|mer)$", re.I)
 
 

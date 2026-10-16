@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from scout.eval.hidden import SearchCase
-from scout.eval.search import NEW, OLD, not_valid, search_target, summary_text
+from scout.eval.search import FUSED, NEW, OLD, interleave, not_valid, search_target, summary_text
 from scout.needs import ConditionSpec
 from scout.profiles import load_profile
 from scout.sources.amazon_se.adapter import AmazonSeAdapter
@@ -36,10 +36,12 @@ def test_the_place_of_the_target_before_and_with_the_filters():
         return pages.get(url)
     rows = search_target(target, PROFILE, fetch, AmazonSeAdapter(None, None), lambda: GROUPS, list_pages=2)
     assert rows[OLD]["place"] == 14 and rows[OLD]["calls"] == 2  # behind the wide one and 12 others
+    assert rows[FUSED]["place"] == 14 and rows[FUSED]["stop"] == "all results read"
     assert rows[NEW]["place"] == 1 and rows[NEW]["filters"] == ["p_36:-500000", "c:1"]
     assert rows[NEW]["candidates"] == 13  # the wide one is outside the width
     text = summary_text([{"target": "t", **rows}, {"target": "u", "valid": False, "why": "out of stock"}])
-    assert "t: before: place 14 of 14 (call 2); with filters: place 1 of 13 (call 1)" in text
+    assert ("t: before: place 14 of 14 (call 2); without filters: place 14 of 14 (call 2); with filters: place 1 of "
+            "13 (call 1)") in text
     assert "u: not valid now (out of stock)" in text and "with filters: in the first 8 product pages for 1 of 1" in text
 
 
@@ -53,3 +55,8 @@ def test_a_target_that_does_not_fit_its_search_now():
     assert not_valid(target, rec(price=Decimal("4000"), in_stock=True,
                                  attributes={"width": {"value": 60}})) == "width is 60, not <= 56"
     assert not_valid(target, rec(price=Decimal("4000"), in_stock=True)) is None
+
+
+def test_the_order_of_2026_10_14_takes_the_orders_in_turns():
+    merged = interleave([cards("a", "b", "c"), cards("x", "a"), cards("y", "z")])
+    assert [c.source_id for c in merged] == ["a", "x", "y", "b", "z", "c"]

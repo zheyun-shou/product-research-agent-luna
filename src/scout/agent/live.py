@@ -204,6 +204,7 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
     # The kept results that a search did not read yet, by (category, words, page, budget, wanted): the next call
     # with the same words reads them without loading the search pages again
     unread: dict[tuple, list] = {}
+    read_to: dict[tuple, int] = {}  # the last result page read of a search, by the key of unread without the page
 
     def search_shop(profile, needs, words, page, max_details, filters=()):
         from scout.db.store import load_filters
@@ -235,20 +236,27 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
         else:
             def choose(found):
                 return adapter.price_filter(budget) + number_filters(needs, profile, found) + words_chosen
-            report = run_crawl(conn, adapter, profile.category, words, on_problem=on_problem, first_page=page,
+            # The first call can read more than one page of each list: a later page starts after the last one read
+            search = key[:2] + key[3:]
+            start = max(page, read_to.get(search, 0) + 1) if page > 1 else page
+            report = run_crawl(conn, adapter, profile.category, words, on_problem=on_problem, first_page=start,
                                max_pages=LIST_PAGES if page == 1 else 1, max_details=max_details,
                                sorts=adapter.sorts if page == 1 else (), budget=budget, skip_known=True,
                                enrich=enrich, filters=choose, card_check=lambda c: off_condition(c, needs, profile),
                                screen=lambda cands: screen_titles(cands, profile, llm, needs.wanted(profile),
                                                                   needs.text() or None))
             unread[key] = report.unread
+            read_to[search] = max(read_to.get(search, 0), report.last_page)
             groups = load_filters(conn, SOURCE, profile.category)
-            text = crawl_text(report, words, page)
+            text = crawl_text(report, words, start)
+            if report.last_page > start:
+                text += (f"\nResult pages {start} to {report.last_page} are read. For more, call search_shop with "
+                         f"page {report.last_page + 1}.")
             if report.filters:
                 text += "\nFilters of the shop: " + ", ".join(filter_names(report.filters, groups)) + "."
-            if groups and not words_chosen:
+            if report.page_filters and not words_chosen:  # the filters of this search, not of all searches
                 text += ("\nWord filters that you can give in the next search (as 'Group: Option'): "
-                         + word_filters_text(groups))
+                         + word_filters_text(report.page_filters))
         if search_log is not None:
             search_log.append({"words": words, "page": page, "filters": list(filters),
                                "outcomes": dict(report.outcomes)})

@@ -66,3 +66,13 @@ def test_filters_of_the_page_with_the_ranges_of_number_options():
                                                                 (74.0, None, "cm")]
     # The name comes from the text when the link has no label; an option without a link is left out
     assert [o.name for o in groups["Installation"].options] == ["Undercounter"]
+
+
+def test_the_ranges_of_number_options_in_other_forms():
+    from scout.sources.amazon_se.search import _range
+    assert _range("48-60 cm") == {"low": 48.0, "high": 60.0, "unit": "cm"}
+    assert _range("48 – 60,9 cm") == {"low": 48.0, "high": 60.9, "unit": "cm"}
+    assert _range("48 cm till 60 cm") == {"low": 48.0, "high": 60.0, "unit": "cm"}
+    assert _range("Upp till 47,9 cm") == {"high": 47.9, "unit": "cm"}
+    assert _range("61 cm och mer") == {"low": 61.0, "unit": "cm"}
+    assert _range("Red") == {}

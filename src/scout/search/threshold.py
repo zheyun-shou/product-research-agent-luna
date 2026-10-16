@@ -42,6 +42,8 @@ class ThresholdResult:
     stop: str  # why the search stopped
     pages: dict[str, int]  # the pages read in each list
     failed: list[str]  # the lists whose first page did not load
+    first: set[str] = field(default_factory=set)  # the source ids of the cards of the lists marked first
+    last_page: int = 0  # the last result page read in any list
 
 
 def _bounds(lists: list[ResultList]) -> tuple[dict[str, float], dict[str, float], dict[str, Candidate]]:
@@ -72,7 +74,8 @@ def top_k_known(lists: list[ResultList], k: int) -> bool:
 
 def threshold_search(lists: list[ResultList], k: int = 10, max_pages: int = 2, first_page: int = 1) \
         -> ThresholdResult:
-    """Read one more page of each list in each round, up to max_pages pages of each list."""
+    """Read one more page of each list in each round, up to max_pages pages of each list. With one list the
+    algorithm has nothing to choose (its best k are always its first k), so it reads all max_pages pages."""
     stop = "the page limit"
     for number in range(first_page, first_page + max_pages):
         for rl in lists:
@@ -90,11 +93,12 @@ def threshold_search(lists: list[ResultList], k: int = 10, max_pages: int = 2, f
         if all(rl.done for rl in lists):
             stop = "all results read"
             break
-        if top_k_known(lists, k):
+        if len(lists) > 1 and top_k_known(lists, k):
             stop = f"the best {k} are known"
             break
     lower, _, cards = _bounds(lists)
     in_first = {c.source_id for rl in lists if rl.first for c in rl.cards}
     order = sorted(cards.values(), key=lambda c: (c.source_id not in in_first, -lower[c.source_id]))
     return ThresholdResult(order=order, stop=stop, pages={rl.name: rl.pages for rl in lists},
-                           failed=[rl.name for rl in lists if rl.failed])
+                           failed=[rl.name for rl in lists if rl.failed], first=in_first,
+                           last_page=first_page + max((rl.pages for rl in lists), default=0) - 1)

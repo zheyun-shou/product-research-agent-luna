@@ -4,7 +4,7 @@ Python selects the number filters: for each condition, all options whose range o
 value is checked by Python too, because other shops can have no filters, and a shop can tag a product wrongly."""
 import re
 
-from scout.needs import Needs
+from scout.needs import ConditionSpec, Needs
 from scout.profiles import CategoryProfile, ProfileAttribute
 from scout.sources.base import Candidate, FilterGroup, FilterOption
 
@@ -61,14 +61,14 @@ def title_values(title: str, profile: CategoryProfile) -> dict[str, float]:
     return values
 
 
+def outside(value: float, condition: ConditionSpec) -> bool:
+    return value > condition.value if condition.op == "<=" else value < condition.value
+
+
 def off_condition(card: Candidate, needs: Needs, profile: CategoryProfile) -> bool:
     """True when a value of the card is outside a condition of the needs. Unknown values pass."""
     values = title_values(card.title, profile)
-    for c in needs.conditions:
-        value = values.get(c.attribute)
-        if value is not None and (value > c.value if c.op == "<=" else value < c.value):
-            return True
-    return False
+    return any(values.get(c.attribute) is not None and outside(values[c.attribute], c) for c in needs.conditions)
 
 
 def word_filters(names: list[str], groups: list[FilterGroup]) -> tuple[list[str], list[str]]:
@@ -87,6 +87,6 @@ def filter_names(values: list[str], groups: list[FilterGroup]) -> list[str]:
     return [names.get(v, "price up to the budget" if v.startswith("p_36:") else v) for v in values]
 
 
-def word_filters_text(groups: list[FilterGroup], per_group: int = 8) -> str:
+def word_filters_text(groups: list[FilterGroup], per_group: int = 12) -> str:
     lines = [f"{g.name}: {', '.join(o.name for o in g.options[:per_group])}" for g in groups if not g.numeric]
     return "; ".join(lines)

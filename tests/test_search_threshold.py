@@ -56,3 +56,10 @@ def test_the_cards_of_the_first_lists_come_first():
     # 1 has the best place of the plain list, but only the plain list has it
     assert [c.source_id for c in result.order] == ["2", "3", "1"]
     assert place_score(1) > place_score(2)
+
+
+def test_one_list_reads_all_its_pages():
+    result = threshold_search([ResultList("a", pages(list(range(12)), [20, 21], [22]))], k=3, max_pages=3)
+    assert result.pages == {"a": 3} and result.last_page == 3
+    started = threshold_search([ResultList("a", pages([1], [2], [3]))], k=3, max_pages=1, first_page=2)
+    assert started.last_page == 2 and [c.source_id for c in started.order] == ["2"]
