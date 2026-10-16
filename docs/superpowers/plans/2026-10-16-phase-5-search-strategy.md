@@ -95,27 +95,28 @@
 - The sizes in a title are read only with a word next to them ("170 cm High", "Height 180 cm", "54 cm breit"). "144 x 47.5 x 49.5 cm" has no fixed order: some titles give H x W x D, others W x D x H. On 612 cards of 2026-10-14 and 2026-10-15, the check left out 16 cards for a height of at most 180 cm and a width of at most 56 cm, and all 16 were right. Wrong values exist ("72 mm High" for a fridge of 183 cm); they can only leave out a card for a condition "at least".
 - New product of tall-top-freezer: the Candy CCG1S 518EW (B0CTKNJJGG), 5489 SEK, 179.5 x 54.5 x 54.6 cm, 252 l, freezer at the bottom, 41 dB, 331 ratings. I did not use the FrigeluX RC262XE: it fits, but Luna picked it in the run of 2026-10-14, so it would favour the agent. Its page also says "Freezer-on-Top" while its pictures show the freezer at the bottom.
 
-### First result of eval-search (2026-10-16, no model, about 15 minutes of page loads)
+### eval-search after the review fixes (2026-10-16, no model, about 15 minutes of page loads)
 
-"before" is page 1 of the default, rating and sales orders with the budget, in the order of the place scores of the Threshold Algorithm. It is near the search of 2026-10-14, but not the same: that search took the orders in turns. "with filters" is the new search without the worker order. The word filters are my choice from the facts, as Luna would choose them.
+The code review found that the first run used the order of the Threshold Algorithm as "before", not the search of 2026-10-14, which took the orders in turns. That run said 5 of 12 before and 9 of 12 with filters. The second run, 20 minutes later, has three rows. "before" is page 1 of the default, rating and sales orders, taken in turns, with the budget: the search of 2026-10-14. "without filters" is the same pages in the order of the Threshold Algorithm. "with filters" is the new search without the worker order. The word filters are my choice from the facts, as Luna would choose them.
 
-| Target | before | with filters |
-|---|---|---|
-| red-bottom-freezer | 3 of 19 | 2 of 17 |
-| tall-top-freezer | not in 31 | not in 24 |
-| frost-free-wide | 2 of 59 | 1 of 31 |
-| retro-red | 16 of 108 | 2 of 106 |
-| dark-no-frost | 20 of 40 | 2 of 32 |
-| narrow-cheap | 25 of 46 | 7 of 33 |
-| side-by-side | 2 of 48 | 1 of 22 |
-| under-counter-quiet | 4 of 54 | 8 of 52 |
-| skincare-mini | 17 of 43 | 2 of 131 |
-| wine-24 | 3 of 83 | 4 of 101 |
-| small-freezer-or-fridge | not in 102 | not in 165 |
-| car-compressor-box | not in 59 | 86 of 156 |
+| Target | before | without filters | with filters |
+|---|---|---|---|
+| red-bottom-freezer | 5 of 24 | 1 of 24 | 2 of 21 |
+| tall-top-freezer | not in 34 | not in 34 | not in 26 |
+| frost-free-wide | 5 of 54 | 2 of 54 | 1 of 30 |
+| retro-red | 4 of 119 | 10 of 119 | 2 of 108 |
+| dark-no-frost | 12 of 46 | 20 of 46 | 2 of 37 |
+| narrow-cheap | 37 of 45 | 26 of 45 | 7 of 32 |
+| side-by-side | 6 of 52 | 3 of 52 | 2 of 31 |
+| under-counter-quiet | 43 of 59 | 4 of 59 | 12 of 55 |
+| skincare-mini | 3 of 41 | 14 of 41 | 2 of 86 |
+| wine-24 | 1 of 80 | 2 of 80 | 4 of 100 |
+| small-freezer-or-fridge | not in 103 | not in 103 | not in 168 |
+| car-compressor-box | not in 62 | not in 62 | 88 of 156 |
 
-- In the first 8 product pages (one search_shop call): before 5 of 12 targets, with filters 9 of 12.
-- The Threshold Algorithm stopped after page 1 of each list for 7 targets (4 search pages). It read a second page of some lists for the other 5.
-- The 3 misses are not in the results of their words: tall-top-freezer ("kyl frys kombiskåp 180 cm"), small-freezer-or-fridge and car-compressor-box (only on the second page of the filtered lists, at place 86). Their cause is the search words, not the read order. In the agent, Luna can search again with other words.
-- under-counter-quiet moved from place 4 to place 8: the filtered lists put other small fridges first. It is still in the first call.
-- These are 12 targets and one run on one day. The results of amazon.se change from day to day.
+- In the first 8 product pages (one search_shop call): before 6 of 12 targets, without filters 5 of 12, with filters 8 of 12.
+- The order of the Threshold Algorithm alone is not better than the old order. The gain comes from the filters.
+- The results of amazon.se change within minutes: retro-red was at place 16 before in the first run and at place 4 in the second, under-counter-quiet at 4 and at 43. One run of 12 targets is a small sample. The difference of 6 and 8 targets can be noise; the targets that moved most (dark-no-frost, narrow-cheap) moved in both runs.
+- under-counter-quiet is at place 12 with filters: the height filter keeps many small fridges, and their order puts others first. The worker order, which this evaluation does not have, reads the titles for the sizes and the wishes.
+- The 3 misses are not in the results of their words (car-compressor-box only at place 88, on the second page of the filtered lists). Their cause is the search words. In the agent, Luna can search again with other words.
+- The Threshold Algorithm stopped after page 1 of each list for most targets (4 search pages).
