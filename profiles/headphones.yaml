@@ -1,0 +1,61 @@
+category: headphones
+display_name: Headphones
+search_terms_sv: hörlurar
+kinds:
+  - name: in_ear
+    label: In-ear headphones or earbuds
+    search_terms_sv: in-ear hörlurar
+  - name: over_ear
+    label: Over-ear headphones that cover the ears
+    search_terms_sv: over-ear hörlurar
+  - name: on_ear
+    label: On-ear headphones that sit on the ears
+    search_terms_sv: on-ear hörlurar
+  - name: sport
+    label: Headphones for sport, with ear hooks or a neckband
+    search_terms_sv: sporthörlurar
+  - name: kids
+    label: Headphones for children, with a volume limit
+    search_terms_sv: hörlurar barn
+attributes:
+  - name: battery_life
+    label: Battery life (with the charging case, for earbuds)
+    type: number
+    unit: h
+    kind: soft
+    title_words: [battery, battery life, of battery, of battery life, of playtime, of playback, playtime, playback, play time, speltid, batteritid, akkulaufzeit, spielzeit]
+  - name: weight
+    label: Weight
+    type: number
+    unit: g
+    kind: soft
+  - name: wireless
+    label: Wireless
+    type: boolean
+    kind: soft
+  - name: noise_cancelling
+    label: Active noise cancelling
+    type: boolean
+    kind: soft
+  - name: microphone
+    label: Microphone for calls
+    type: boolean
+    kind: soft
+  - name: water_resistance
+    label: Water resistance (IP rating)
+    type: text
+    kind: soft
+  - name: codecs
+    label: Bluetooth codecs
+    type: text
+    kind: soft
+questions_for_user:
+  - Do you want earbuds, headphones over the ears, or headphones for sport?
+  - Wireless or with a cable?
+  - What do you use them for? For example travel, calls, the gym or work.
+  - Is noise cancelling important to you?
+  - What is your budget?
+complaint_types: [battery life, comfort, fit of the ear tips, connection drops, microphone quality, charging case, sound leaks, after-sales service]
+sources:
+  products: [amazon_se]
+  reviews: [amazon_se_reviews]

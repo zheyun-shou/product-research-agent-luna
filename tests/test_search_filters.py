@@ -51,6 +51,14 @@ def test_the_sizes_that_a_title_gives():
     assert title_values("Fridge 180 cm high, height 185 cm", PROFILE) == {}  # two values: unknown
 
 
+def test_the_battery_life_that_a_headphones_title_gives():
+    profile = load_profile("headphones")
+    assert title_values("Anker soundcore Q31i, ANC Headphones, 50T Playtime", profile) == {"battery_life": 50.0}
+    assert title_values("Sony WH-CH520 - Up to 50 Hours of Battery Life", profile) == {"battery_life": 50.0}
+    assert title_values("SOUNDPEATS Air6 HS, 45H Battery, Bluetooth 6.0", profile) == {"battery_life": 45.0}
+    assert title_values("Sony WI-C100 Wireless Headphones, Black", profile) == {}
+
+
 def test_a_card_outside_a_condition_is_left_out_and_an_unknown_value_stays():
     def card(title):
         return Candidate(source="s", source_id="1", url="u", title=title)

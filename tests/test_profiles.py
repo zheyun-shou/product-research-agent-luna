@@ -52,3 +52,12 @@ def test_a_saved_draft_loads_and_is_listed(tmp_path):
     assert profile_names(fixed, drafts) == ["fridge", "headphones"]
     assert load_profile("headphones", fixed, drafts).draft is True
     assert load_profile("fridge", fixed, drafts).draft is False
+
+
+@pytest.mark.parametrize("name", [p.stem for p in (Path(__file__).parents[1] / "profiles").glob("*.yaml")])
+def test_each_preset_has_kinds_with_search_terms_and_units_for_numbers(name):
+    profile = load_profile(name)
+    assert profile.category == name and not profile.draft and profile.search_terms_sv
+    assert profile.kinds and all(k.search_terms_sv for k in profile.kinds)
+    assert all(a.unit for a in profile.attributes if a.type == "number")
+    assert profile.questions_for_user and profile.complaint_types

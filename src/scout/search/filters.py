@@ -8,7 +8,8 @@ from scout.needs import ConditionSpec, Needs
 from scout.profiles import CategoryProfile, ProfileAttribute
 from scout.sources.base import Candidate, FilterGroup, FilterOption
 
-UNITS = {"cm": {"cm": 1.0, "mm": 0.1, "m": 100.0}, "l": {"l": 1.0}}
+UNITS = {"cm": {"cm": 1.0, "mm": 0.1, "m": 100.0}, "l": {"l": 1.0}, "g": {"g": 1.0, "kg": 1000.0},
+         "h": {"h": 1.0, "t": 1.0, "hour": 1.0, "hours": 1.0, "hrs": 1.0, "timmar": 1.0, "tim": 1.0, "std": 1.0, "stunden": 1.0}}
 _NUMBER = r"(\d+(?:[.,]\d+)?)\s*"
 
 

@@ -100,3 +100,11 @@ Only after the test of decision 5.
 - The seller view for incense (demand, supplier, margin).
 - Review sources for each category outside amazon.se.
 - A profile that learns from many searches (source statistics, spec section 4.1).
+
+## Progress (2026-10-17)
+
+- Task 1 (4bb9e61). The title of a card joins its `h2` texts. The `h2` of a certificate ("TCO Certified", "Global Recycled Standard", "Energy Label") is not part of the title. 16 of 2184 cards in 60 saved fridge and headphones pages had such an `h2`.
+- Task 2. `profiles/headphones.yaml` with 5 kinds and 7 attributes. I saved page 1 of the search words of each kind and of "trådlösa hörlurar" (6 pages, 281 cards, no model).
+  - All 6 pages have the same filter groups. The useful word filters are form factor, noise control, connectivity, water resistance and colour. The only number groups are sensitivity and charge time, so no condition of the profile gets a number filter. The chat model chooses the word filters.
+  - The title gives the battery life on 51 of the 281 cards ("50T Playtime", "45H Battery", "Up to 50 Hours of Battery Life"). I read all matches by hand and all were right. The units of hours ("h", "t", "hours", "timmar" and others) and grams are new in `title_values`.
+  - Earbuds often give the time with the charging case. The label of the attribute says so.

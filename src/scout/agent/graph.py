@@ -58,7 +58,7 @@ def crawl_text(report: CrawlReport, terms: str, page: int) -> str:
         pages = f"from result page {page}: {read}; stopped at {report.stop}"
     else:
         pages = f"result page {page}"
-    outside = f"{report.off_condition} outside the sizes of the needs by their title, " if report.off_condition else ""
+    outside = f"{report.off_condition} outside the conditions of the needs by their title, " if report.off_condition else ""
     line = (f"Searched amazon.se for '{terms}' ({pages}): {report.candidates} results, "
             f"{report.off_topic} left out by title, {report.over_budget} over budget, {outside}"
             f"{report.known} already stored (rating and review count updated), {report.saved} new products saved.")
