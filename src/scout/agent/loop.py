@@ -100,7 +100,9 @@ Rules:
 
 class UpdateNeeds(BaseModel):
     """Record the shopper's needs. Give the full needs each time, not only the change."""
-    category: str | None = Field(None, description="One of the categories that the context lists")
+    category: str | None = Field(None, description="One of the categories that the context lists. When none of "
+                                 "them has the product: a short new English name, lowercase with underscores "
+                                 "(for example coffee_grinder). Python then drafts a profile for it")
     kind: str | None = Field(None, description="One of the kinds of the category, exactly as the context writes it")
     conditions: list[ConditionSpec] = Field(default_factory=list)
     budget: float | None = Field(None, description="SEK")
@@ -298,6 +300,7 @@ class LoopDeps:
     similar_products: Callable[..., list] | None = None
     # (cards, wishes) -> {listing id: {wish: Verdict}}; the worker judges the nearest stored text (picks.wishes)
     judge_wishes: Callable[[list[Card], list[str]], dict] | None = None
+    save_draft: Callable[[CategoryProfile], Any] | None = None  # without it, a new category is not drafted
     read_images: Callable[[list[str], str], Any] | None = None
     find_missing: Callable[[list[Card], list[str], CategoryProfile], str] | None = None
     # -> (report, review pages, ids whose reviews cannot be read: not on amazon.se, or the shopper skipped the login)
@@ -356,8 +359,9 @@ def context_text(state: dict, deps: LoopDeps, thread: str) -> str:
     removed = state.get("removed", [])
     searches = state.get("searches") or {}
     # The kinds are given before the first update_needs, so the model writes their names right the first time
-    categories = ", ".join(f"{name} (kinds {', '.join(k.name for k in deps.load_profile(name).kinds)})"
-                           for name in deps.profile_names())
+    profiles = [deps.load_profile(name) for name in deps.profile_names()]
+    categories = ", ".join(f"{p.category}{' (draft)' if p.draft else ''} (kinds {', '.join(k.name for k in p.kinds)})"
+                           for p in profiles)
     lines = [
         f"Categories with a profile: {categories}",
         f"Needs so far: {needs.model_dump_json(exclude_none=True)}",
@@ -593,17 +597,25 @@ class Toolbox:
     def update_needs(self, call: UpdateNeeds) -> str:
         names = self.deps.profile_names()
         category = call.category or self.needs.category
-        if category not in names:
+        drafted = ""
+        if category and category not in names and self.deps.save_draft is not None:
+            from scout.agent.clarify import draft_profile
+            profile = draft_profile(self.deps.llm, category, history_text(self.state), names)
+            self.deps.save_draft(profile)
+            category = profile.category
+            drafted = (f"New category {category}: Python saved a draft profile that a person has not checked. "
+                       "Tell the shopper that this category is new. ")
+        if category not in self.deps.profile_names():
             return f"'{category}' is not a category. Use one of: {', '.join(names)}."
         needs = Needs(category=category, **call.model_dump(exclude={"category"}))
         profile = self.deps.load_profile(category)
         errors = check_needs(needs, profile, user_numbers(self.state) | memory_numbers(self.deps, category))
         if errors:
-            return "not recorded: " + "; ".join(errors)
+            return drafted + "not recorded: " + "; ".join(errors) + ("\n" + profile_text(profile) if drafted else "")
         new_category = category != self.needs.category
         self.needs = needs
         self.update["needs"] = needs.model_dump(mode="json")
-        text = f"recorded: {needs.text() or 'no conditions'} (category {category}, kind {needs.kind})."
+        text = drafted + f"recorded: {needs.text() or 'no conditions'} (category {category}, kind {needs.kind})."
         return text + ("\n" + profile_text(profile) if new_category else "")
 
     def search_shop(self, call: SearchShop) -> str:

@@ -428,3 +428,23 @@ def test_find_products_orders_by_the_preferences_and_shows_the_verdicts():
     assert "ordered by the rating. The preferences could not be judged now (busy)." in text
     plain = Toolbox(shop.deps(FakeLLM([])), {"needs": {"category": "fridge"}}, "t1").find_products(FindProducts())
     assert "ordered by the rating." in plain and "meets" not in plain
+
+def test_a_new_category_gets_a_draft_profile():
+    from tests.test_clarify import HEADPHONES
+    shop, saved = Shop(), {}
+    llm = FakeLLM([[UpdateNeeds(category="headphones", kind="over_ear")], HEADPHONES, "Which budget?"])
+    deps = shop.deps(llm)
+    deps.profile_names = lambda: ["fridge", *saved]
+    deps.load_profile = lambda name: saved.get(name) or FRIDGE
+    deps.save_draft = lambda profile: saved.update({profile.category: profile})
+    state = run(build_agent_graph(deps, InMemorySaver()), "Jag vill ha hörlurar")
+    assert saved["headphones"].draft and state["needs"]["category"] == "headphones"
+    report = llm.requests[2][1]
+    assert "New category headphones: Python saved a draft profile" in report and "recorded:" in report
+    assert "Profile: kinds over_ear" in report
+
+
+def test_without_save_draft_a_new_category_is_refused():
+    llm = FakeLLM([[UpdateNeeds(category="headphones")], "Sorry."])
+    run(build_agent_graph(Shop().deps(llm), InMemorySaver()), "Jag vill ha hörlurar")
+    assert "'headphones' is not a category. Use one of: fridge." in llm.requests[1][1]

@@ -70,8 +70,12 @@ what to ask the shopper.
   types on amazon.se for that kind.
 - attributes: four to eight facts that product pages state and shoppers compare. type is number, enum, boolean
   or text. A number has a unit. An enum has its values. kind is hard when a wrong value means that the product
-  cannot be used (for example a size that must fit), else soft. Never use price, rating or reviews: the system
-  has them already.
+  cannot be used (for example a size that must fit), else soft. Only a number can be hard, because only numbers
+  can be conditions. Give each size as its own number (height, width, depth), never one text of all sizes. The
+  label is the common English name of the fact, as a shop filter names it (Height, Capacity, Battery life).
+  title_words, for a number attribute that product titles often give: the words next to the value in a title,
+  in English, Swedish, German and French (for example height, high, höjd, höhe, hauteur). Never use price,
+  rating or reviews: the system has them already.
 - questions_for_user: three to five short questions in English that help choose.
 - complaint_types: the problems that buyers of this category often report."""
 
@@ -98,6 +102,8 @@ def check_draft(draft: DraftProfile, names: list[str]) -> list[str]:
         errors.append("give at least two attributes")
     errors += [f"attribute {a.name} is a number, so it needs a unit" for a in draft.attributes
                if a.type == "number" and not a.unit]
+    errors += [f"attribute {a.name} is hard but not a number: only numbers can be conditions, so make it soft"
+               for a in draft.attributes if a.kind == "hard" and a.type != "number"]
     errors += [f"attribute {a.name}: the system has {a.name} already" for a in draft.attributes
                if a.name in {"price", "rating", "review_count"}]
     if len({a.name for a in draft.attributes}) != len(draft.attributes):
@@ -116,7 +122,10 @@ def draft_profile(llm, wanted: str, history: str, names: list[str], max_rounds: 
         errors = check_draft(draft, names)
         llm.mark_checked(not errors, errors)
         if not errors:
-            return CategoryProfile(**draft.model_dump(), sources={"products": ["amazon_se"]}, draft=True)
+            # The names of the filters and the variants of a shop are not known before a search
+            attributes = [a.model_copy(update={"site_filter": None, "variant": None}) for a in draft.attributes]
+            return CategoryProfile(**draft.model_dump(exclude={"attributes"}), attributes=attributes,
+                                   sources={"products": ["amazon_se"]}, draft=True)
     raise LLMOutputError(f"The draft profile was still not valid after {max_rounds} tries: {errors}")
 
 

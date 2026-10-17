@@ -68,3 +68,14 @@ def test_a_draft_profile_is_checked_and_marked_as_a_draft():
     profile = draft_profile(llm, "headphones", "Shopper: hörlurar", ["fridge"])
     assert profile.draft and profile.category == "headphones" and profile.sources == {"products": ["amazon_se"]}
     assert [c.checked for c in llm.calls] == [False, True]
+
+def test_a_hard_attribute_of_a_draft_must_be_a_number_and_shop_names_are_not_drafted():
+    sizes = ProfileAttribute(name="dimensions", label="Dimensions", type="text", kind="hard")
+    errors = check_draft(HEADPHONES.model_copy(update={"attributes": [*HEADPHONES.attributes, sizes]}), ["fridge"])
+    assert errors == ["attribute dimensions is hard but not a number: only numbers can be conditions, so make it soft"]
+    guessed = HEADPHONES.model_copy(update={"attributes": [
+        HEADPHONES.attributes[0].model_copy(update={"site_filter": "Battery", "variant": "size_name",
+                                                    "title_words": ["playtime"]}), HEADPHONES.attributes[1]]})
+    profile = draft_profile(FakeLLM([guessed]), "headphones", "Shopper: hörlurar", ["fridge"])
+    battery = profile.attribute("battery_life")
+    assert (battery.site_filter, battery.variant, battery.title_words) == (None, None, ["playtime"])

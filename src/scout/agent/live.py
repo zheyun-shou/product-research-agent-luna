@@ -393,7 +393,7 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
 
     verdicts: dict = {}  # (wish, listing id) -> the worker's verdict, for the session
     return LoopDeps(
-        llm=llm, profile_names=profile_names, load_profile=load_profile,
+        llm=llm, profile_names=profile_names, load_profile=load_profile, save_draft=save_draft,
         cards=lambda ids: load_cards_by_ids(conn, ids),
         find=lambda profile, needs, excluded: shortlist(conn, profile, needs, llm, excluded, screened).ranked,
         eliminate=lambda thread, ids, reason: add_eliminations(conn, thread, ids, reason),
