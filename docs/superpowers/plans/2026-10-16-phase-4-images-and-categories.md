@@ -1,6 +1,6 @@
 # Phase 4 Images and More Categories
 
-> **How to use this plan.** This is a draft of 2026-10-16. I read it and decide the open points before work starts. Commit at the end of each task. Do not run a paid evaluation until I ask.
+> **How to use this plan.** I read this plan on 2026-10-17 and accepted the proposal of each decision. Incense is for a buyer. Commit at the end of each task. Do not run a paid evaluation until I ask.
 
 **Goal:** The agent works in more than one category. It has three more preset categories, it drafts a usable profile for a category that has none, and it reads facts that only the product images show.
 
@@ -24,14 +24,14 @@ I saved page 1 of three searches and read their filters with `parse_filters`.
 - **"löparskor dam"**: filters for gender, women's and men's shoe size (EU, in half sizes), surface (Road, Trail, Treadmill), arch type, water resistance, colour and brand. The card title has two `h2` elements, the brand and the name ("ASICS" and "Women's Patriot 14Sneaker"). The parser reads only the first, so all titles are a brand only. This must be fixed before shoes can work.
 - **"rökelse"**: the filters are for heaters (heating method, heat output), and the results mix incense with holders and cutters. The titles give the weight or the count ("50 g", "320 Sticks", "120 Pieces Incense Cones") and the form (sticks, cones, backflow cones, resin, wood). Better search words per kind ("rökelsepinnar", "rökelsekoner") must be tested.
 
-## Decisions (open, for me)
+## Decisions (2026-10-17)
 
-1. **The three preset categories.** The spec says incense, headphones or small electronics, and clothes or shoes. My proposal is incense, headphones and running shoes. Running shoes have a clear hard condition (the size) and real filters.
-2. **Shoe sizes.** The price and the stock of a shoe depend on the size. My proposal for v1: the size is a hard condition. Python reads the size list of the product page, and a pick must have the size of the shopper in stock. The price shown is the price of that size when the page gives it, otherwise the page price with a note. The alternative is to leave clothes and shoes for after v1 and take small electronics (for example power banks) as the third category.
-3. **Incense as a buyer or a seller.** On amazon.se the agent helps a buyer. A seller wants other facts (demand, review count, price per gram, the supplier). My proposal for v1: the profile is for a buyer, with the price per gram or per stick as a fact that the chat model calculates. The seller view comes with the shop work after v1.
+1. **The three preset categories.** The spec says incense, headphones or small electronics, and clothes or shoes. I chose incense, headphones and running shoes. Running shoes have a clear hard condition (the size) and real filters.
+2. **Shoe sizes.** The price and the stock of a shoe depend on the size. In v1 the size is a hard condition. Python reads the size list of the product page, and a pick must have the size of the shopper in stock. The price shown is the price of that size when the page gives it, otherwise the page price with a note.
+3. **Incense as a buyer or a seller.** On amazon.se the agent helps a buyer. A seller wants other facts (demand, review count, price per gram, the supplier). In v1 the profile is for a buyer, with the price per gram or per stick as a fact that the chat model calculates. The seller view comes with the shop work after v1.
 4. **Draft profiles learn the filters of the shop.** After the first search of a new category, Python matches the attribute labels of the draft with the filter group names of the page (the same match as for presets). The chat model drafts the title words. Sizes must be separate numbers (height, width, depth), never one text. A draft stays marked `draft: true`, and the chat model tells the shopper that the category is new.
 5. **PaddleOCR-VL for images, the worker as the fallback** (as in the spec). The image text goes into the chunks with the source type `image`, so search_text finds it and no image is read twice. Before I build it, a short test: does PaddleOCR-VL run in 6 GB, and how long does one image take? If it does not run, the worker reads the images and its text goes into the chunks the same way.
-6. **The image labels.** About 15 product images with specifications (size drawings, spec tables, energy labels), across the four categories. My proposal: Claude writes the labels from the images, and I check each one. The images and the labels stay out of Git.
+6. **The image labels.** About 15 product images with specifications (size drawings, spec tables, energy labels), across the four categories. The labels are drafted from the images, and I check each one. The images and the labels stay out of Git.
 
 ## Tasks
 
@@ -52,8 +52,6 @@ I saved page 1 of three searches and read their filters with `parse_filters`.
 - Test the search words of each kind on amazon.se (no model) and keep the words with the fewest results off topic.
 
 ### Task 4: The running shoes profile and the size condition
-
-Only after decision 2.
 
 - `profiles/running_shoes.yaml`: kinds (road, trail, treadmill, kids), attributes (EU size as a hard condition, gender, surface, drop in mm, weight in g, waterproof), questions and complaint types.
 - Read the size list and its stock from saved product pages (check first how amazon.se shows them). A pick without the size of the shopper in stock is left out, with the reason.

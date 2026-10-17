@@ -42,6 +42,16 @@ def test_has_next_page():
     assert not has_next_page("<html></html>")
 
 
+def test_title_in_two_parts_has_the_brand_and_the_name():
+    html = """
+    <div data-component-type="s-search-result" data-asin="B0AAAAAAA8">
+      <div><h2 class="a-size-mini"><span>ASICS</span></h2></div>
+      <a href="/dp/B0AAAAAAA8"><h2 aria-label="Gel-Pulse 15 löparskor dam"><span>Gel-Pulse 15 löparskor dam</span></h2></a>
+      <div class="a-section s-pc-certification"><h2 class="a-text-bold">Global Recycled Standard</h2></div>
+    </div>"""
+    assert parse_search_page(html)[0].title == "ASICS Gel-Pulse 15 löparskor dam"
+
+
 def test_rating_link_to_reviews_is_not_the_count():
     html = """
     <div data-component-type="s-search-result" data-asin="B0AAAAAAA7">

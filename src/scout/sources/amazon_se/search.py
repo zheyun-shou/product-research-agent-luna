@@ -24,8 +24,11 @@ def parse_search_page(html: str) -> list[Candidate]:
     seen: set[str] = set()
     for card in soup.select(CARD):
         asin = (card.get("data-asin") or "").strip()
-        title_el = card.select_one("h2 span") or card.select_one("h2")
-        if not asin or asin in seen or title_el is None:
+        # Fashion cards have two h2, the brand and the name ("ASICS", "Women's Patriot 14Sneaker"). The h2 of a
+        # certificate ("TCO Certified", "Energy Label") is not the title.
+        title = " ".join(h.get_text(" ", strip=True) for h in card.select("h2")
+                         if not h.find_parent(class_="s-pc-certification")).strip()
+        if not asin or asin in seen or not title:
             continue
         seen.add(asin)
         price, currency = _price(card)
@@ -35,7 +38,7 @@ def parse_search_page(html: str) -> list[Candidate]:
                 source=SOURCE,
                 source_id=asin,
                 url=product_url(asin),
-                title=title_el.get_text(" ", strip=True),
+                title=title,
                 price=price,
                 currency=currency,
                 rating=parse_rating(rating_el.get_text()) if rating_el else None,
