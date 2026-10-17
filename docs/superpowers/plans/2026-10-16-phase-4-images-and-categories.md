@@ -167,3 +167,15 @@ Second run, all 21 targets (small-freezer-or-fridge was out of stock, so 20 coun
 Second change: the word filters do not change the sorts. The default order and the sorts have only the price and number filters. The word filters add one list, the default order with all filters. The unfiltered default order comes last when there are price or number filters.
 
 Caution: I changed the search after I saw the results of these 9 targets, and I measure the change on the same 9. Thus a better number on them is too optimistic. Before a number of the search goes into my CV, I must check it on new targets that I did not use to tune the search.
+
+Third run, after the second change (search-20261017-2037.json, 20 targets count):
+
+| | before | without filters | with filters |
+|---|---|---|---|
+| 11 fridges | 5 | 5 | 8 |
+| 9 new targets | 7 | 5 | 7 |
+| all 20 | 12 | 10 | 15 |
+
+- The two worst cases came back: anc-over-ear 51 to 6, backflow-cone-set 37 to 7.
+- "without filters" fell from 13 to 10 with no change in its code (it has no filters). This shows the noise of amazon between two runs, about 3 targets of 20.
+- On the 9 new targets, "with filters" only equals "before". The caution above stays: these 9 tuned the change.
