@@ -83,7 +83,8 @@ class PaddleReader:
             self._load()
         parts = []
         for part in segments(Image.open(io.BytesIO(data)).convert("RGB")):
-            messages = [{"role": "user", "content": [{"type": "image", "image": part}, {"type": "text", "text": "OCR:"}]}]
+            content = [{"type": "image", "image": part}, {"type": "text", "text": "OCR:"}]
+            messages = [{"role": "user", "content": content}]
             inputs = self.processor.apply_chat_template(messages, tokenize=True, add_generation_prompt=True,
                                                         return_dict=True, return_tensors="pt").to(self.device)
             with torch.no_grad():
