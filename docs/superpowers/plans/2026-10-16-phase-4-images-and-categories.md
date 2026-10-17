@@ -108,3 +108,7 @@ Only after the test of decision 5.
   - All 6 pages have the same filter groups. The useful word filters are form factor, noise control, connectivity, water resistance and colour. The only number groups are sensitivity and charge time, so no condition of the profile gets a number filter. The chat model chooses the word filters.
   - The title gives the battery life on 51 of the 281 cards ("50T Playtime", "45H Battery", "Up to 50 Hours of Battery Life"). I read all matches by hand and all were right. The units of hours ("h", "t", "hours", "timmar" and others) and grams are new in `title_values`.
   - Earbuds often give the time with the charging case. The label of the attribute says so.
+- Task 3. `profiles/incense.yaml` with 6 kinds and 8 attributes, for a buyer. I saved page 1 of 7 searches (no model) and read the first 30 titles of each.
+  - The search words of each kind give results of that kind: "rökelsepinnar", "rökelsekoner", "backflow rökelsekoner", "rökelseharts", "palo santo" and "rökelsehållare". Only "rökelseharts" mixes in charcoal tablets and a violin rosin. "rökelse" alone gives incense too, but its filters are the filters of heaters.
+  - The filter groups are only brand, item form, product benefits and colour. No attribute gets a number filter, and the title check has no title words in this profile. The worker and the chat model do the work here.
+  - The titles give the weight or the count ("40g (70-80 sticks)", "320 Sticks"). The chat model can calculate the price for each gram or each stick from them.

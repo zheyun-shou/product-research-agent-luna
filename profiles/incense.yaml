@@ -1,0 +1,69 @@
+category: incense
+display_name: Incense
+search_terms_sv: rökelse
+kinds:
+  - name: sticks
+    label: Incense sticks
+    search_terms_sv: rökelsepinnar
+  - name: cones
+    label: Incense cones
+    search_terms_sv: rökelsekoner
+  - name: backflow_cones
+    label: Backflow cones, for a holder where the smoke flows down
+    search_terms_sv: backflow rökelsekoner
+  - name: resin
+    label: Resin or grains to burn on charcoal, for example frankincense or myrrh
+    search_terms_sv: rökelseharts
+  - name: wood
+    label: Wood to burn, for example palo santo
+    search_terms_sv: palo santo
+  - name: holder
+    label: Holder or burner for incense
+    search_terms_sv: rökelsehållare
+attributes:
+  - name: scent
+    label: Scent
+    type: text
+    kind: soft
+  - name: weight
+    label: Net weight
+    type: number
+    unit: g
+    kind: soft
+  - name: count
+    label: Number of sticks or cones
+    type: number
+    unit: pcs
+    kind: soft
+  - name: burn_time
+    label: Burn time of one stick or cone
+    type: number
+    unit: min
+    kind: soft
+  - name: stick_length
+    label: Stick length
+    type: number
+    unit: cm
+    kind: soft
+  - name: natural
+    label: Only natural ingredients, no synthetic perfume
+    type: boolean
+    kind: soft
+  - name: low_smoke
+    label: Low smoke
+    type: boolean
+    kind: soft
+  - name: origin
+    label: Country where it is made
+    type: text
+    kind: soft
+questions_for_user:
+  - Do you want sticks, cones, backflow cones, resin, wood or a holder?
+  - Which scents do you like?
+  - Is low smoke important to you, for example in a small room?
+  - Do you want only natural ingredients?
+  - How much do you want to buy, and what is your budget?
+complaint_types: [weak scent, too much smoke, burns too fast, does not stay lit, broken in the package, scent not as described, synthetic smell, headache]
+sources:
+  products: [amazon_se]
+  reviews: [amazon_se_reviews]
