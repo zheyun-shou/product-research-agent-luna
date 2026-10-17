@@ -145,3 +145,21 @@ The review found 10 problems. All are fixed.
 I decided to stop the image work for now: it is not necessary enough. Tasks 7 and 8 stop here. The module `extract/images.py` and the storage of image text stay, tested but not used. `read_images` still sends the images to the worker when the chat model asks.
 
 - Task 9. 9 new targets in `eval/hidden/targets.yaml`, 3 in each new category: over-ear headphones with noise cancelling, sport headphones with solar charging, headphones for a child with a volume limit; Japanese sandalwood sticks, frankincense resin from Oman, a set of backflow cones; men's trail shoes in size 44, road shoes in size 42, black women's road shoes in size 38. I wrote the openings and the facts from the stored pages of 2026-10-17. All 9 were in stock and under their budgets.
+
+### eval-search on the new targets (2026-10-17, no model)
+
+First run, 9 new targets: before 7 of 9, without filters 5 of 9, with filters 4 of 9 (in the first 8 product pages of one search_shop call). The word filters dropped products that the shop tags wrongly or not at all: the over-ear headphones with noise cancelling are tagged "On Ear" (place 148), the backflow cones have no item form (place 154). With word filters, such products were only in the unfiltered list at the end.
+
+Change: with word filters, the default order with only the price and number filters is a list of the first tier too (`crawl.result_lists`). One more search page for each call.
+
+Second run, all 21 targets (small-freezer-or-fridge was out of stock, so 20 count):
+
+| | before | without filters | with filters |
+|---|---|---|---|
+| 11 fridges | 5 | 7 | 7 |
+| 9 new targets | 6 | 6 | 5 |
+| all 20 | 11 | 13 | 12 |
+
+- The change helped the two worst cases (148 to 51, 154 to 37), but they are still out of the first 8.
+- The number and price filters help the fridges (narrow-cheap 39 to 6, dark-no-frost 13 to 2). The word filters do not help the new categories.
+- retro-red was in none of the three searches this time; amazon changed its results again. The noise is large, and 20 targets is a small sample.

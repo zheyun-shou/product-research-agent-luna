@@ -259,7 +259,7 @@ def test_filtered_lists_come_first_and_the_default_page_is_loaded_once(db, tmp_p
 
     def choose(groups):
         seen.append(groups)
-        return ["c:1"]
+        return ["c:1"], []
     report = crawl(db, AmazonSeAdapter(browser, tmp_path), "fridge", "kylskåp", on_problem=never_called,
                    filters=choose)
     # No stored filters yet: the default page gives them (the fixture has none), then the filtered list is read
@@ -291,7 +291,22 @@ def test_the_worker_orders_within_the_filtered_results_first(db, tmp_path):
         'data-asin="B0AAAAAAA3"', 'data-asin=""')
     browser.pages[search_url("kylskåp", 1, None, ["c:1"])] = [only_2]
     report = crawl(db, AmazonSeAdapter(browser, tmp_path), "fridge", "kylskåp", on_problem=never_called,
-                   filters=lambda groups: ["c:1"], max_details=1,
+                   filters=lambda groups: (["c:1"], []), max_details=1,
                    screen=lambda cands: sorted(cands, key=lambda c: c.source_id))  # the worker puts 1 first
     assert report.outcomes["B0AAAAAAA2"] == "read"
     assert [c.source_id for c in report.unread] == ["B0AAAAAAA1", "B0AAAAAAA3"]
+
+
+def test_with_word_filters_the_number_filters_alone_are_in_the_first_tier():
+    from scout.crawl import result_lists
+
+    def fetcher(sort, filters, name):
+        return lambda n: (sort, tuple(filters))
+    lists = result_lists(fetcher, ("review-rank",), ["p_36:-50000", "c:red"], ["c:red"])
+    assert [(r.name, r.first, r.fetch(1)) for r in lists] == [
+        ("default with filters", True, (None, ("p_36:-50000", "c:red"))),
+        ("review-rank with filters", True, ("review-rank", ("p_36:-50000", "c:red"))),
+        ("default with the number filters", True, (None, ("p_36:-50000",))),
+        ("default", False, (None, ()))]
+    only_words = result_lists(fetcher, (), ["c:red"], ["c:red"])
+    assert [(r.name, r.first) for r in only_words] == [("default with filters", True), ("default", True)]

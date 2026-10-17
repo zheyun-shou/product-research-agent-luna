@@ -18,7 +18,8 @@ from scout.sources.base import Candidate, FilterGroup, ProductRecord, RawPage, S
 OnProblem = Callable[[SessionStatus, str], bool]
 Enricher = Callable[[ProductRecord], "tuple[ProductRecord, bool]"]
 Screener = Callable[[list[Candidate]], list[Candidate]]
-FilterChooser = Callable[[list[FilterGroup]], list[str]]
+# filter groups -> (the price and number filters, the word filters)
+FilterChooser = Callable[[list[FilterGroup]], tuple[list[str], list[str]]]
 CardCheck = Callable[[Candidate], bool]
 TOP_K = 10  # the Threshold Algorithm stops when the best 10 candidates are known
 MAX_ATTEMPTS = 3
@@ -79,14 +80,23 @@ def fetch_checked(
 
 
 def result_lists(fetcher: Callable[[str | None, list[str], str], Callable[[int], Page | None]],
-                 sorts: tuple[str, ...], chosen: list[str]) -> list[ResultList]:
+                 sorts: tuple[str, ...], chosen: list[str], words: list[str] = ()) -> list[ResultList]:
     """The result lists of one search: the default order and the sorts, with the filters when there are some, and
-    then the default order without them. fetcher(sort, filters, name) gives the fetch of the pages of one list."""
+    then the default order without them. fetcher(sort, filters, name) gives the fetch of the pages of one list.
+    words: the word filters among the chosen ones. The shop tags products wrongly or not at all (over-ear headphones
+    tagged "On Ear", cones without a form), so the default order with only the price and number filters is in the
+    first tier too: a product without the tag can still come early."""
     orders = [None, *sorts]
     if not chosen:
         return [ResultList(s or "default", fetcher(s, [], s or "default")) for s in orders]
     lists = [ResultList(f"{s or 'default'} with filters", fetcher(s, chosen, f"{s or 'default'} with filters"))
              for s in orders]
+    safe = [f for f in chosen if f not in words]
+    if words:
+        name = "default with the number filters" if safe else "default"
+        lists.append(ResultList(name, fetcher(None, safe, name)))
+        if not safe:
+            return lists
     return lists + [ResultList("default", fetcher(None, [], "default"), first=False)]
 
 
@@ -154,14 +164,16 @@ def crawl(
         return fetch
 
     chosen: list[str] = []
+    words: list[str] = []
     if filters is not None and hasattr(adapter, "parse_filters"):
         groups = load_filters(conn, adapter.name, category)
         if not groups:  # the first search of the category: its page gives the filters
             fetcher(None, [], "default")(first_page)
             groups = load_filters(conn, adapter.name, category)
-        chosen = filters(groups)
+        safe, words = filters(groups)
+        chosen = safe + words
     report.filters = chosen
-    lists = result_lists(fetcher, sorts, chosen)
+    lists = result_lists(fetcher, sorts, chosen, words)
     found = threshold_search(lists, k=k, max_pages=max_pages, first_page=first_page)
     report.list_pages, report.stop, report.last_page = found.pages, found.stop, found.last_page
     if found.failed and len(found.failed) == len(lists):

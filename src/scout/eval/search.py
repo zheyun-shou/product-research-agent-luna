@@ -53,7 +53,7 @@ def search_target(target: Target, profile: CategoryProfile, fetch: Callable[[str
     fused = threshold_search(result_lists(fetcher, adapter.sorts, []), k=k, max_pages=1)
     words, unknown = word_filters(case.filters, groups())
     chosen = adapter.price_filter(budget) + number_filters(needs, profile, groups()) + words
-    new = threshold_search(result_lists(fetcher, adapter.sorts, chosen), k=k, max_pages=list_pages)
+    new = threshold_search(result_lists(fetcher, adapter.sorts, chosen, words), k=k, max_pages=list_pages)
     rows = {}
     for name, order, result, check in ((OLD, old, None, None), (FUSED, fused.order, fused, None),
                                        (NEW, new.order, new, lambda c: off_condition(c, needs, profile))):
