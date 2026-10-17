@@ -6,7 +6,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from scout.sources.base import Candidate, FilterGroup, ProductRecord
-from scout.text.chunks import Chunk, page_chunks, review_chunks
+from scout.text.chunks import Chunk, page_chunks, review_chunks, split_text
 
 
 @dataclass(frozen=True)
@@ -101,6 +101,31 @@ def save_page_text(conn: psycopg.Connection, listing_id: int, rec: ProductRecord
     ).fetchone()
     if row:  # this page is the newest, so its chunks replace the old ones
         save_chunks(conn, listing_id, page_chunks(rec.title or "", dict(row)), rec.fetched_at)
+
+
+def save_image_text(conn: psycopg.Connection, listing_id: int, title: str, url: str, text: str, fetched_at) -> None:
+    """The text of one product image as chunks (source "image", one ref for each image URL). It replaces the text
+    of the same image."""
+    conn.execute("DELETE FROM chunks WHERE listing_id = %s AND source = 'image' AND meta->>'url' = %s",
+                 (listing_id, url))
+    for i, part in enumerate(split_text(text), 1):
+        conn.execute(
+            """INSERT INTO chunks (listing_id, source, kind, ref, text, meta, fetched_at)
+               VALUES (%s, 'image', 'image', %s, %s, %s, %s)""",
+            (listing_id, f"image {url} {i}", f"Product: {title}\nText in a product image:\n{part}",
+             Jsonb({"url": url, "reader": "paddleocr_vl"}), fetched_at),
+        )
+    conn.commit()
+
+
+def image_texts(conn: psycopg.Connection, listing_id: int) -> dict[str, str]:
+    """The stored text of each read image of a listing, without the first two lines (the product and the label)."""
+    rows = conn.execute("""SELECT meta->>'url' AS url, text FROM chunks WHERE listing_id = %s AND source = 'image'
+                           ORDER BY id""", (listing_id,)).fetchall()
+    found: dict[str, list[str]] = {}
+    for row in rows:
+        found.setdefault(row["url"], []).append(row["text"].split("\n", 2)[-1])
+    return {url: "\n".join(parts) for url, parts in found.items()}
 
 
 def save_chunks(conn: psycopg.Connection, listing_id: int, chunks: list[Chunk], fetched_at,

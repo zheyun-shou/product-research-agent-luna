@@ -126,3 +126,15 @@ def test_the_newest_page_makes_the_chunks(db):
     save_record(db, record(when=NOW - timedelta(days=1)).model_copy(update={"description": "old"}), "fridge")
     again = db.execute("SELECT count(*) AS n FROM chunks WHERE text LIKE '%%old%%'").fetchone()["n"]
     assert again == 0 and count(db, "chunks") == len(rows)
+
+
+def test_the_text_of_an_image_is_kept_once_for_each_image(db):
+    from scout.db.store import image_texts, save_image_text
+    listing_id = save_record(db, record(), "fridge").listing_id
+    save_image_text(db, listing_id, "Candy CCG1S", "https://m.media-amazon.com/a.jpg", "old text", NOW)
+    save_image_text(db, listing_id, "Candy CCG1S", "https://m.media-amazon.com/a.jpg", "203 kWh/annum\n41 dB", NOW)
+    save_image_text(db, listing_id, "Candy CCG1S", "https://m.media-amazon.com/b.jpg", "179.4 cm", NOW)
+    assert image_texts(db, listing_id) == {"https://m.media-amazon.com/a.jpg": "203 kWh/annum\n41 dB",
+                                           "https://m.media-amazon.com/b.jpg": "179.4 cm"}
+    row = db.execute("SELECT text, kind FROM chunks WHERE source = 'image' ORDER BY id LIMIT 1").fetchone()
+    assert row["kind"] == "image" and row["text"].startswith("Product: Candy CCG1S\nText in a product image:\n")
