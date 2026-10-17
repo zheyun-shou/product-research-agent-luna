@@ -139,3 +139,9 @@ The review found 10 problems. All are fixed.
 - The parser took the first `"dimensions"` list of the page. It now takes the nearest list of the same length as the variants.
 - Sizes with a fraction (38 2/3, kept as 38.67) now meet a condition of 38.6667.
 - `save_record` and `save_variant` share one variant upsert.
+
+### Images stopped (2026-10-17)
+
+I decided to stop the image work for now: it is not necessary enough. Tasks 7 and 8 stop here. The module `extract/images.py` and the storage of image text stay, tested but not used. `read_images` still sends the images to the worker when the chat model asks.
+
+- Task 9. 9 new targets in `eval/hidden/targets.yaml`, 3 in each new category: over-ear headphones with noise cancelling, sport headphones with solar charging, headphones for a child with a volume limit; Japanese sandalwood sticks, frankincense resin from Oman, a set of backflow cones; men's trail shoes in size 44, road shoes in size 42, black women's road shoes in size 38. I wrote the openings and the facts from the stored pages of 2026-10-17. All 9 were in stock and under their budgets.

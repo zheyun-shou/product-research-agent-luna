@@ -3,7 +3,7 @@
 # name, brand or model. The facts are true of the product; a few other products can also meet them. hidden_words
 # are the brand and the model: Python stops the run when the shopper writes one.
 # Prices are those of the first week of October 2026; a budget leaves a margin of 10 to 25 percent.
-# Only the fridge category has a full profile now. Other categories need a profile first.
+# The first 12 targets are fridges. The last 9 (2026-10-17) are headphones, incense and running shoes.
 # search: the fixed search of `scout eval-search` (2026-10-16): Swedish words as the chat model writes them, the needs from
 # the facts, and the word filters that the facts ask for (my choice, as the chat model would choose them).
 
@@ -247,3 +247,169 @@
   search:
     words: kompressor kylbox bil
     budget: 2500
+
+# Targets of the other three categories (2026-10-17). I wrote the openings and the facts from the stored pages of
+# 2026-10-17, without the name, the brand or the model. Prices are those of 2026-10-17.
+
+- id: anc-over-ear
+  source_id: B08HMWZBXC  # 823 SEK
+  category: headphones
+  kind: over_ear
+  opening: 我想买一副头戴式降噪耳机，坐地铁和飞机用，预算1000克朗左右
+  facts:
+    - Over-ear headphones with active noise cancelling, for the metro and for flights.
+    - At least 40 hours of music with the noise cancelling on.
+    - It is good if they connect to the phone and the laptop at the same time.
+    - An app to change the sound is nice.
+    - The budget is 1000 SEK.
+  hidden_words: [Soundcore, Anker, Life Q30, Q30, A3028]
+  search:
+    words: over-ear hörlurar brusreducering
+    budget: 1000
+    filters: ["Headphones Form Factor: Over Ear", "Noise Control: Active Noise Cancellation"]
+
+- id: solar-sport
+  source_id: B0DL69JHYH  # 437 SEK
+  category: headphones
+  kind: sport
+  opening: Jag behöver hörlurar för löpning som tål regn och svett, och jag orkar inte ladda dem hela tiden. Max 550 kr.
+  facts:
+    - For running and the gym. They must sit still when you run.
+    - Water and sweat resistant, IP55 or better.
+    - You do not want to charge them often. A very long battery life, or charging in a smart way, is the main wish.
+    - A light that makes you visible in the dark is a plus.
+    - A headband over the head is fine, earbuds are not needed.
+    - The budget is 550 SEK.
+  hidden_words: [Philips, TAA6219, TAA6219BK, "6219"]
+  search:
+    words: sporthörlurar löpning
+    budget: 550
+    filters: ["Specific Uses: Fitness"]
+
+- id: kids-volume-limit
+  source_id: B0BNPXPJS4  # 295 SEK
+  category: headphones
+  kind: kids
+  opening: Headphones for my 6-year-old for the tablet on trips. They must limit the volume. Under 350 kr.
+  facts:
+    - For a child of 6, for a tablet in the car and on the train.
+    - A volume limit of 85 dB or less is a must.
+    - Over the ears, wireless, and a cable too for when the battery is empty.
+    - Lights on the headphones would make the child happy.
+    - At least 30 hours of battery.
+    - The budget is 350 SEK.
+  hidden_words: [iClever, BTH18]
+  search:
+    words: hörlurar barn
+    budget: 350
+    filters: ["Age Range: Kid", "Headphones Form Factor: Over Ear"]
+
+- id: japanese-sandalwood
+  source_id: B00IZLIIE6  # 150 SEK
+  category: incense
+  kind: sticks
+  opening: 想买日本产的檀香线香，量大一点的，200克朗以内
+  facts:
+    - Japanese incense sticks, made in Japan.
+    - Sandalwood scent.
+    - Many sticks in one box, about 200.
+    - One stick burns for about 20 to 30 minutes.
+    - A small holder in the box is good.
+    - The budget is 200 SEK.
+  hidden_words: [Nippon Kodo, Morning Star, "171"]
+  search:
+    words: japansk rökelse sandelträ
+    budget: 200
+    filters: ["Item Form: Stick"]
+
+- id: oman-frankincense
+  source_id: B0CBQQ7WPH  # 130 SEK
+  category: incense
+  kind: resin
+  opening: I want real frankincense resin from Oman to burn on charcoal. Budget 160 kr.
+  facts:
+    - Frankincense resin (Boswellia sacra) from Oman, not sticks.
+    - To burn on charcoal.
+    - About 50 grams.
+    - Natural, pure resin.
+    - The budget is 160 SEK.
+  hidden_words: [Incensate, Incensera, W18]
+  search:
+    words: rökelse harts oman
+    budget: 160
+
+- id: backflow-cone-set
+  source_id: B0FC5RVDWN  # 120 SEK
+  category: incense
+  kind: backflow_cones
+  opening: Jag vill prova backflow-rökelse med flera dofter, gärna med en hållare. Högst 150 kr.
+  facts:
+    - Backflow cones, where the smoke flows down.
+    - Several different scents in one set, for example rose, jasmine and sandalwood.
+    - More than 100 cones.
+    - A holder in the set is a plus.
+    - The budget is 150 SEK.
+  hidden_words: [AUAUY, Lairi]
+  search:
+    words: backflow rökelsekoner
+    budget: 150
+    filters: ["Item Form: Cone"]
+
+- id: trail-men-44
+  source_id: B0CYVJW373  # 608 SEK, size 44 EU in this colour
+  category: running_shoes
+  kind: trail
+  opening: Trail running shoes for forest paths, men's size 44. Up to 750 kr.
+  facts:
+    - Trail running shoes for forest and gravel paths.
+    - Men's shoes, size 44 EU.
+    - Laces.
+    - A green or olive colour is nice, but not a must.
+    - The budget is 750 SEK.
+  hidden_words: [adidas, Terrex, Tracefinder, NJZ71]
+  search:
+    words: trailskor herr
+    budget: 750
+    conditions:
+      - {attribute: size, op: ">=", value: 44}
+      - {attribute: size, op: "<=", value: 44}
+    filters: ["Gender: Men"]
+
+- id: road-unisex-42
+  source_id: B0F3338JFM  # 410 SEK
+  category: running_shoes
+  kind: road
+  opening: 我刚开始跑步，一周两三次，在马路上跑，想要一双便宜的跑鞋，42码，500克朗以内
+  facts:
+    - Road running, two or three times a week. You are a beginner.
+    - Size 42 EU.
+    - Grey or silver is nice.
+    - Not waterproof is fine.
+    - The budget is 500 SEK.
+  hidden_words: [adidas, Response Runner, OSH82, KJ1734]
+  search:
+    words: löparskor
+    budget: 500
+    conditions:
+      - {attribute: size, op: ">=", value: 42}
+      - {attribute: size, op: "<=", value: 42}
+
+- id: road-women-38
+  source_id: B0CYTB7TXW  # 519 SEK, size 38 EU in black
+  category: running_shoes
+  kind: road
+  opening: Jag söker svarta löparskor för dam i storlek 38, för asfalt. Budget 650 kr.
+  facts:
+    - Women's running shoes for asphalt.
+    - Size 38 EU.
+    - All black.
+    - Light and comfortable for runs of 5 to 10 km.
+    - The budget is 650 SEK.
+  hidden_words: [adidas, Duramo, NKL68]
+  search:
+    words: löparskor dam
+    budget: 650
+    conditions:
+      - {attribute: size, op: ">=", value: 38}
+      - {attribute: size, op: "<=", value: 38}
+    filters: ["Gender: Women", "Color: Black"]
