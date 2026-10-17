@@ -297,16 +297,18 @@ def test_the_worker_orders_within_the_filtered_results_first(db, tmp_path):
     assert [c.source_id for c in report.unread] == ["B0AAAAAAA1", "B0AAAAAAA3"]
 
 
-def test_with_word_filters_the_number_filters_alone_are_in_the_first_tier():
+def test_word_filters_add_one_list_and_do_not_change_the_sorts():
     from scout.crawl import result_lists
 
     def fetcher(sort, filters, name):
         return lambda n: (sort, tuple(filters))
     lists = result_lists(fetcher, ("review-rank",), ["p_36:-50000", "c:red"], ["c:red"])
     assert [(r.name, r.first, r.fetch(1)) for r in lists] == [
-        ("default with filters", True, (None, ("p_36:-50000", "c:red"))),
-        ("review-rank with filters", True, ("review-rank", ("p_36:-50000", "c:red"))),
-        ("default with the number filters", True, (None, ("p_36:-50000",))),
+        ("default with filters", True, (None, ("p_36:-50000",))),
+        ("review-rank with filters", True, ("review-rank", ("p_36:-50000",))),
+        ("default with the word filters", True, (None, ("p_36:-50000", "c:red"))),
         ("default", False, (None, ()))]
-    only_words = result_lists(fetcher, (), ["c:red"], ["c:red"])
-    assert [(r.name, r.first) for r in only_words] == [("default with filters", True), ("default", True)]
+    only_words = result_lists(fetcher, ("review-rank",), ["c:red"], ["c:red"])
+    assert [(r.name, r.first, r.fetch(1)) for r in only_words] == [
+        ("default", True, (None, ())), ("review-rank", True, ("review-rank", ())),
+        ("default with the word filters", True, (None, ("c:red",)))]

@@ -81,23 +81,21 @@ def fetch_checked(
 
 def result_lists(fetcher: Callable[[str | None, list[str], str], Callable[[int], Page | None]],
                  sorts: tuple[str, ...], chosen: list[str], words: list[str] = ()) -> list[ResultList]:
-    """The result lists of one search: the default order and the sorts, with the filters when there are some, and
-    then the default order without them. fetcher(sort, filters, name) gives the fetch of the pages of one list.
-    words: the word filters among the chosen ones. The shop tags products wrongly or not at all (over-ear headphones
-    tagged "On Ear", cones without a form), so the default order with only the price and number filters is in the
-    first tier too: a product without the tag can still come early."""
+    """The result lists of one search. fetcher(sort, filters, name) gives the fetch of the pages of one list.
+    The default order and the sorts have the price and number filters. words: the word filters among the chosen
+    ones. The shop tags products wrongly or not at all (over-ear headphones tagged "On Ear", cones without a form),
+    so the word filters do not change the sorts: they add one list, the default order with all filters. When there
+    are price or number filters, the default order without filters comes last."""
     orders = [None, *sorts]
-    if not chosen:
-        return [ResultList(s or "default", fetcher(s, [], s or "default")) for s in orders]
-    lists = [ResultList(f"{s or 'default'} with filters", fetcher(s, chosen, f"{s or 'default'} with filters"))
-             for s in orders]
     safe = [f for f in chosen if f not in words]
+    suffix = " with filters" if safe else ""
+    lists = [ResultList(f"{s or 'default'}{suffix}", fetcher(s, safe, f"{s or 'default'}{suffix}")) for s in orders]
     if words:
-        name = "default with the number filters" if safe else "default"
-        lists.append(ResultList(name, fetcher(None, safe, name)))
-        if not safe:
-            return lists
-    return lists + [ResultList("default", fetcher(None, [], "default"), first=False)]
+        name = "default with the word filters"
+        lists.append(ResultList(name, fetcher(None, chosen, name)))
+    if safe:
+        lists.append(ResultList("default", fetcher(None, [], "default"), first=False))
+    return lists
 
 
 def keep_cards(cards: list[Candidate], budget: Decimal | None, card_check: CardCheck | None,
