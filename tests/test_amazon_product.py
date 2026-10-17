@@ -129,3 +129,14 @@ def test_description_reviews_and_images_without_the_reviewer_name():
     assert "Anna" not in str(rec.reviews)
     assert rec.images == ["https://m.media-amazon.com/images/I/big-1.jpg",
                           "https://m.media-amazon.com/images/S/aplus-1.jpg"]
+
+
+def test_the_variants_of_the_page_with_their_dimensions():
+    html = ('<span id="productTitle">X</span><script>var data = {"dimensions" : ["size_name","color_name"], '
+            '"dimensionValuesDisplayData" : {"B0AAAAAAA8":["38 EU","Black"],"B0AAAAAAA9":["38 2/3 EU","Black"]}};'
+            '</script>')
+    rec = parse_product_page(html, "https://www.amazon.se/dp/B0AAAAAAA8", NOW)
+    assert rec.options == {"B0AAAAAAA8": {"size_name": "38 EU", "color_name": "Black"},
+                           "B0AAAAAAA9": {"size_name": "38 2/3 EU", "color_name": "Black"}}
+    assert parse_product_page('<span id="productTitle">X</span>', "https://www.amazon.se/dp/B0AAAAAAA8",
+                              NOW).options == {}

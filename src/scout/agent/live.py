@@ -9,14 +9,15 @@ from scout.db.store import (add_eliminations, attribute_searches, complete_revie
                             save_attribute)
 from scout.extract.ondemand import KINDS, Store, fill_missing
 from scout.extract.page import enrich_record
+from scout.extract.variants import size_page
 from scout.extract.screen import screen_titles
-from scout.picks.pipeline import make_picks, refetcher, shortlist
+from scout.picks.pipeline import make_picks, refetcher, shortlist, variant_refetcher
 from scout.picks.opinions import pick_opinions
 from scout.picks.rank import load_cards_by_ids
 from scout.profiles import load_profile, profile_names, save_draft
 from scout.reviews import FRESH, read_reviews
 from scout.sources.amazon_se.adapter import AmazonSeAdapter
-from scout.sources.amazon_se.urls import SOURCE
+from scout.sources.amazon_se.urls import SOURCE, asin_from_url
 from scout.sources.browser import BrowserSession
 from scout.text.embed import BgeM3Embedder
 from scout.text.retrieve import Scope, hybrid_search
@@ -294,7 +295,14 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
         for card in cards:
             cat = category[card.product_id]
             other_shop = site_of(card.url) != "amazon.se"  # a pick from read_page
-            if other_shop:
+            # A condition on a variant (the shoe size): the page of that size has its own price and stock
+            size = None if other_shop else size_page(card.attributes, needs, load_profile(cat))
+            if size == ("", ""):
+                problems[card.listing_id] = "the shop has no page for the size of the needs"
+                continue
+            if size and size[1] != asin_from_url(card.url):
+                rec = variant_refetcher(browser.adapter(), conn, on_problem)(card.listing_id, size[1])
+            elif other_shop:
                 # The worker reads only a missing price or stock, not the attributes again
                 core = load_profile(cat).model_copy(update={"attributes": []})
                 rec = refetch_shop_page(conn, fetcher.fetch, card.url, cat, lambda r: enrich_record(r, core, llm))
@@ -305,7 +313,7 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
             if rec is None:
                 problems[card.listing_id] = "the page did not load now, so the price and the stock are not known"
             elif rec.in_stock is False:
-                problems[card.listing_id] = "sold out now"
+                problems[card.listing_id] = f"size {size[0]} sold out now" if size else "sold out now"
             elif budget is not None and rec.price is None:
                 problems[card.listing_id] = "shows no price now, so the budget cannot be checked"
             elif budget is not None and other_shop and rec.currency != "SEK":  # a shop in another country

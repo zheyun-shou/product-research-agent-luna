@@ -326,8 +326,9 @@ class LoopDeps:
 def candidate_text(card: Card) -> str:
     attrs = ", ".join(f"{k}={attribute_text(v)}" for k, v in card.attributes.items())
     stock = {True: "yes", False: "no", None: "not known"}[card.in_stock]
-    return (f"id {card.listing_id}: {card.title} | price={card.price} {card.currency or ''} | in_stock={stock} | "
-            f"rating={card.rating} | review_count={card.review_count} | {attrs or 'no attributes'}")
+    variant = f" | variant={card.variant}" if card.variant else ""
+    return (f"id {card.listing_id}: {card.title}{variant} | price={card.price} {card.currency or ''} | "
+            f"in_stock={stock} | rating={card.rating} | review_count={card.review_count} | {attrs or 'no attributes'}")
 
 
 def ranked_text(r: Ranked) -> str:

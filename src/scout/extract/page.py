@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel
 
+from scout.extract.variants import variant_attributes
 from scout.extract.verify import normalise, verify_raw
 from scout.profiles import CategoryProfile, ProfileAttribute
 from scout.sources.amazon_se.numbers import NUMBER, parse_price, to_decimal
@@ -102,8 +103,11 @@ def shows_value(attr: ProfileAttribute, value, raw: str) -> bool:
 
 
 def enrich_record(rec: ProductRecord, profile: CategoryProfile, llm) -> tuple[ProductRecord, bool]:
+    if variants := variant_attributes(rec, profile):
+        rec = rec.model_copy(update={"attributes": {**rec.attributes, **variants}})
     core = [name for name in CORE if getattr(rec, name) is None]
-    attrs = [attr for attr in profile.attributes if attr.name not in rec.attributes]
+    # A variant attribute (the sizes) comes from the variants of the page, not from its text
+    attrs = [attr for attr in profile.attributes if attr.name not in rec.attributes and not attr.variant]
     if not rec.text or (not core and not attrs):
         return rec, False
     result = llm.structured("worker", SYSTEM, build_prompt(rec, core, attrs), PageExtraction)

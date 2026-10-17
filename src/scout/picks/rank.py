@@ -14,10 +14,12 @@ SIZES = ("height", "width", "depth")
 
 CARDS_SQL = """
 SELECT l.id AS listing_id, p.id AS product_id, COALESCE(l.title, p.name) AS title, p.brand, p.model, l.url,
-       v.price, v.currency, v.in_stock, l.rating, l.review_count, p.attributes, l.fetched_at
+       v.price, v.currency, v.in_stock, v.label AS variant, l.rating, l.review_count, p.attributes, l.fetched_at
 FROM listings l
 JOIN products p ON p.id = l.product_id
-JOIN variants v ON v.listing_id = l.id
+-- The newest price and stock of the listing: the page itself, or the page of the size of the shopper (variants.py)
+JOIN LATERAL (SELECT price, currency, in_stock, label FROM variants WHERE listing_id = l.id
+              ORDER BY updated_at DESC LIMIT 1) v ON true
 WHERE p.category = %(category)s
   AND v.in_stock IS DISTINCT FROM false
   AND (%(budget)s::numeric IS NULL OR (v.price IS NOT NULL AND v.price <= %(budget)s::numeric))
@@ -43,6 +45,7 @@ class Card:
     fetched_at: datetime
     score: float = 0.0
     missing: list[str] = field(default_factory=list)
+    variant: str = ""  # the colour and the size of the price, e.g. "Core Black / 38 EU"
 
 
 @dataclass(frozen=True)
@@ -71,6 +74,11 @@ def apply_conditions(cards: list[Card], conditions: list[Condition]) -> tuple[li
         missing, passes = [], True
         for cond in conditions:
             entry = card.attributes.get(cond.attribute) or {}
+            if "values" in entry:  # variants, for example the sizes: one of them must be inside the condition
+                if not any(v <= cond.value if cond.op == "<=" else v >= cond.value for v in entry["values"]):
+                    passes = False
+                    break
+                continue
             if entry.get("value") is None:
                 missing.append(cond.attribute)
                 continue
@@ -107,7 +115,8 @@ def rank(cards: list[Card]) -> list[Card]:
 
 CARDS_BY_ID_SQL = """
 SELECT DISTINCT ON (l.id) l.id AS listing_id, p.id AS product_id, COALESCE(l.title, p.name) AS title, p.brand,
-       p.model, l.url, v.price, v.currency, v.in_stock, l.rating, l.review_count, p.attributes, l.fetched_at
+       p.model, l.url, v.price, v.currency, v.in_stock, v.label AS variant, l.rating, l.review_count, p.attributes,
+       l.fetched_at
 FROM listings l
 JOIN products p ON p.id = l.product_id
 JOIN variants v ON v.listing_id = l.id

@@ -5,7 +5,7 @@ from typing import Callable, Collection, Sequence
 import psycopg
 
 from scout.crawl import OnProblem, fetch_checked
-from scout.db.store import save_record
+from scout.db.store import save_record, save_variant
 from scout.extract.doubt import check_sizes
 from scout.extract.screen import screen_titles
 from scout.llm.client import LLMOutputError, LLMUnavailable
@@ -122,6 +122,21 @@ def make_picks(short: Shortlist, needs: Needs, k: int, refetch: Refetch, llm, la
             notes.append(f"No summaries: {exc}")
     notes += [card_notes[c.listing_id] for c in chosen if c.listing_id in card_notes]
     return PicksResult(chosen, texts, errors, notes, short.dropped, needs.text(), card_notes)
+
+
+def variant_refetcher(adapter, conn: psycopg.Connection,
+                      on_problem: OnProblem) -> Callable[[int, str], ProductRecord | None]:
+    """Open the page of one variant (for example one shoe size) and store its price and stock as a variant of the
+    listing."""
+    def refetch(listing_id: int, product_id: str) -> ProductRecord | None:
+        page = fetch_checked(adapter, conn, adapter.product_url(product_id), on_problem)
+        if page is None:
+            return None
+        rec = adapter.parse(page)
+        save_variant(conn, listing_id, rec)
+        return rec
+
+    return refetch
 
 
 def refetcher(adapter, conn: psycopg.Connection, category: str, on_problem: OnProblem) -> Refetch:

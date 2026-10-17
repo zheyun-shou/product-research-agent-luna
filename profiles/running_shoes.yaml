@@ -1,0 +1,49 @@
+category: running_shoes
+display_name: Running shoes
+search_terms_sv: löparskor
+kinds:
+  - name: road
+    label: Running shoes for roads, paths and the treadmill
+    search_terms_sv: löparskor
+  - name: trail
+    label: Trail running shoes for forest and mountain paths
+    search_terms_sv: trailskor
+attributes:
+  - name: size
+    label: Shoe size (EU)
+    type: number
+    unit: EU
+    kind: hard
+    variant: size_name
+  - name: weight
+    label: Weight of one shoe
+    type: number
+    unit: g
+    kind: soft
+  - name: drop
+    label: Heel-to-toe drop
+    type: number
+    unit: mm
+    kind: soft
+  - name: cushioning
+    label: Cushioning
+    type: text
+    kind: soft
+  - name: waterproof
+    label: Waterproof (for example Gore-Tex)
+    type: boolean
+    kind: soft
+  - name: wide_fit
+    label: Wide fit available
+    type: boolean
+    kind: soft
+questions_for_user:
+  - What is your shoe size in EU, and is the shoe for women, men or children?
+  - Where do you run? Roads, a treadmill, or forest and mountain paths?
+  - How far and how often do you run?
+  - Do you want a lot of cushioning, or a light and fast shoe?
+  - What is your budget?
+complaint_types: [size runs small or large, too narrow, sole wears fast, heel blisters, poor grip in the wet, upper tears, not waterproof as said]
+sources:
+  products: [amazon_se]
+  reviews: [amazon_se_reviews]

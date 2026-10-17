@@ -1,4 +1,5 @@
 """Read amazon.se product pages with hand-written selectors."""
+import json
 import re
 from datetime import datetime
 from decimal import Decimal
@@ -37,6 +38,9 @@ SIZE_PART = re.compile(r"(\d[\d.,]*)\s*([DBH])")
 SIZE_NAMES = {"H": "height", "B": "width", "D": "depth"}
 SIZE_UNITS = {"millimeter": "0.1", "mm": "0.1", "centimeter": "1", "cm": "1", "meter": "100", "m": "100"}
 _MARKS = dict.fromkeys(map(ord, "\u200e\u200f"), None)
+# The variants in the script data of the page, {"B0CYTH7V2D": ["38 EU", "Core Black"], ...}, and their dimensions
+_VARIANT_VALUES = re.compile(r'"dimensionValuesDisplayData"\s*:\s*(\{[^{}]*\})')
+_VARIANT_DIMENSIONS = re.compile(r'"dimensions"\s*:\s*(\[[^\[\]]*\])')
 
 
 def parse_product_page(html: str, url: str, fetched_at: datetime) -> ProductRecord:
@@ -73,7 +77,20 @@ def parse_product_page(html: str, url: str, fetched_at: datetime) -> ProductReco
         description=_description(soup),
         reviews=_reviews(soup),
         images=_images(html, soup),
+        options=_options(html),
     )
+
+
+def _options(html: str) -> dict[str, dict[str, str]]:
+    values, dimensions = _VARIANT_VALUES.search(html), _VARIANT_DIMENSIONS.search(html)
+    if not values or not dimensions:
+        return {}
+    try:
+        values, dimensions = json.loads(values[1]), json.loads(dimensions[1])
+    except ValueError:
+        return {}
+    return {asin: dict(zip(dimensions, parts)) for asin, parts in values.items()
+            if isinstance(parts, list) and len(parts) == len(dimensions)}
 
 
 def _text(el: Tag | None) -> str:

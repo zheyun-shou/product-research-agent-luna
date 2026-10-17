@@ -50,3 +50,12 @@ def test_rank_keeps_one_card_per_product():
     a, b, c = card(1, 4.0, 10), card(2, 4.6, 300), card(3, 4.5, 200)
     b.product_id = 1
     assert [x.listing_id for x in rank([a, b, c])] == [2, 3]
+
+
+def test_a_variant_condition_passes_when_one_size_is_inside_it():
+    sizes = card(1)
+    sizes.attributes = {"size": {"value": "38 EU, 39 1/3 EU", "values": [38.0, 39.33]}}
+    other = card(2)
+    other.attributes = {"size": {"value": "42 EU", "values": [42.0]}}
+    kept, dropped = apply_conditions([sizes, other], [Condition("size", ">=", 39), Condition("size", "<=", 40)])
+    assert [c.listing_id for c in kept] == [1] and dropped == 1 and kept[0].missing == []

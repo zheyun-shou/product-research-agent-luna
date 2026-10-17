@@ -7,8 +7,8 @@ from scout.sources.amazon_se.check import check_page
 from scout.sources.amazon_se.product import parse_product_page
 from scout.sources.amazon_se.reviews import parse_review_page
 from scout.sources.amazon_se.search import has_next_page, parse_filters, parse_search_page
-from scout.sources.amazon_se.urls import (BASE_URL, SOURCE, page_kind, price_filter, reviews_url, search_url,
-                                         snapshot_key)
+from scout.sources.amazon_se.urls import (BASE_URL, SOURCE, page_kind, price_filter, product_url, reviews_url,
+                                         search_url, snapshot_key)
 from scout.sources.base import Candidate, FilterGroup, ProductRecord, RawPage, SessionStatus
 from scout.sources.snapshots import save_html
 
@@ -36,6 +36,9 @@ class AmazonSeAdapter:
 
     def search_url(self, query: str, page: int = 1, sort: str | None = None, filters: list[str] = ()) -> str:
         return search_url(query, page, sort, filters)
+
+    def product_url(self, asin: str) -> str:
+        return product_url(asin)
 
     def reviews_url(self, asin: str, star: str, sort: str = "top") -> str:
         return reviews_url(asin, star, sort)

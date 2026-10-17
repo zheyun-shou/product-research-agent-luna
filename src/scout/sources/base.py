@@ -76,6 +76,9 @@ class ProductRecord(BaseModel):
     description: str = ""  # the product description and the A+ text of the seller
     reviews: list[dict] = Field(default_factory=list)  # title, rating, date, verified, text; never the author
     images: list[str] = Field(default_factory=list)  # image URLs: the product images, then the A+ images
+    # The variants of the page: product id of each variant -> {dimension: value}, e.g. {"size_name": "38 EU",
+    # "color_name": "Core Black"}. The page of each variant has its own price and stock.
+    options: dict[str, dict[str, str]] = Field(default_factory=dict)
     attributes: dict[str, dict] = Field(default_factory=dict)
     llm_fields: list[str] = Field(default_factory=list)
 

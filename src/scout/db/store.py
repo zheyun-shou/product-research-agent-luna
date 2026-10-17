@@ -16,6 +16,25 @@ class SavedIds:
     variant_id: int
 
 
+def save_variant(conn: psycopg.Connection, listing_id: int, rec: ProductRecord) -> None:
+    """The price and the stock of one variant page (for example one shoe size) as a variant of the listing. It is
+    the newest variant, so the cards of the listing show it."""
+    variant_id = conn.execute(
+        """INSERT INTO variants (listing_id, variant_key, label, price, currency, in_stock, updated_at)
+           VALUES (%s, %s, %s, %s, %s, %s, %s)
+           ON CONFLICT (listing_id, variant_key) DO UPDATE SET
+               label = EXCLUDED.label, price = EXCLUDED.price, currency = EXCLUDED.currency,
+               in_stock = EXCLUDED.in_stock, updated_at = EXCLUDED.updated_at
+           RETURNING id""",
+        (listing_id, rec.source_id, rec.variant_label, rec.price, rec.currency, rec.in_stock, rec.fetched_at),
+    ).fetchone()["id"]
+    conn.execute(
+        "INSERT INTO price_history (variant_id, price, currency, in_stock, fetched_at) VALUES (%s, %s, %s, %s, %s)",
+        (variant_id, rec.price, rec.currency, rec.in_stock, rec.fetched_at),
+    )
+    conn.commit()
+
+
 def save_record(conn: psycopg.Connection, rec: ProductRecord, category: str) -> SavedIds:
     try:
         listing = conn.execute(
