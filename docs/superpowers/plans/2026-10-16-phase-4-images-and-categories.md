@@ -163,3 +163,7 @@ Second run, all 21 targets (small-freezer-or-fridge was out of stock, so 20 coun
 - The change helped the two worst cases (148 to 51, 154 to 37), but they are still out of the first 8.
 - The number and price filters help the fridges (narrow-cheap 39 to 6, dark-no-frost 13 to 2). The word filters do not help the new categories.
 - retro-red was in none of the three searches this time; amazon changed its results again. The noise is large, and 20 targets is a small sample.
+
+Second change: the word filters do not change the sorts. The default order and the sorts have only the price and number filters. The word filters add one list, the default order with all filters. The unfiltered default order comes last when there are price or number filters.
+
+Caution: I changed the search after I saw the results of these 9 targets, and I measure the change on the same 9. Thus a better number on them is too optimistic. Before a number of the search goes into my CV, I must check it on new targets that I did not use to tune the search.
