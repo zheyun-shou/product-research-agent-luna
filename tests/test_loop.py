@@ -448,3 +448,24 @@ def test_without_save_draft_a_new_category_is_refused():
     llm = FakeLLM([[UpdateNeeds(category="headphones")], "Sorry."])
     run(build_agent_graph(Shop().deps(llm), InMemorySaver()), "Jag vill ha hörlurar")
     assert "'headphones' is not a category. Use one of: fridge." in llm.requests[1][1]
+
+
+def test_update_profile_adds_an_attribute_and_saves_a_copy():
+    from scout.agent.loop import NewAttribute, UpdateProfile
+    shop, saved = Shop(), {}
+    add = UpdateProfile(add=[NewAttribute(name="max_weight", label="Weight", type="number", unit="kg", kind="hard")],
+                        remove=["noise"], soft=["depth"])
+    bad = UpdateProfile(remove=["height"], hard=["no_frost"], add=[NewAttribute(name="Colour", label="Colour",
+                                                                                 type="text", kind="hard")])
+    llm = FakeLLM([[NEEDS], [bad], [add], "Done."])
+    deps = shop.deps(llm)
+    deps.load_profile = lambda name: saved.get(name) or FRIDGE
+    deps.save_draft = lambda profile: saved.update({profile.category: profile})
+    run(build_agent_graph(deps, InMemorySaver()), "A fridge, at most 180 cm high, and the weight matters")
+    refused = llm.requests[2][1]
+    assert "height is a condition of the needs" in refused and "no_frost is not a number, so it cannot be hard" in refused
+    assert "Colour: use lowercase" in refused and "Colour is not a number, so it cannot be hard" in refused
+    profile = saved["fridge"]
+    assert profile.edited and profile.attribute("noise") is None and profile.attribute("depth").kind == "soft"
+    assert profile.attribute("max_weight").unit == "kg"
+    assert "saved: Profile:" in llm.requests[3][1] and FRIDGE.attribute("noise") is not None

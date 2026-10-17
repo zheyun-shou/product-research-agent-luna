@@ -46,6 +46,7 @@ class CategoryProfile(BaseModel):
     search_terms_sv: str | None = None
     kinds: list[ProductKind] = Field(default_factory=list)
     draft: bool = False  # drafted by the chat model, not checked by a person
+    edited: bool = False  # changed in a conversation (update_profile); the preset file in Git stays the same
 
     @model_validator(mode="after")
     def _unique_names(self) -> "CategoryProfile":
@@ -62,7 +63,8 @@ class CategoryProfile(BaseModel):
 
 
 def load_profile(category: str, profiles_dir: Path = PROFILES_DIR, drafts_dir: Path = DRAFTS_DIR) -> CategoryProfile:
-    for folder in (profiles_dir, drafts_dir):
+    # A changed copy of a preset (update_profile) is in the folder of the drafts, and it comes first
+    for folder in (drafts_dir, profiles_dir):
         path = folder / f"{category}.yaml"
         if path.exists():
             return CategoryProfile.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))

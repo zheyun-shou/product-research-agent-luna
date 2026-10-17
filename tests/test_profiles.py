@@ -61,3 +61,13 @@ def test_each_preset_has_kinds_with_search_terms_and_units_for_numbers(name):
     assert profile.kinds and all(k.search_terms_sv for k in profile.kinds)
     assert all(a.unit for a in profile.attributes if a.type == "number")
     assert profile.questions_for_user and profile.complaint_types
+
+
+def test_a_changed_copy_of_a_preset_comes_first(tmp_path):
+    fixed, drafts = tmp_path / "profiles", tmp_path / "drafts"
+    fixed.mkdir()
+    (fixed / "fridge.yaml").write_text((Path(__file__).parents[1] / "profiles" / "fridge.yaml").read_text(
+        encoding="utf-8"), encoding="utf-8")
+    edited = load_profile("fridge", fixed, drafts).model_copy(update={"edited": True, "attributes": []})
+    save_draft(edited, drafts)
+    assert load_profile("fridge", fixed, drafts).edited and profile_names(fixed, drafts) == ["fridge"]

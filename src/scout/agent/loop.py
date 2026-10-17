@@ -3,6 +3,7 @@ tools, keeps the fetching polite, and checks the floors and the live price befor
 the answers are graded in the evaluation (scout grade)."""
 import itertools
 import json
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Literal
@@ -18,7 +19,7 @@ from scout.needs import ConditionSpec, Needs, check_needs
 from scout.picks.rank import Card
 from scout.picks.wishes import Ranked, rank_by_wishes
 from scout.picks.write import attribute_text
-from scout.profiles import CategoryProfile
+from scout.profiles import CategoryProfile, ProfileAttribute
 from scout.trace import NoTracer
 
 MAX_TOOL_CALLS = 25  # for each turn; set again from the hidden-target test (design section 10)
@@ -231,6 +232,25 @@ class Remember(BaseModel):
     all_categories: bool = Field(False, description="True when it is not only for the category of the needs")
 
 
+class NewAttribute(BaseModel):
+    name: str = Field(description="lowercase English with underscores, for example max_weight")
+    label: str
+    type: Literal["number", "enum", "boolean", "text"]
+    unit: str | None = Field(None, description="For a number")
+    values: list[str] | None = Field(None, description="For an enum")
+    kind: Literal["hard", "soft"] = Field(description="hard only for a number that a product must meet")
+
+
+class UpdateProfile(BaseModel):
+    """Change the profile of the category of the needs, when the shopper asks for a fact that it does not have
+    (only an attribute of the profile can be a condition), or says that a fact is a must or only a wish. Python
+    checks and saves the changed profile for later conversations too."""
+    add: list[NewAttribute] = Field(default_factory=list)
+    remove: list[str] = Field(default_factory=list, description="Attribute names")
+    hard: list[str] = Field(default_factory=list, description="Attribute names that become hard (numbers only)")
+    soft: list[str] = Field(default_factory=list, description="Attribute names that become soft")
+
+
 class Forget(BaseModel):
     """Delete memories of the shopper, when the shopper asks or says that one is not true now."""
     ids: list[int] = Field(description="Memory ids from the context")
@@ -265,7 +285,7 @@ class Reply(BaseModel):
 
 WORK_TOOLS = [UpdateNeeds, SearchShop, SearchWeb, ReadPage, SameProduct, FindProducts, ReadProduct, SearchText,
               SimilarProducts, ReadImages, FindMissing, ReadReviews, SummarizeReviews, RemoveProducts,
-              RestoreProducts, Remember, Forget, Think]
+              RestoreProducts, UpdateProfile, Remember, Forget, Think]
 FINAL_TOOLS = [ShowPicks, Reply]
 BY_NAME = {tool_name(t): t for t in WORK_TOOLS + FINAL_TOOLS}
 
@@ -543,6 +563,8 @@ def step_title(call: BaseModel) -> tuple[str, str]:
         return "needs", f"Bring back {_products(call.ids)}"
     if isinstance(call, Remember):
         return "needs", f"Remember a {call.kind}"
+    if isinstance(call, UpdateProfile):
+        return "needs", "Change the profile of the category"
     if isinstance(call, Forget):
         return "needs", f"Forget {len(call.ids)} memor{'y' if len(call.ids) == 1 else 'ies'}"
     if isinstance(call, Think):
@@ -843,6 +865,40 @@ class Toolbox:
         category = None if call.all_categories else self.needs.category
         memory_id = self.deps.remember(call.kind, call.text, category, self.thread)
         return f"kept as memory {memory_id} ({call.kind}, {category or 'all categories'})."
+
+    def update_profile(self, call: UpdateProfile) -> str:
+        profile = self.profile()
+        if profile is None:
+            return "record the category with update_needs first."
+        if self.deps.save_draft is None:
+            return "not available."
+        attrs = {a.name: a for a in profile.attributes}
+        used = {c.attribute for c in self.needs.conditions}
+        errors = [f"{n} is not an attribute of the profile" for n in [*call.remove, *call.hard, *call.soft]
+                  if n not in attrs]
+        errors += [f"{n} is a condition of the needs; change the needs first" for n in call.remove if n in used]
+        errors += [f"{a.name} exists already" for a in call.add if a.name in attrs]
+        errors += [f"{n} is not a number, so it cannot be hard" for n in call.hard
+                   if n in attrs and attrs[n].type != "number"]
+        for a in call.add:
+            if not re.fullmatch(r"[a-z][a-z0-9_]{1,40}", a.name):
+                errors.append(f"{a.name}: use lowercase English letters and underscores")
+            if a.type == "number" and not a.unit:
+                errors.append(f"{a.name} is a number, so it needs a unit")
+            if a.kind == "hard" and a.type != "number":
+                errors.append(f"{a.name} is not a number, so it cannot be hard")
+        if errors:
+            return "not recorded: " + "; ".join(errors)
+        try:
+            new = [ProfileAttribute(**a.model_dump()) for a in call.add]
+        except ValueError as exc:
+            return f"not recorded: {exc}"
+        changed = [a.model_copy(update={"kind": "hard" if a.name in call.hard else "soft" if a.name in call.soft
+                                        else a.kind})
+                   for a in profile.attributes if a.name not in call.remove]
+        profile = profile.model_copy(update={"attributes": changed + new, "edited": True})
+        self.deps.save_draft(profile)
+        return "saved: " + profile_text(profile)
 
     def forget(self, call: Forget) -> str:
         if self.deps.forget is None:

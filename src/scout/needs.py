@@ -79,7 +79,7 @@ def check_needs(needs: Needs, profile: CategoryProfile, said: set[Decimal] | Non
     for cond in needs.conditions:
         attr = profile.attribute(cond.attribute)
         if attr is None:
-            errors.append(f"'{cond.attribute}' is not an attribute in the profile")
+            errors.append(f"'{cond.attribute}' is not an attribute in the profile (update_profile can add it)")
         elif attr.type != "number":
             errors.append(f"'{cond.attribute}' is not a number attribute, so it cannot have a condition")
         elif said is not None and attr.kind == "hard" and not was_said(cond.value, said,
