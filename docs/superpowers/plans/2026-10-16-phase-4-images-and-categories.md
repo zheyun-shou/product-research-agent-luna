@@ -116,7 +116,7 @@ Only after the test of decision 5.
   - "löparskor barn" gave shoes for women, and "trailskor" mixes in hiking shoes. Thus there is no kind for children. The Gender filter of the shop (Boys, Girls) does this work.
   - A product page of amazon.se has the variants in its script data (`dimensionValuesDisplayData`): the product id of each size and colour. The parser keeps them in `ProductRecord.options`. On 3 saved shoe pages it read 169, 79 and 47 variants. The sizes of the colour of the page were the same as the size buttons that the page shows as available. The other buttons lead to other colours.
   - The size attribute is the list of sizes, in the colour of the page first. A size that only another colour has gets that colour in its name ("40 EU (only in Pink)"). A condition passes when one size is inside it.
-  - Before the picks, Python opens the page of the size of the shopper and stores its price and stock as a variant of the listing. A card shows the newest variant, so the pick shows the price and the stock of that size, and its colour and size (`variant=`).
+  - Before the picks, Python opens the page of the size of the shopper and checks its price and stock. It stores them as a variant of the listing. The card of the listing keeps the price and the stock of its own page, so the size of one shopper does not change the cards for the next one. The shown pick takes the price, the colour and size, and the link of the page of that size.
 - Task 5. `update_needs` with a category that has no profile drafts one (one call of the chat model), saves it to `data/profiles/` and records the needs in the new category. The result tells the chat model that the category is new and not checked by a person. The context marks a draft category with "(draft)".
   - The draft prompt asks for each size as its own number, a label as a shop filter names it, and title words for numbers. `check_draft` rejects a hard attribute that is not a number, because only numbers can be conditions. The draft of a dishwasher from 2026-10 had "dimensions" as one hard text.
   - A change of decision 4: there is no separate match step after the first search. Python already matches a number filter group by the label of the attribute ("Height", "Capacity"), so the draft prompt asks for such labels. The model cannot know the filter names or the variant names of a shop before a search, so Python removes `site_filter` and `variant` from a draft.
@@ -126,3 +126,16 @@ Only after the test of decision 5.
   - The size drawing (801 x 1500): 57.1 s. It made a table "Candy Size 179.4cm, Candy Diameter 54.5cm". The numbers are right, but "Size" and "Diameter" are not in the image, and it gave 54.5 cm once for two sizes.
   - A photo without text: 4.5 s, the text "0".
   - Thus it runs, but it is slow and it misses or changes the facts that matter. The module (`extract/images.py`) and the storage of image text as chunks are built and tested. The agent does not use them yet. I decide how to continue.
+
+### Code review of tasks 1 to 7 (2026-10-17)
+
+The review found 10 problems. All are fixed.
+
+- A size page that check_now stored became the price and the stock of the listing for all later searches. Now a card uses the variant of its own page, and only the shown pick uses the page of the size of the needs.
+- `update_profile` could save two attributes with the same name, and then the profile did not load in any later turn. The changed profile now goes through the checks of `CategoryProfile` before it is saved. Drafts and `update_profile` share one attribute check (`profiles.attribute_errors`), so `update_profile` also refuses `price`, `rating` and `review_count`.
+- A draft with the name of a preset hid the preset. Now only a copy marked `edited` comes before the preset.
+- `update_needs` drafted a profile for a typo or a near name ("fridges"). Now it asks "Did you mean fridge?". A draft keeps the name that the chat model asked for, so the next call finds it.
+- The image module lost all texts when one image did not open, could cut a thin last strip, and followed redirects to other hosts. All three are fixed.
+- The parser took the first `"dimensions"` list of the page. It now takes the nearest list of the same length as the variants.
+- Sizes with a fraction (38 2/3, kept as 38.67) now meet a condition of 38.6667.
+- `save_record` and `save_variant` share one variant upsert.

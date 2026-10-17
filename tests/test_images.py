@@ -22,6 +22,8 @@ def test_a_long_image_is_cut_with_an_overlap():
     assert len(segments(Picture(800, 1500))) == 1
     parts = segments(Picture(1000, 4000))
     assert [p.box for p in parts] == [(0, 0, 1000, 1600), (0, 1500, 1000, 3100), (0, 3000, 1000, 4000)]
+    # 500 x 1510: no strip of 10 pixels at the end
+    assert [p.box for p in segments(Picture(500, 1510))] == [(0, 0, 500, 800), (0, 750, 500, 1510)]
 
 
 def test_only_the_image_server_and_text_for_each_loaded_image():
@@ -30,11 +32,15 @@ def test_only_the_image_server_and_text_for_each_loaded_image():
 
     class Reader:
         def read(self, data):
+            if data == b"broken":
+                raise OSError("cannot identify image file")
             return {b"label": "Energy class E, 41 dB", b"photo": "0"}[data]
 
     def fetch(url):
         if url.endswith("gone.jpg"):
             raise httpx.HTTPError("404")
-        return b"label" if "label" in url else b"photo"
-    found = read_image_texts(["https://x/label.jpg", "https://x/photo.jpg", "https://x/gone.jpg"], Reader(), fetch)
-    assert [(f.url[-9:], f.text) for f in found] == [("label.jpg", "Energy class E, 41 dB"), ("photo.jpg", "")]
+        return b"broken" if "broken" in url else b"label" if "label" in url else b"photo"
+    urls = ["https://x/broken.jpg", "https://x/label.jpg", "https://x/photo.jpg", "https://x/gone.jpg"]
+    found = read_image_texts(urls, Reader(), fetch)
+    assert [(f.url[-9:], f.text) for f in found] == [("roken.jpg", ""), ("label.jpg", "Energy class E, 41 dB"),
+                                                     ("photo.jpg", "")]

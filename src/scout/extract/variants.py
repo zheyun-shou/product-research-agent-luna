@@ -6,6 +6,7 @@ shopper, in the colour of the listing when it has that size."""
 import re
 
 from scout.needs import Needs
+from scout.picks.rank import inside
 from scout.profiles import CategoryProfile
 from scout.sources.base import ProductRecord
 
@@ -62,7 +63,7 @@ def size_page(attributes: dict, needs: Needs, profile: CategoryProfile) -> tuple
         if "pages" not in entry:
             return "", ""
         for number in entry["values"]:
-            if all(number <= c.value if c.op == "<=" else number >= c.value for c in conds):
+            if all(inside(number, c.op, c.value) for c in conds):
                 key = f"{number:g}"
                 return (entry.get("names") or {}).get(key, key), entry["pages"][key]
         return "", ""

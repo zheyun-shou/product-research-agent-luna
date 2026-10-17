@@ -47,3 +47,4 @@ def test_the_page_of_the_size_of_the_needs():
     assert size_page(attributes, needs((">=", 41), ("<=", 41)), PROFILE) == ("", "")
     assert size_page({}, needs((">=", 38), ("<=", 38)), PROFILE) == ("", "")  # no list of sizes
     assert size_page(attributes, needs(), PROFILE) is None
+    assert size_page(attributes, needs((">=", 39.3333), ("<=", 39.3333)), PROFILE) == ("39 1/3 EU", "B02")

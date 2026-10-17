@@ -132,7 +132,8 @@ def test_description_reviews_and_images_without_the_reviewer_name():
 
 
 def test_the_variants_of_the_page_with_their_dimensions():
-    html = ('<span id="productTitle">X</span><script>var data = {"dimensions" : ["size_name","color_name"], '
+    html = ('<span id="productTitle">X</span><script>var media = {"dimensions" : [500, 500]};</script>'
+            '<script>var data = {"dimensions" : ["size_name","color_name"], '
             '"dimensionValuesDisplayData" : {"B0AAAAAAA8":["38 EU","Black"],"B0AAAAAAA9":["38 2/3 EU","Black"]}};'
             '</script>')
     rec = parse_product_page(html, "https://www.amazon.se/dp/B0AAAAAAA8", NOW)

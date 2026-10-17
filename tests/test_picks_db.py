@@ -26,13 +26,15 @@ def test_load_cards_skips_out_of_stock_and_applies_the_budget(db):
     assert [c.url[-10:] for c in load_cards(db, "fridge", Decimal("6000"))] == ["B0AAAAAAA3"]
 
 
-def test_a_card_shows_the_newest_variant_of_its_listing(db):
+def test_the_page_of_one_size_does_not_change_the_card_but_is_one_of_its_variants(db):
     from scout.db.store import save_variant
     from scout.picks.rank import load_cards_by_ids
     save(db, "product_full.html", "B0AAAAAAA1")  # 8990 SEK, in stock
     listing_id = db.execute("SELECT id FROM listings WHERE source_id = 'B0AAAAAAA1'").fetchone()["id"]
     size = parse_product_page((FIXTURES / "product_unavailable.html").read_text(encoding="utf-8"),
                               "https://www.amazon.se/dp/B0AAAAAAA9", NOW.replace(hour=11))
-    save_variant(db, listing_id, size)  # the page of one size, sold out
-    assert load_cards(db, "fridge", None) == []
-    assert load_cards_by_ids(db, [listing_id])[0].in_stock is False
+    save_variant(db, listing_id, size)  # the page of one size, sold out, newer than the page of the listing
+    assert [c.listing_id for c in load_cards(db, "fridge", None)] == [listing_id]
+    card = load_cards_by_ids(db, [listing_id])[0]
+    assert card.in_stock is True and card.price == Decimal("8990.00")
+    assert set(card.variants) == {"B0AAAAAAA1", "B0AAAAAAA9"} and card.variants["B0AAAAAAA9"]["in_stock"] is False

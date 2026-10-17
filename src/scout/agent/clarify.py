@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from scout.llm.client import LLMOutputError
 from scout.llm.feedback import retry_prompt
 from scout.needs import Needs, check_needs
-from scout.profiles import CategoryProfile, ProductKind, ProfileAttribute
+from scout.profiles import CategoryProfile, ProductKind, ProfileAttribute, attribute_errors
 
 SYSTEM = """You help a shopper say what they want, before a search on amazon.se.
 You get the category profile, the needs so far and the conversation. Return the updated needs.
@@ -100,14 +100,7 @@ def check_draft(draft: DraftProfile, names: list[str]) -> list[str]:
         errors.append("give at least one kind")
     if len(draft.attributes) < 2:
         errors.append("give at least two attributes")
-    errors += [f"attribute {a.name} is a number, so it needs a unit" for a in draft.attributes
-               if a.type == "number" and not a.unit]
-    errors += [f"attribute {a.name} is hard but not a number: only numbers can be conditions, so make it soft"
-               for a in draft.attributes if a.kind == "hard" and a.type != "number"]
-    errors += [f"attribute {a.name}: the system has {a.name} already" for a in draft.attributes
-               if a.name in {"price", "rating", "review_count"}]
-    if len({a.name for a in draft.attributes}) != len(draft.attributes):
-        errors.append("attribute names must be unique")
+    errors += attribute_errors(draft.attributes)
     if not draft.questions_for_user:
         errors.append("give at least one question")
     return errors

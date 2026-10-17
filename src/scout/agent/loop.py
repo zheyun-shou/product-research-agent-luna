@@ -16,10 +16,11 @@ from scout.agent.history import assistant, compact, history_text, user_numbers
 from scout.agent.state import ChatState
 from scout.llm.client import LLMOutputError, LLMUnavailable, tool_name
 from scout.needs import ConditionSpec, Needs, check_needs
+from scout.extract.variants import size_page
 from scout.picks.rank import Card
 from scout.picks.wishes import Ranked, rank_by_wishes
 from scout.picks.write import attribute_text
-from scout.profiles import CategoryProfile, ProfileAttribute
+from scout.profiles import CategoryProfile, ProfileAttribute, attribute_errors
 from scout.trace import NoTracer
 
 MAX_TOOL_CALLS = 25  # for each turn; set again from the hidden-target test (design section 10)
@@ -499,14 +500,21 @@ def check_final(call: BaseModel, state: dict, deps: LoopDeps, thread: str, used:
     return errors
 
 
-def picks_text(call: ShowPicks, cards: dict[int, Card]) -> str:
+def picks_text(call: ShowPicks, cards: dict[int, Card], sizes: dict[int, str] | None = None) -> str:
+    """sizes: listing id -> the product id of the page of the size of the needs (variants.size_page). That page
+    gives the price, the variant and the link of the pick."""
+    from scout.sources.amazon_se.urls import product_url
     lines = []
     for n, pick in enumerate(call.picks, 1):
         card = cards[pick.id]
-        price = f"{card.price} {card.currency}" if card.price is not None else "price unknown"
+        size = card.variants.get((sizes or {}).get(pick.id) or "")
+        price, currency = (size["price"], size["currency"]) if size else (card.price, card.currency)
+        price = f"{price} {currency}" if price is not None else "price unknown"
         rating = f"{card.rating} ({card.review_count} ratings)" if card.rating is not None else "no ratings"
-        lines += [f"{n}. {card.title}", f"   {price} | {rating} | id {card.listing_id}", f"   {pick.text}",
-                  f"   {card.url}"]
+        variant = f" | {size['label']}" if size and size.get("label") else ""
+        url = product_url(sizes[pick.id]) if size else card.url
+        lines += [f"{n}. {card.title}", f"   {price}{variant} | {rating} | id {card.listing_id}", f"   {pick.text}",
+                  f"   {url}"]
     if call.note:
         lines += ["", call.note]
     return "\n".join(lines)
@@ -621,8 +629,15 @@ class Toolbox:
         category = call.category or self.needs.category
         drafted = ""
         if category and category not in names and self.deps.save_draft is not None:
+            from difflib import get_close_matches
+
             from scout.agent.clarify import draft_profile
+            near = get_close_matches(category, names, n=1, cutoff=0.8)  # a typo, or a singular of a plural
+            if near:
+                return f"'{category}' is not a category. Did you mean {near[0]}? Use one of: {', '.join(names)}."
             profile = draft_profile(self.deps.llm, category, history_text(self.state), names)
+            if re.fullmatch(r"[a-z][a-z0-9_]{1,40}", category):  # the name that the chat model will use again
+                profile = profile.model_copy(update={"category": category})
             self.deps.save_draft(profile)
             category = profile.category
             drafted = (f"New category {category}: Python saved a draft profile that a person has not checked. "
@@ -877,26 +892,20 @@ class Toolbox:
         errors = [f"{n} is not an attribute of the profile" for n in [*call.remove, *call.hard, *call.soft]
                   if n not in attrs]
         errors += [f"{n} is a condition of the needs; change the needs first" for n in call.remove if n in used]
-        errors += [f"{a.name} exists already" for a in call.add if a.name in attrs]
         errors += [f"{n} is not a number, so it cannot be hard" for n in call.hard
                    if n in attrs and attrs[n].type != "number"]
-        for a in call.add:
-            if not re.fullmatch(r"[a-z][a-z0-9_]{1,40}", a.name):
-                errors.append(f"{a.name}: use lowercase English letters and underscores")
-            if a.type == "number" and not a.unit:
-                errors.append(f"{a.name} is a number, so it needs a unit")
-            if a.kind == "hard" and a.type != "number":
-                errors.append(f"{a.name} is not a number, so it cannot be hard")
+        errors += attribute_errors(call.add, tuple(n for n in attrs if n not in call.remove))
         if errors:
             return "not recorded: " + "; ".join(errors)
-        try:
-            new = [ProfileAttribute(**a.model_dump()) for a in call.add]
-        except ValueError as exc:
-            return f"not recorded: {exc}"
         changed = [a.model_copy(update={"kind": "hard" if a.name in call.hard else "soft" if a.name in call.soft
                                         else a.kind})
                    for a in profile.attributes if a.name not in call.remove]
-        profile = profile.model_copy(update={"attributes": changed + new, "edited": True})
+        try:  # the checks of CategoryProfile run again, so a saved profile always loads
+            new = [ProfileAttribute(**a.model_dump()) for a in call.add]
+            profile = CategoryProfile.model_validate({**profile.model_dump(), "attributes": changed + new,
+                                                      "edited": True})
+        except ValueError as exc:
+            return f"not recorded: {exc}"
         self.deps.save_draft(profile)
         return "saved: " + profile_text(profile)
 
@@ -1049,11 +1058,15 @@ def build_agent_graph(deps: LoopDeps, checkpointer=None):
         if isinstance(call, Reply):
             return {"final": None, "gate_errors": [], "messages": [assistant(call.text)]}
         cards = {c.listing_id: c for c in deps.cards([p.id for p in call.picks])}
+        needs = Needs.model_validate(state.get("needs") or {})
+        profile = deps.load_profile(needs.category) if needs.category else None
+        sizes = {i: page[1] for i, c in cards.items()
+                 if profile and (page := size_page(c.attributes, needs, profile)) and page[1]}
         picks = [{"listing_id": p.id, "product_id": cards[p.id].product_id, "title": cards[p.id].title,
                   "doubtful": [], "note": None} for p in call.picks]
         seen = sorted(set(state.get("seen", [])) | {p["product_id"] for p in picks})
         return {"final": None, "gate_errors": [], "picks": picks, "seen": seen, "phase": "picks",
-                "messages": [assistant(picks_text(call, cards))]}
+                "messages": [assistant(picks_text(call, cards, sizes))]}
 
     def after_agent(state):
         if state.get("pending"):

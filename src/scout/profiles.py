@@ -1,4 +1,5 @@
 """Category profiles: common conditions, questions to ask, where to look."""
+import re
 from pathlib import Path
 from typing import Literal
 
@@ -28,6 +29,31 @@ class ProfileAttribute(BaseModel):
         if self.type == "enum" and not self.values:
             raise ValueError(f"enum attribute '{self.name}' needs values")
         return self
+
+
+RESERVED = ("price", "rating", "review_count")  # the system has them for each product
+
+
+def attribute_errors(attributes: list, existing: tuple[str, ...] = ()) -> list[str]:
+    """The problems of attributes that a model wrote (a draft profile, update_profile). existing: the names that
+    the profile has already."""
+    errors, seen = [], set(existing)
+    for a in attributes:
+        if not re.fullmatch(r"[a-z][a-z0-9_]{1,40}", a.name):
+            errors.append(f"attribute {a.name}: use lowercase English letters and underscores")
+        if a.name in RESERVED:
+            errors.append(f"attribute {a.name}: the system has {a.name} already")
+        elif a.name in seen:
+            errors.append(f"attribute {a.name} is there two times")
+        seen.add(a.name)
+        if a.type == "number" and not a.unit:
+            errors.append(f"attribute {a.name} is a number, so it needs a unit")
+        if a.type == "enum" and not a.values:
+            errors.append(f"attribute {a.name} is an enum, so it needs values")
+        if a.kind == "hard" and a.type != "number":
+            errors.append(f"attribute {a.name} is hard but not a number: only numbers can be conditions, so make it "
+                          "soft")
+    return errors
 
 
 class ProductKind(BaseModel):
@@ -63,11 +89,14 @@ class CategoryProfile(BaseModel):
 
 
 def load_profile(category: str, profiles_dir: Path = PROFILES_DIR, drafts_dir: Path = DRAFTS_DIR) -> CategoryProfile:
-    # A changed copy of a preset (update_profile) is in the folder of the drafts, and it comes first
-    for folder in (drafts_dir, profiles_dir):
-        path = folder / f"{category}.yaml"
-        if path.exists():
-            return CategoryProfile.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+    # A preset comes before a draft of the same name. Only a copy that the shopper changed (update_profile marks it
+    # edited) comes before the preset.
+    draft_path, preset_path = drafts_dir / f"{category}.yaml", profiles_dir / f"{category}.yaml"
+    draft = yaml.safe_load(draft_path.read_text(encoding="utf-8")) if draft_path.exists() else None
+    if draft and (draft.get("edited") or not preset_path.exists()):
+        return CategoryProfile.model_validate(draft)
+    if preset_path.exists():
+        return CategoryProfile.model_validate(yaml.safe_load(preset_path.read_text(encoding="utf-8")))
     available = ", ".join(profile_names(profiles_dir, drafts_dir)) or "none"
     raise FileNotFoundError(f"No profile for '{category}'. Available: {available}")
 

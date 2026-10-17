@@ -82,15 +82,25 @@ def parse_product_page(html: str, url: str, fetched_at: datetime) -> ProductReco
 
 
 def _options(html: str) -> dict[str, dict[str, str]]:
-    values, dimensions = _VARIANT_VALUES.search(html), _VARIANT_DIMENSIONS.search(html)
-    if not values or not dimensions:
-        return {}
+    found = _VARIANT_VALUES.search(html)
     try:
-        values, dimensions = json.loads(values[1]), json.loads(dimensions[1])
+        values = json.loads(found[1]) if found else {}
     except ValueError:
         return {}
-    return {asin: dict(zip(dimensions, parts)) for asin, parts in values.items()
-            if isinstance(parts, list) and len(parts) == len(dimensions)}
+    sizes = {len(parts) for parts in values.values() if isinstance(parts, list)}
+    if len(sizes) != 1:
+        return {}
+    # Other script data can have a "dimensions" list too: take the nearest one of the same length
+    names = []
+    for match in sorted(_VARIANT_DIMENSIONS.finditer(html), key=lambda m: abs(m.start() - found.start())):
+        try:
+            candidate = json.loads(match[1])
+        except ValueError:
+            continue
+        if len(candidate) in sizes and all(isinstance(n, str) for n in candidate):
+            names = candidate
+            break
+    return {asin: dict(zip(names, parts)) for asin, parts in values.items() if names and len(parts) == len(names)}
 
 
 def _text(el: Tag | None) -> str:

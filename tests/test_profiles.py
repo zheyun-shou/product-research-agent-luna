@@ -71,3 +71,12 @@ def test_a_changed_copy_of_a_preset_comes_first(tmp_path):
     edited = load_profile("fridge", fixed, drafts).model_copy(update={"edited": True, "attributes": []})
     save_draft(edited, drafts)
     assert load_profile("fridge", fixed, drafts).edited and profile_names(fixed, drafts) == ["fridge"]
+
+
+def test_a_draft_does_not_hide_a_preset_of_the_same_name(tmp_path):
+    fixed, drafts = tmp_path / "profiles", tmp_path / "drafts"
+    fixed.mkdir()
+    (fixed / "fridge.yaml").write_text((Path(__file__).parents[1] / "profiles" / "fridge.yaml").read_text(
+        encoding="utf-8"), encoding="utf-8")
+    save_draft(load_profile("fridge", fixed, drafts).model_copy(update={"draft": True, "attributes": []}), drafts)
+    assert not load_profile("fridge", fixed, drafts).draft

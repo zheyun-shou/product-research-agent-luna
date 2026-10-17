@@ -16,9 +16,7 @@ class SavedIds:
     variant_id: int
 
 
-def save_variant(conn: psycopg.Connection, listing_id: int, rec: ProductRecord) -> None:
-    """The price and the stock of one variant page (for example one shoe size) as a variant of the listing. It is
-    the newest variant, so the cards of the listing show it."""
+def _upsert_variant(conn: psycopg.Connection, listing_id: int, rec: ProductRecord) -> int:
     variant_id = conn.execute(
         """INSERT INTO variants (listing_id, variant_key, label, price, currency, in_stock, updated_at)
            VALUES (%s, %s, %s, %s, %s, %s, %s)
@@ -32,6 +30,13 @@ def save_variant(conn: psycopg.Connection, listing_id: int, rec: ProductRecord) 
         "INSERT INTO price_history (variant_id, price, currency, in_stock, fetched_at) VALUES (%s, %s, %s, %s, %s)",
         (variant_id, rec.price, rec.currency, rec.in_stock, rec.fetched_at),
     )
+    return variant_id
+
+
+def save_variant(conn: psycopg.Connection, listing_id: int, rec: ProductRecord) -> None:
+    """The price and the stock of one variant page (for example one shoe size) as a variant of the listing. The
+    card of the listing keeps the price of its own page; the picks show this variant (loop.picks_text)."""
+    _upsert_variant(conn, listing_id, rec)
     conn.commit()
 
 
@@ -62,19 +67,7 @@ def save_record(conn: psycopg.Connection, rec: ProductRecord, category: str) -> 
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
                 (product_id, rec.source, rec.source_id, rec.url, rec.title, rec.rating, rec.review_count, rec.fetched_at),
             ).fetchone()["id"]
-        variant_id = conn.execute(
-            """INSERT INTO variants (listing_id, variant_key, label, price, currency, in_stock, updated_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s)
-               ON CONFLICT (listing_id, variant_key) DO UPDATE SET
-                   label = EXCLUDED.label, price = EXCLUDED.price, currency = EXCLUDED.currency,
-                   in_stock = EXCLUDED.in_stock, updated_at = EXCLUDED.updated_at
-               RETURNING id""",
-            (listing_id, rec.source_id, rec.variant_label, rec.price, rec.currency, rec.in_stock, rec.fetched_at),
-        ).fetchone()["id"]
-        conn.execute(
-            "INSERT INTO price_history (variant_id, price, currency, in_stock, fetched_at) VALUES (%s, %s, %s, %s, %s)",
-            (variant_id, rec.price, rec.currency, rec.in_stock, rec.fetched_at),
-        )
+        variant_id = _upsert_variant(conn, listing_id, rec)
         save_page_text(conn, listing_id, rec)
         conn.commit()
     except Exception:

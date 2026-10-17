@@ -455,8 +455,11 @@ def test_update_profile_adds_an_attribute_and_saves_a_copy():
     shop, saved = Shop(), {}
     add = UpdateProfile(add=[NewAttribute(name="max_weight", label="Weight", type="number", unit="kg", kind="hard")],
                         remove=["noise"], soft=["depth"])
-    bad = UpdateProfile(remove=["height"], hard=["no_frost"], add=[NewAttribute(name="Colour", label="Colour",
-                                                                                 type="text", kind="hard")])
+    bad = UpdateProfile(remove=["height"], hard=["no_frost"], add=[
+        NewAttribute(name="Colour", label="Colour", type="text", kind="hard"),
+        NewAttribute(name="price", label="Price", type="number", unit="SEK", kind="soft"),
+        NewAttribute(name="max_weight", label="Weight", type="number", unit="kg", kind="soft"),
+        NewAttribute(name="max_weight", label="Weight", type="number", unit="kg", kind="soft")])
     llm = FakeLLM([[NEEDS], [bad], [add], "Done."])
     deps = shop.deps(llm)
     deps.load_profile = lambda name: saved.get(name) or FRIDGE
@@ -464,8 +467,34 @@ def test_update_profile_adds_an_attribute_and_saves_a_copy():
     run(build_agent_graph(deps, InMemorySaver()), "A fridge, at most 180 cm high, and the weight matters")
     refused = llm.requests[2][1]
     assert "height is a condition of the needs" in refused and "no_frost is not a number, so it cannot be hard" in refused
-    assert "Colour: use lowercase" in refused and "Colour is not a number, so it cannot be hard" in refused
+    assert "Colour: use lowercase" in refused and "Colour is hard but not a number" in refused
+    assert "the system has price already" in refused and "max_weight is there two times" in refused
     profile = saved["fridge"]
     assert profile.edited and profile.attribute("noise") is None and profile.attribute("depth").kind == "soft"
     assert profile.attribute("max_weight").unit == "kg"
     assert "saved: Profile:" in llm.requests[3][1] and FRIDGE.attribute("noise") is not None
+
+
+def test_a_pick_shows_the_price_and_the_link_of_the_size_of_the_needs():
+    from decimal import Decimal
+    from scout.agent.loop import picks_text
+    shoe = card(1)
+    shoe.variants = {"B0SIZE0039": {"price": Decimal("549.00"), "currency": "SEK", "in_stock": True,
+                                    "label": "Black / 39 EU"}}
+    text = picks_text(ShowPicks(picks=[Pick(id=1, text="Light.")]), {1: shoe}, {1: "B0SIZE0039"})
+    assert "549.00 SEK | Black / 39 EU |" in text and "https://www.amazon.se/dp/B0SIZE0039" in text
+    assert "5000 SEK |" in picks_text(ShowPicks(picks=[Pick(id=1, text="Light.")]), {1: shoe})
+
+
+def test_a_near_name_is_not_a_new_category_and_a_draft_keeps_the_asked_name():
+    from tests.test_clarify import HEADPHONES
+    shop, saved = Shop(), {}
+    llm = FakeLLM([[UpdateNeeds(category="fridges")], [UpdateNeeds(category="earphones")],
+                   HEADPHONES, "Which budget?"])
+    deps = shop.deps(llm)
+    deps.profile_names = lambda: ["fridge", *saved]
+    deps.load_profile = lambda name: saved.get(name) or FRIDGE
+    deps.save_draft = lambda profile: saved.update({profile.category: profile})
+    run(build_agent_graph(deps, InMemorySaver()), "Hörlurar")
+    assert "Did you mean fridge?" in llm.requests[1][1]
+    assert list(saved) == ["earphones"]  # the draft was named headphones

@@ -17,15 +17,23 @@ SELECT l.id AS listing_id, p.id AS product_id, COALESCE(l.title, p.name) AS titl
        v.price, v.currency, v.in_stock, v.label AS variant, l.rating, l.review_count, p.attributes, l.fetched_at
 FROM listings l
 JOIN products p ON p.id = l.product_id
--- The newest price and stock of the listing: the page itself, or the page of the size of the shopper (variants.py)
+-- The price and the stock of the page of the listing itself. The pages of other sizes (variants.py) are other
+-- variants: a size that one shopper needed does not change the card for the next one.
 JOIN LATERAL (SELECT price, currency, in_stock, label FROM variants WHERE listing_id = l.id
-              ORDER BY updated_at DESC LIMIT 1) v ON true
+              ORDER BY variant_key = l.source_id DESC, updated_at DESC LIMIT 1) v ON true
 WHERE p.category = %(category)s
   AND v.in_stock IS DISTINCT FROM false
   AND (%(budget)s::numeric IS NULL OR (v.price IS NOT NULL AND v.price <= %(budget)s::numeric))
 ORDER BY l.id
 """
 _CONDITION = re.compile(r"^\s*(\w+)\s*(<=|>=)\s*([\d.,]+)\s*$")
+
+
+SLACK = 0.01  # A variant size: 38 2/3 is kept as 38.67; a condition of 38.6667 must still meet it
+
+
+def inside(number: float, op: str, value: float) -> bool:
+    return number <= value + SLACK if op == "<=" else number >= value - SLACK
 
 
 @dataclass
@@ -46,6 +54,8 @@ class Card:
     score: float = 0.0
     missing: list[str] = field(default_factory=list)
     variant: str = ""  # the colour and the size of the price, e.g. "Core Black / 38 EU"
+    # All variants of the listing (load_cards_by_ids only): product id -> price, currency, in_stock, label
+    variants: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -75,7 +85,7 @@ def apply_conditions(cards: list[Card], conditions: list[Condition]) -> tuple[li
         for cond in conditions:
             entry = card.attributes.get(cond.attribute) or {}
             if "values" in entry:  # variants, for example the sizes: one of them must be inside the condition
-                if not any(v <= cond.value if cond.op == "<=" else v >= cond.value for v in entry["values"]):
+                if not any(inside(v, cond.op, cond.value) for v in entry["values"]):
                     passes = False
                     break
                 continue
@@ -116,16 +126,22 @@ def rank(cards: list[Card]) -> list[Card]:
 CARDS_BY_ID_SQL = """
 SELECT DISTINCT ON (l.id) l.id AS listing_id, p.id AS product_id, COALESCE(l.title, p.name) AS title, p.brand,
        p.model, l.url, v.price, v.currency, v.in_stock, v.label AS variant, l.rating, l.review_count, p.attributes,
-       l.fetched_at
+       l.fetched_at,
+       (SELECT jsonb_object_agg(variant_key, jsonb_build_object('price', price, 'currency', currency,
+                                                                'in_stock', in_stock, 'label', label))
+        FROM variants WHERE listing_id = l.id) AS variants
 FROM listings l
 JOIN products p ON p.id = l.product_id
-JOIN variants v ON v.listing_id = l.id
+-- The price and the stock of the page of the listing itself. The pages of other sizes (variants.py) are other
+-- variants: a size that one shopper needed does not change the card for the next one.
+JOIN LATERAL (SELECT price, currency, in_stock, label FROM variants WHERE listing_id = l.id
+              ORDER BY variant_key = l.source_id DESC, updated_at DESC LIMIT 1) v ON true
 WHERE l.id = ANY(%(ids)s)
-ORDER BY l.id, v.updated_at DESC
+ORDER BY l.id
 """
 
 
 def load_cards_by_ids(conn: psycopg.Connection, listing_ids: list[int]) -> list[Card]:
     rows = conn.execute(CARDS_BY_ID_SQL, {"ids": list(listing_ids)}).fetchall()
-    by_id = {row["listing_id"]: Card(**row) for row in rows}
+    by_id = {row["listing_id"]: Card(**{**row, "variants": row["variants"] or {}}) for row in rows}
     return [by_id[i] for i in listing_ids if i in by_id]

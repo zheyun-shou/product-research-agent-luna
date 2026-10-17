@@ -40,15 +40,24 @@ def segments(image, max_aspect: float = MAX_ASPECT) -> list:
     if height <= max_aspect * width:
         return [image]
     step, overlap = int(1.5 * width), int(0.1 * width)
-    return [image.crop((0, top, width, min(top + step + overlap, height))) for top in range(0, height, step)]
+    tops = list(range(0, height, step))
+    if len(tops) > 1 and height - tops[-1] < width // 2:
+        tops.pop()  # a thin last strip goes into the part before it
+    ends = [top + step + overlap for top in tops[:-1]] + [height]
+    return [image.crop((0, top, width, min(end, height))) for top, end in zip(tops, ends)]
 
 
-def fetch_image_bytes(url: str, timeout: float = 20) -> bytes:
-    if not url.startswith(IMAGE_HOSTS):
-        raise ValueError(f"not an image of the image server: {url}")
-    response = httpx.get(url, timeout=timeout, follow_redirects=True)
-    response.raise_for_status()
-    return response.content
+def fetch_image_bytes(url: str, timeout: float = 20, max_redirects: int = 3) -> bytes:
+    """An image of the image server. A redirect is followed only when it stays on the image server."""
+    for _ in range(max_redirects + 1):
+        if not url.startswith(IMAGE_HOSTS):
+            raise ValueError(f"not an image of the image server: {url}")
+        response = httpx.get(url, timeout=timeout, follow_redirects=False)
+        if not response.is_redirect:
+            response.raise_for_status()
+            return response.content
+        url = str(response.next_request.url) if response.next_request else ""
+    raise ValueError("too many redirects")
 
 
 class PaddleReader:
@@ -92,6 +101,11 @@ def read_image_texts(urls: list[str], reader, fetch=fetch_image_bytes) -> list[I
         except (httpx.HTTPError, ValueError):
             continue
         start = time.perf_counter()
-        text = reader.read(data)
+        try:
+            text = reader.read(data)
+        except Exception as exc:  # an image that the reader cannot open, or no GPU memory: the next image still runs
+            if "out of memory" in str(exc).lower():
+                raise
+            text = ""
         found.append(ImageText(url, text if usable(text) else "", time.perf_counter() - start))
     return found
