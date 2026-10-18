@@ -179,3 +179,16 @@ Third run, after the second change (search-20261017-2037.json, 20 targets count)
 - The two worst cases came back: anc-over-ear 51 to 6, backflow-cone-set 37 to 7.
 - "without filters" fell from 13 to 10 with no change in its code (it has no filters). This shows the noise of amazon between two runs, about 3 targets of 20.
 - On the 9 new targets, "with filters" only equals "before". The caution above stays: these 9 tuned the change.
+
+### Held-out check (2026-10-18, no model)
+
+9 new targets in `eval/hidden/heldout.yaml`, 3 in each new category. I did not use them to tune the search. The file header says how I chose them. cushioned-men-45 did not count: its price is now 1139 SEK, over the budget. Result (search-20261018-1741.json), 8 targets:
+
+| | before | without filters | with filters |
+|---|---|---|---|
+| 8 held-out targets | 5 | 3 | 3 |
+
+- On new targets, the search of 2026-10-17 is worse than the search of 2026-10-14. The 15 of 20 of the third run does not hold. It came from tuning on the same targets and from noise.
+- "without filters" (the Threshold order without filters) is also below "before" (page 1 of the three orders in turns): 3 against 5 here, 5 against 7 on the first 9 new targets. Thus the read order of the Threshold Algorithm is a problem in these categories, not only the word filters. Examples: open-ear-running 4 to 19, wired-studio 8 to 22, nag-champa 1 to 7.
+- anc-earbuds and waterproof-trail-women-38 were in no list. cheap-men-43 was only in a filtered list, at place 108.
+- 8 targets is a small sample. A search number goes into my CV only after a check on more held-out targets.

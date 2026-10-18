@@ -1,0 +1,162 @@
+# Held-out targets (2026-10-18). I did not use them to tune the search. I wrote the 9 needs before any search. Then I
+# searched amazon.se with other words than the eval words and took, for each need, the product with the most reviews
+# on page 1 that meets the need and is in stock. Two needs changed after the search: page 1 had no plain lavender
+# cones (so lavender sticks), and the waterproof women's trail shoe had no size 39 (so size 38).
+# also: the other listings of the same product page that meet the needs (other colours; for shoes, the size of the
+# needs). The targets in targets.yaml have no also, so a find here is a little easier.
+- id: anc-earbuds
+  source_id: B0CRTR3PMF  # 290 SEK
+  also: [B0CRTPF7CZ, B0CRTF579W, B0CRTN7C8C, B0CRTYZG5C]
+  category: headphones
+  kind: in_ear
+  opening: Jag vill ha trådlösa öronsnäckor med brusreducering för bussen. Max 400 kr.
+  facts:
+    - Wireless earbuds with active noise cancelling, for the bus.
+    - A transparency mode to hear announcements is nice.
+    - Long playtime with the case, 30 hours or more.
+    - The budget is 400 SEK.
+  hidden_words: [Soundcore, Anker, P30i, A3959]
+  search:
+    words: trådlösa hörlurar brusreducering in-ear
+    budget: 400
+    filters: ["Headphones Form Factor: In Ear", "Noise Control: Active Noise Cancellation"]
+
+- id: open-ear-running
+  source_id: B0D31C567W  # 490 SEK
+  also: [B0D319J6T2, B0D2XRXNGY]
+  category: headphones
+  kind: sport
+  opening: 跑步用的耳机，不能堵住耳朵，要听得到路上的车。600克朗以内。
+  facts:
+    - For running in the city. The ears must stay open, so you hear the traffic.
+    - Ear hooks that sit still when you run.
+    - Resistant to sweat and rain, IP55 or better.
+    - The budget is 600 SEK.
+  hidden_words: [Soundcore, Anker, V20i, A3876]
+  search:
+    words: open ear hörlurar löpning
+    budget: 600
+    filters: ["Headphones Ear Placement: Open Ear"]
+
+- id: wired-studio
+  source_id: B000AJIF4E  # 1129 SEK
+  category: headphones
+  kind: over_ear
+  opening: I record music at home and need closed wired headphones to monitor. Up to 1300 kr.
+  facts:
+    - Wired over-ear headphones, closed, for monitoring when you record at home.
+    - A long cable, 2 metres or more.
+    - A 6.3 mm adapter for the audio interface.
+    - The budget is 1300 SEK.
+  hidden_words: [Sony, MDR-7506, MDR7506, "7506"]
+  search:
+    words: studiohörlurar med sladd
+    budget: 1300
+    filters: ["Headphones Form Factor: Over Ear"]
+
+- id: lavender-sticks
+  source_id: B09DCCNTH6  # 140 SEK
+  category: incense
+  kind: sticks
+  opening: Jag söker lavendelrökelse utan kol, för att slappna av på kvällen. Under 170 kr.
+  facts:
+    - Lavender incense sticks for the evening, to relax.
+    - Without charcoal, natural materials.
+    - A large pack, 50 sticks or more.
+    - The budget is 170 SEK.
+  hidden_words: [Calmveda, Onetap]
+  search:
+    words: lavendel rökelse
+    budget: 170
+    filters: ["Item Form: Stick"]
+
+- id: nag-champa
+  source_id: B01MXPXR70  # 79 SEK
+  category: incense
+  kind: sticks
+  opening: 想要印度的Nag Champa线香，经典那种，100克朗以内。
+  facts:
+    - Classic Indian Nag Champa incense sticks, hand-rolled masala type.
+    - A few packs of about 15 g are fine.
+    - The budget is 100 SEK.
+  hidden_words: [Satya, Shrinivas]
+  search:
+    words: nag champa rökelse
+    budget: 100
+    filters: ["Item Form: Stick"]
+
+- id: wood-holder
+  source_id: B07RCVJQDW  # 138 SEK
+  category: incense
+  kind: holder
+  opening: A wooden holder for incense sticks that catches all the ash. Max 180 kr.
+  facts:
+    - A holder for incense sticks, made of wood.
+    - It must catch the ash, so a long tray shape.
+    - About 30 cm long.
+    - The budget is 180 SEK.
+  hidden_words: [Raajsee, ENN DEE]
+  search:
+    words: rökelsehållare trä askfångare
+    budget: 180
+
+- id: waterproof-trail-women-38
+  source_id: B0DNTHBWF4  # size 38 EU, Peony Apple; the page showed about 740 SEK
+  also: [B0CD9ST9F5, B09BJ5GDKQ, B07M9CJ7VJ, B0BB85G3PK]
+  category: running_shoes
+  kind: trail
+  opening: Vattentäta skor för stigar och skog, dam storlek 38. Högst 1000 kr.
+  facts:
+    - Waterproof shoes for trails and forest, low.
+    - Women's size 38 EU.
+    - A waterproof membrane, so the feet stay dry in wet grass.
+    - The budget is 1000 SEK.
+  hidden_words: [CMP, Rigel, 3Q13244]
+  search:
+    words: vattentäta trailskor dam
+    budget: 1000
+    conditions:
+      - {attribute: size, op: ">=", value: 38}
+      - {attribute: size, op: "<=", value: 38}
+    filters: ["Gender: Women"]
+
+- id: cushioned-men-45
+  source_id: B0FWV7NQR1  # size 45 EU; 786 SEK on the page of another colour
+  also: [B0FWTX8SWN, B0CGK515NM, B0D3XZBPRS, B0CKWL2L1V, B0F4M2R7MD, B0FWVP57YY, B0F4M16DZJ, B0D1LLST87,
+         B0F4M35SDZ, B0F4GNZ3PM, B0GZLC8KNX, B0F4M12RMZ, B0CQ5CTQT3, B0FWV1SXHH]
+  category: running_shoes
+  kind: road
+  opening: Running shoes with a lot of cushioning for the road, men's size 45. Up to 1000 kr.
+  facts:
+    - Road running shoes with maximal cushioning.
+    - Men's size 45 EU.
+    - Neutral, no pronation support needed.
+    - The budget is 1000 SEK.
+  hidden_words: [New Balance, Fresh Foam, "680"]
+  search:
+    words: löparskor herr dämpning
+    budget: 1000
+    conditions:
+      - {attribute: size, op: ">=", value: 45}
+      - {attribute: size, op: "<=", value: 45}
+    filters: ["Gender: Men"]
+
+- id: cheap-men-43
+  source_id: B09YKRZV7J  # size 43 EU, dark grey; 419 SEK on the page of size 45
+  also: [B0C49K4CVN, B09YLB3SKY, B0B87XP8JY, B09YL61WDD, B0C49JMDPP, B0B88115FN, B09YL13QFR]
+  category: running_shoes
+  kind: road
+  opening: 便宜的男士跑鞋，43码，500克朗以内，轻一点就行。
+  facts:
+    - Cheap, light men's running shoes for the road and the gym.
+    - Men's size 43 EU.
+    - Laces.
+    - The budget is 500 SEK.
+  hidden_words: [Feethit, HT-01]
+  search:
+    words: billiga löparskor herr
+    budget: 500
+    conditions:
+      - {attribute: size, op: ">=", value: 43}
+      - {attribute: size, op: "<=", value: 43}
+    filters: ["Gender: Men"]
