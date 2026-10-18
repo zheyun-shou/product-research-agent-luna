@@ -5,6 +5,18 @@ Python checks, was never clearly worse than the merges of several sort orders (R
 loads far fewer pages. So a search reads the default order. A list with the number filters, or with the word filters
 that the chat model gives, is taken in turns with it: the first card of each list, then the second of each."""
 from scout.search.threshold import ResultList, ThresholdResult
+from scout.sources.base import Candidate
+
+
+def interleave(lists: list[list[Candidate]]) -> list[Candidate]:
+    """The first card of each list, then the second of each. A card counts once, at its first place."""
+    merged, seen = [], set()
+    for rank in range(max((len(cards) for cards in lists), default=0)):
+        for cards in lists:
+            if rank < len(cards) and cards[rank].source_id not in seen:
+                seen.add(cards[rank].source_id)
+                merged.append(cards[rank])
+    return merged
 
 
 def interleave_search(lists: list[ResultList], max_pages: int = 2, first_page: int = 1) -> ThresholdResult:
@@ -26,12 +38,7 @@ def interleave_search(lists: list[ResultList], max_pages: int = 2, first_page: i
         if all(rl.done for rl in lists):
             break
     stop = "all results read" if all(rl.done for rl in lists) else "the page limit"
-    order, seen = [], set()
-    for rank in range(max((len(rl.cards) for rl in lists), default=0)):
-        for rl in lists:
-            if rank < len(rl.cards) and rl.cards[rank].source_id not in seen:
-                seen.add(rl.cards[rank].source_id)
-                order.append(rl.cards[rank])
-    return ThresholdResult(order=order, stop=stop, pages={rl.name: rl.pages for rl in lists},
-                           failed=[rl.name for rl in lists if rl.failed], first=set(seen),
+    return ThresholdResult(order=interleave([rl.cards for rl in lists]), stop=stop,
+                           pages={rl.name: rl.pages for rl in lists}, failed=[rl.name for rl in lists if rl.failed],
+                           first={c.source_id for rl in lists if rl.first for c in rl.cards},
                            last_page=first_page + max((rl.pages for rl in lists), default=0) - 1)

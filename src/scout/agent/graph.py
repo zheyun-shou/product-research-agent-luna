@@ -59,8 +59,10 @@ def crawl_text(report: CrawlReport, terms: str, page: int) -> str:
     else:
         pages = f"result page {page}"
     outside = f"{report.off_condition} outside the conditions of the needs by their title, " if report.off_condition else ""
+    colours = (f" ({report.other_colours} of them gave their place to their other colours, which can cost less)"
+               if report.other_colours else "")
     line = (f"Searched amazon.se for '{terms}' ({pages}): {report.candidates} results, "
-            f"{report.off_topic} left out by title, {report.over_budget} over budget, {outside}"
+            f"{report.off_topic} left out by title, {report.over_budget} over budget{colours}, {outside}"
             f"{report.known} already stored (rating and review count updated), {report.saved} new products saved.")
     return "\n".join([line, *report.notes])
 

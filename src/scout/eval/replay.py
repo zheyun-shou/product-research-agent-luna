@@ -17,6 +17,7 @@ from scout.eval.search import READ_PAGES, place_of
 from scout.needs import Needs
 from scout.profiles import CategoryProfile
 from scout.search.filters import off_condition
+from scout.search.merge import interleave
 from scout.sources.amazon_se.search import has_next_page, parse_search_page
 from scout.sources.amazon_se.urls import search_url, snapshot_key
 from scout.sources.base import Candidate
@@ -70,17 +71,6 @@ def cards_of(pages: list[list[Candidate]], count: int | None = None) -> list[Can
                 seen.add(c.source_id)
                 out.append(c)
     return out
-
-
-def interleave(lists: list[list[Candidate]]) -> list[Candidate]:
-    """The first card of each list, then the second of each, without repeats."""
-    merged, seen = [], set()
-    for rank in range(max((len(cards) for cards in lists), default=0)):
-        for cards in lists:
-            if rank < len(cards) and cards[rank].source_id not in seen:
-                seen.add(cards[rank].source_id)
-                merged.append(cards[rank])
-    return merged
 
 
 def rrf(lists: list[list[Candidate]], k: int = 60) -> list[Candidate]:

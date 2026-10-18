@@ -23,6 +23,7 @@ Screener = Callable[[list[Candidate]], list[Candidate]]
 FilterChooser = Callable[[list[FilterGroup]], tuple[list[str], list[str], list[str]]]
 CardCheck = Callable[[Candidate], bool]
 MAX_ATTEMPTS = 3
+MAX_COLOURS = 3  # the other colours that take the place of one card over the budget
 EXTRACT_WORKERS = 4  # LLM extractions that run while the browser loads the next pages
 
 
@@ -31,6 +32,7 @@ class CrawlReport:
     search_pages: int = 0
     candidates: int = 0
     over_budget: int = 0
+    other_colours: int = 0  # cards over the budget whose other colours took their place (in over_budget too)
     off_topic: int = 0
     known: int = 0
     dropped: list[Candidate] = field(default_factory=list)
@@ -99,18 +101,21 @@ def result_lists(fetcher: Callable[[str | None, list[str], str], Callable[[int],
 def keep_cards(cards: list[Candidate], budget: Decimal | None, card_check: CardCheck | None,
                outcomes: dict[str, str]) -> list[Candidate]:
     """The cards within the budget whose values are not outside the needs. The others get their outcome. A card over
-    the budget that has other colours gives its place to them: the card shows the price of one colour only, and the
-    product page of each colour gives its own price."""
+    the budget that has other colours gives its place to up to MAX_COLOURS of them: the card shows the price of one
+    colour only, and the product page of each colour gives its own price."""
     kept, ids = [], {c.source_id for c in cards}
     for c in cards:
-        if card_check is not None and card_check(c):
+        if budget is not None and c.price is not None and c.price > budget:
+            others = [i for i in c.others if i not in ids][:MAX_COLOURS]
+            if others and not (card_check is not None and card_check(c)):
+                outcomes[c.source_id] = "other_colours"
+                ids.update(others)
+                kept += [c.model_copy(update={"source_id": i, "url": c.url.replace(c.source_id, i), "price": None,
+                                              "others": []}) for i in others]
+            else:
+                outcomes[c.source_id] = "over_budget"
+        elif card_check is not None and card_check(c):
             outcomes[c.source_id] = "off_condition"
-        elif budget is not None and c.price is not None and c.price > budget:
-            others = [i for i in c.others if i not in ids]
-            outcomes[c.source_id] = "other_colours" if others else "over_budget"
-            ids.update(others)
-            kept += [c.model_copy(update={"source_id": i, "url": c.url.replace(c.source_id, i), "price": None,
-                                          "others": []}) for i in others]
         else:
             kept.append(c)
     return kept
@@ -173,7 +178,7 @@ def crawl(
             groups = load_filters(conn, adapter.name, category)
         price, numbers, words = filters(groups)
         chosen = price + numbers + words
-    report.filters = chosen
+    report.filters = chosen if numbers or words else []  # the price filter alone gives no list
     lists = result_lists(fetcher, price, numbers, words)
     found = interleave_search(lists, max_pages=max_pages, first_page=first_page)
     report.list_pages, report.stop, report.last_page = found.pages, found.stop, found.last_page
@@ -181,7 +186,8 @@ def crawl(
         report.notes.append(f"search stopped at page {first_page}: no result list loaded")
     report.candidates = len(found.order)
     candidates = keep_cards(found.order, budget, card_check, report.outcomes)
-    report.over_budget = sum(v == "over_budget" for v in report.outcomes.values())
+    report.other_colours = sum(v == "other_colours" for v in report.outcomes.values())
+    report.over_budget = sum(v == "over_budget" for v in report.outcomes.values()) + report.other_colours
     report.off_condition = sum(v == "off_condition" for v in report.outcomes.values())
     if screen is not None and candidates:
         try:

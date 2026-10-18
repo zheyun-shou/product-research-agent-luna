@@ -296,6 +296,12 @@ def test_a_card_over_the_budget_gives_its_place_to_its_other_colours():
     assert [(c.source_id, c.price, c.url) for c in kept] == [("B", None, "https://www.amazon.se/dp/B"),
                                                             ("C", Decimal("290"), "https://www.amazon.se/dp/C")]
     assert outcomes == {"A": "other_colours", "D": "over_budget"}
+    # Up to 3 other colours take the place of one card; a card outside the needs gives no colours
+    many = keep_cards([card("A", "690", ["B", "C", "D", "E", "F"])], Decimal("400"), None, {})
+    assert [c.source_id for c in many] == ["B", "C", "D"]
+    outcomes = {}
+    assert keep_cards([card("A", "690", ["B"])], Decimal("400"), lambda c: True, outcomes) == []
+    assert outcomes == {"A": "over_budget"}
 
 
 def test_the_default_order_and_the_filtered_lists():

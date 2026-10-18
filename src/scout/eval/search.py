@@ -14,24 +14,13 @@ from scout.eval.hidden import Target
 from scout.needs import Needs
 from scout.profiles import CategoryProfile
 from scout.search.filters import number_filters, off_condition, outside, word_filters
-from scout.search.merge import interleave_search
+from scout.search.merge import interleave, interleave_search
 from scout.search.threshold import Page, ResultList, threshold_search
 from scout.sources.base import FilterGroup
 
 READ_PAGES = 8  # the product pages of one search_shop call
 OLD, MID, NEW = "10/14", "10/17", "10/18"
 ROWS = (OLD, MID, NEW)
-
-
-def interleave(orders: list[list]) -> list:
-    """The order of the crawl of 2026-10-14: the first of each order, then the second of each, without repeats."""
-    merged, seen = [], set()
-    for rank in range(max((len(o) for o in orders), default=0)):
-        for order in orders:
-            if rank < len(order) and order[rank].source_id not in seen:
-                seen.add(order[rank].source_id)
-                merged.append(order[rank])
-    return merged
 
 
 def place_of(target: Target, order: list) -> int | None:
@@ -65,6 +54,7 @@ def search_target(target: Target, profile: CategoryProfile, fetch: Callable[[str
         if result is not None:
             rows[name] |= {"pages": result.pages, "stop": result.stop}
     chosen = price + numbers + words
+    rows[NEW] |= {"price": price, "numbers": numbers, "words": words}
     rows[NEW]["filters"] = chosen
     rows[NEW]["unknown_filters"] = unknown
     return rows

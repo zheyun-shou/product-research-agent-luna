@@ -16,6 +16,11 @@ from scout.profiles import load_profile  # noqa: E402
 from scout.search.filters import word_filters  # noqa: E402
 
 
+def has_numbers(safe):
+    """The result files before 10/18 do not keep the number filters apart: all safe filters but the price are."""
+    return any(not f.startswith("p_36:") for f in safe)
+
+
 def D(text):
     return datetime.strptime(text, "%Y%m%dT%H%M")
 
@@ -42,16 +47,18 @@ def main(only=None, rerank=None, out_name="replay.json"):
                 continue
             t = targets[r["target"]]
             profile = load_profile(t.category)
-            chosen = r["with filters"].get("filters") or []
+            new = r.get("10/18") or r["with filters"]  # the key of the newest search in the result file
+            chosen = new.get("filters") or []
             words, _ = word_filters(t.search.filters, load_filters(conn, "amazon_se", t.category))
             words = [w for w in words if w in chosen]
             safe = [f for f in chosen if f not in words]
+            numbers = bool(new["numbers"]) if "numbers" in new else has_numbers(safe)
             lists = run_lists(t, {"none": [], "safe": safe, "all": chosen if words else []}, ROOT / "snapshots", run)
             out.append({"run": run.name, "target": t.id, "category": t.category, "set": target_file,
                         "lists": list_places(t, lists), "sizes": {f"{s or 'default'}/{k}": sum(map(len, p))
                                                                  for (s, k), p in lists.items()},
-                        "methods": score_methods(t, profile, methods(lists, any(not f.startswith("p_36:") for f in safe)), rerank),
-                        "eval": {k: r[k]["place"] for k in ("before", "without filters", "with filters") if k in r}})
+                        "methods": score_methods(t, profile, methods(lists, numbers), rerank),
+                        "eval": {k: v["place"] for k, v in r.items() if isinstance(v, dict) and "place" in v}})
             print(run.name, t.id, {k: v["place"] for k, v in out[-1]["methods"].items()}, flush=True)
     (ROOT / "eval" / "results" / out_name).write_text(json.dumps(out, indent=1, ensure_ascii=False), encoding="utf-8")
 
