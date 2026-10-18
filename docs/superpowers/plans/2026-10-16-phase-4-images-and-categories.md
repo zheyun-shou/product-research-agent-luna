@@ -192,3 +192,47 @@ Third run, after the second change (search-20261017-2037.json, 20 targets count)
 - "without filters" (the Threshold order without filters) is also below "before" (page 1 of the three orders in turns): 3 against 5 here, 5 against 7 on the first 9 new targets. Thus the read order of the Threshold Algorithm is a problem in these categories, not only the word filters. Examples: open-ear-running 4 to 19, wired-studio 8 to 22, nag-champa 1 to 7.
 - anc-earbuds and waterproof-trail-women-38 were in no list. cheap-men-43 was only in a filtered list, at place 108.
 - 8 targets is a small sample. A search number goes into my CV only after a check on more held-out targets.
+
+## Search study (2026-10-18)
+
+I want to know if the search evaluation can tell a better search from a worse one, before I change the search again. I wrote this decision rule before I saw any replay result.
+
+### Decision rule
+
+- Metric: a target is found when it is in the first 8 product pages of one search_shop call (recall@8), after the budget check and the check of the card values. MRR is the second metric.
+- Methods are compared on the same frozen pages (offline replay), paired by target.
+- Test: McNemar exact test on the paired found or not found results, two-sided. A method is better only if p < 0.05 on the held-out set. A 95% bootstrap interval of the difference of recall@8 is reported too.
+- Held-out set: products from the bestseller lists of amazon.se in each category, chosen at random with a fixed seed (20261018). I do not choose them. The search words come from the profile (the search words of the kind), and the budget is the price times 1.25, rounded up to 50 SEK. For shoes, the size is a random size of the product page with the same seed. No word filters, because the chat model chooses them.
+- The size of the held-out set comes from a power estimate on the replay data (80% power, alpha 0.05).
+- If no method is better by this rule, the result is "the data cannot tell", and I keep the simplest method.
+
+### What the field does (sources read on 2026-10-18)
+
+- Reciprocal rank fusion (Cormack, Clarke and Buettcher, SIGIR 2009) sums 1 / (60 + place) over the lists. It was better than each single list and than Condorcet Fuse and CombMNZ on TREC runs. It is now the default merge of hybrid search in OpenSearch, Elasticsearch and others. It rewards a card that is in many lists (agreement).
+- Bruch et al. 2022 (An Analysis of Fusion Functions for Hybrid Retrieval, arXiv 2210.11934) found that a tuned convex combination of scores is better than RRF. This needs scores. amazon gives only places, so it does not apply to us.
+- E-commerce ranking is learning to rank on click and sale data (A Survey on E-Commerce Learning to Rank, eBay, arXiv 2412.03581, 2024). We have no such data. The sort orders of amazon already contain its own model.
+- Rerankers: cross-encoders (for example bge-reranker, Qwen3-Reranker) and listwise LLM rerankers are the strongest second stage on the Amazon ESCI product search data (Rec-R1, arXiv 2503.24289, 2025; Hint-Augmented Re-ranking, arXiv 2511.13994, AACL 2025). An LLM reranker costs money for each search.
+- Evaluation: paired tests on the same topics, and a topic-set size from a power analysis with alpha 0.05 and 80% power (Sakai, Laboratory Experiments in Information Retrieval, Springer 2018; Sakai SIGIR 2016).
+
+### Offline replay of all runs
+
+`src/scout/eval/replay.py` and `eval/replay/replay_runs.py` read the search pages of each eval-search run again from the snapshots and order them with each method. The replay gives the same places as the live runs where the methods are the same (for example anc-over-ear in run 2037: 6, 7 and 28). Hits in the first 8 product pages, after the same budget and value checks for all methods:
+
+| run | targets | amazon default | interleave U | rrf U | rrf F, then default | interleave F, then default | rrf all | interleave all |
+|---|---|---|---|---|---|---|---|---|
+| 10/17 18:53 | 20 | 16 | 11 | 13 | 14 | 15 | 13 | 13 |
+| 10/17 20:37 | 20 | 16 | 12 | 11 | 12 | 13 | 9 | 12 |
+| 10/18 17:41 (held-out) | 8 | 4 | 5 | 3 | 3 | 5 | 3 | 5 |
+
+U is page 1 of the three sort orders without filters (interleave U is the search of 2026-10-14, rrf U is "without filters"). F is the filtered lists ("rrf F, then default" is the search of 2026-10-17). amazon default is pages 1 and 2 of the default order of amazon, without filters. The runs of 10/16 read only page 1 of the default order, so they are not in this table.
+
+- amazon's own default order, with only the Python checks, is the best method on the 20 tuned targets (16 against 12 to 13). On the 8 held-out targets it gets 4, the interleave methods get 5.
+- The difference is not significant. McNemar exact test on run 20:37, amazon default against interleave U: 4 targets only A, 0 only B, p = 0.125. All other pairs have p of 0.29 or more. On the held-out set all p are 0.5 or more.
+- Noise between two runs of the same code: 0 to 3 of 20 targets change their result. So a difference of 3 can be noise.
+- Power: to see a gain of 3 targets of 20 (15 points) with 5 of 20 targets different between the methods, McNemar needs about 100 targets for 80% power (simulation, seed 20261018). The 28 targets we have give a power of about 10%.
+- Misses of amazon default in the newest run of each target (9 of 29): 2 are in no list (the search words do not find them), 1 is removed by the budget check (the card shows a colour at 690 SEK, the target colour costs 290 SEK), 6 are in a list but after place 8.
+- A local reranker (bge-m3 similarity of the title to the facts, over all cards) is much worse: 8 of 20 and 0 of 8. A title does not carry what the sort orders of amazon know (sales, reviews). It found car-compressor-box at place 2, where all other methods are past place 40.
+
+### Conclusion of the study so far
+
+The data cannot tell the methods apart. The 15 of 20 of 10/17 was tuning and noise. The simplest method, the default order of amazon with the Python checks, is never clearly worse. A real decision needs about 100 held-out targets from the bestseller lists.
