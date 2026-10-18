@@ -236,3 +236,18 @@ U is page 1 of the three sort orders without filters (interleave U is the search
 ### Conclusion of the study so far
 
 The data cannot tell the methods apart. The 15 of 20 of 10/17 was tuning and noise. The simplest method, the default order of amazon with the Python checks, is never clearly worse. A real decision needs about 100 held-out targets from the bestseller lists.
+
+### Changes of 2026-10-18 (steps 1 and 2)
+
+1. The search reads pages 1 and 2 of the default order of amazon. When the needs give number filters, the default order with the price and number filters is taken in turns with it. When the chat model gives word filters, the default order with all filters is a third list in turns. The rating and sales orders are not read. A first search_shop call now loads 2 to 6 search pages, before about 11.
+2. A search card shows the price of one colour. A card over the budget that has other colours (its swatch links) gives its place to them, and the product page of each colour gives its own price. The earbuds target (anc-earbuds) was lost this way before.
+3. Search with other words when the results are weak: the prompt already says this, and Haiku did it in eval-hidden on 10/14. Of the two targets in no list, one is out of stock, and the other (waterproof-trail-women-38) is a hiking shoe that I took as a trail running shoe. No code change.
+
+Replay on the frozen pages, with the colour change for all methods (in-sample, not a decision):
+
+| run | targets | amazon default | 10/18 | 10/17 | 10/14 |
+|---|---|---|---|---|---|
+| 10/17 20:37 | 20 | 16 | 15 | 12 | 10 |
+| 10/18 17:41 (held-out) | 8 | 5 | 5 | 3 | 5 |
+
+The number list helps narrow-cheap (19 to 10) and under-counter-quiet (21 to 10) but pushes tall-top-freezer down (7 to 15). The held-out run of about 100 targets decides between amazon default, 10/18 and 10/17.
