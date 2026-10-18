@@ -84,7 +84,7 @@ User: I want a fridge, my requirements are ...
    a. Search amazon.se in Swedish. Send the filters of the user to the site, and the budget if the user gives one.
       The result lists show the rating and the review count of each candidate.
    b. (After v1) Search external review sources at category level. Count how often each model is mentioned.
-   c. Fetch the detail pages in Threshold Algorithm order over the sorted lists (see 4.3). Store them (see 4.4).
+   c. Fetch the detail pages in the read order of the result lists (see 4.3). Store them (see 4.4).
       Stop at 50 detail pages, or when no unread candidate can come into the top 10.
    d. Score the fetched candidates one time with the phase 3 scoring. For the top 10, fetch their shop reviews,
       up to 30 pages. Also search the selected professional review sites by the model numbers of the top 10.
@@ -179,6 +179,8 @@ The search must not read an endless number of result pages. It must also keep pr
 
 1. **Predicate pushdown.** Each hard condition that the site can filter goes into the search parameters of the site.
 2. **Top-k over more than one sorted list (Fagin's Threshold Algorithm).** All lists must be available before the agent fetches a detail page. In v1 the lists are the sort orders of amazon.se, by customer rating and by popularity (or review count). The first task of build phase 5 finds which sorts amazon.se has. After v1, review mentions from the category-level review search (phase 2b) become a third list. The agent reads down the lists in parallel. It fetches the detail page of each new candidate. It stops when the best possible list score of every unread candidate is less than the score of the current k-th candidate (k = 10). The list score moves the rating near the category average when the review count is small (a Bayesian average). Thus a 5.0 rating from 2 reviews does not rank above 4.6 from 3,000 reviews. The final rank in phase 3 also uses data from the detail pages. Thus this stop rule only selects the detail pages that the agent fetches.
+
+   Changed on 2026-10-18. An offline replay of all search runs (plan of phase 4, "Search study") found no clear difference between the merge methods, and the default order of amazon.se with the Python checks was never clearly worse. Thus a search now reads pages 1 and 2 of the default order. When there are number filters, the default order with them is taken in turns with it. The sort orders by rating and sales are not read. The Threshold Algorithm stays in the code for the comparison in eval-search.
    On amazon.se each search card shows the rating and the review count. Thus a candidate's value in the other list costs nothing. Here the algorithm mainly decides how many result pages to read for each list. Its full benefit comes after v1, when the review-mentions list is expensive to read.
 3. **Multi-stage ranking.** The first pass uses only the title, price, rating and review count from the search results. It removes products that are not related. If the user gives a budget, it also removes products above the budget. The agent fetches detail pages only for the candidates that pass. Only the top 10 after the rank get reviews and images.
 4. **Page limits.** Each search has page limits. When the agent reaches a limit, it stops and says so in the picks. Defaults: 50 detail pages and 30 review pages. If we use a paid model, we add a money limit. We set it after phase 1 measures the cost of one search.

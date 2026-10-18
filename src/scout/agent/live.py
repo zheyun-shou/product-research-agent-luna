@@ -47,7 +47,7 @@ class LazyBrowser:
 
 
 SHOPPER = "me"  # one shopper on this computer; the web page has no login
-LIST_PAGES = 2  # result pages of each list that the Threshold Algorithm can read in the first search_shop call
+LIST_PAGES = 2  # result pages of each list that the first search_shop call reads
 
 
 def shared_deps(conn, llm, crawl, refetch, k: int = 5, size_check: bool = True, find_missing: bool = True,
@@ -236,13 +236,13 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
             text = "\n".join([text, *report.notes])
         else:
             def choose(found):
-                return adapter.price_filter(budget) + number_filters(needs, profile, found), words_chosen
+                return adapter.price_filter(budget), number_filters(needs, profile, found), words_chosen
             # The first call can read more than one page of each list: a later page starts after the last one read
             search = key[:2] + key[3:]
             start = max(page, read_to.get(search, 0) + 1) if page > 1 else page
             report = run_crawl(conn, adapter, profile.category, words, on_problem=on_problem, first_page=start,
                                max_pages=LIST_PAGES if page == 1 else 1, max_details=max_details,
-                               sorts=adapter.sorts if page == 1 else (), budget=budget, skip_known=True,
+                               budget=budget, skip_known=True,
                                enrich=enrich, filters=choose, card_check=lambda c: off_condition(c, needs, profile),
                                screen=lambda cands: screen_titles(cands, profile, llm, needs.wanted(profile),
                                                                   needs.text() or None))

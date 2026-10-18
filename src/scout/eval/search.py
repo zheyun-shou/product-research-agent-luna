@@ -1,11 +1,11 @@
 """The search evaluation (phase 5 Task 7): where is the hidden product in the read order of a shop search?
 
 It runs the search of each target with fixed words and needs, so it calls no model and costs nothing but the page
-loads. It compares three searches. "before" is the search of 2026-10-14: page 1 of the default, rating and sales
-orders taken in turns, with the budget only. "without filters" is the same pages in the order of the Threshold
-Algorithm. "with filters" is the new search: the filters of the shop, the Threshold Algorithm and Python's check of
-the card values. The lists and the checks are the ones of the crawl. The worker order of the title screen is not in
-it, because it needs a model."""
+loads. It compares three searches, all with the same Python checks of the cards (the budget, the card values):
+"10/14" is page 1 of the default, rating and sales orders taken in turns. "10/17" is the sorts with the price and
+number filters and the default order with the word filters, merged by the Threshold Algorithm (rank fusion), then
+the default order without filters. "10/18" is the search of the crawl now (crawl.result_lists, search.merge). The
+worker order of the title screen is not in it, because it needs a model."""
 from decimal import Decimal
 from typing import Callable
 
@@ -14,12 +14,13 @@ from scout.eval.hidden import Target
 from scout.needs import Needs
 from scout.profiles import CategoryProfile
 from scout.search.filters import number_filters, off_condition, outside, word_filters
-from scout.search.threshold import Page, threshold_search
+from scout.search.merge import interleave_search
+from scout.search.threshold import Page, ResultList, threshold_search
 from scout.sources.base import FilterGroup
 
 READ_PAGES = 8  # the product pages of one search_shop call
-OLD, FUSED, NEW = "before", "without filters", "with filters"
-ROWS = (OLD, FUSED, NEW)
+OLD, MID, NEW = "10/14", "10/17", "10/18"
+ROWS = (OLD, MID, NEW)
 
 
 def interleave(orders: list[list]) -> list:
@@ -50,22 +51,35 @@ def search_target(target: Target, profile: CategoryProfile, fetch: Callable[[str
 
     pages_1 = [fetcher(s, [], "")(1) for s in (None, *adapter.sorts)]
     old = interleave([p[0] for p in pages_1 if p])
-    fused = threshold_search(result_lists(fetcher, adapter.sorts, []), k=k, max_pages=1)
     words, unknown = word_filters(case.filters, groups())
-    chosen = adapter.price_filter(budget) + number_filters(needs, profile, groups()) + words
-    new = threshold_search(result_lists(fetcher, adapter.sorts, chosen, words), k=k, max_pages=list_pages)
+    price, numbers = adapter.price_filter(budget), number_filters(needs, profile, groups())
+    mid = threshold_search(lists_1017(fetcher, adapter.sorts, price + numbers, words), k=k, max_pages=list_pages)
+    new = interleave_search(result_lists(fetcher, price, numbers, words), max_pages=list_pages)
+    check = lambda c: off_condition(c, needs, profile)  # noqa: E731
     rows = {}
-    for name, order, result, check in ((OLD, old, None, None), (FUSED, fused.order, fused, None),
-                                       (NEW, new.order, new, lambda c: off_condition(c, needs, profile))):
+    for name, order, result in ((OLD, old, None), (MID, mid.order, mid), (NEW, new.order, new)):
         kept = keep_cards(order, budget, check, {})
         place = place_of(target, kept)
         rows[name] = {"candidates": len(kept), "place": place,
                       "calls": None if place is None else (place - 1) // READ_PAGES + 1}
         if result is not None:
             rows[name] |= {"pages": result.pages, "stop": result.stop}
+    chosen = price + numbers + words
     rows[NEW]["filters"] = chosen
     rows[NEW]["unknown_filters"] = unknown
     return rows
+
+
+def lists_1017(fetcher, sorts: tuple[str, ...], safe: list[str], words: list[str]) -> list[ResultList]:
+    """The result lists of the search of 2026-10-17, for the comparison."""
+    orders = [None, *sorts]
+    suffix = " with filters" if safe else ""
+    lists = [ResultList(f"{s or 'default'}{suffix}", fetcher(s, safe, "")) for s in orders]
+    if words:
+        lists.append(ResultList("default with the word filters", fetcher(None, safe + words, "")))
+    if safe:
+        lists.append(ResultList("default", fetcher(None, [], ""), first=False))
+    return lists
 
 
 def summary_text(results: list[dict]) -> str:

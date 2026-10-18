@@ -32,7 +32,7 @@ class AmazonSeAdapter:
         self.snapshot_dir = snapshot_dir
         self.screenshots = screenshots
 
-    sorts = ("rating", "sales")  # the floor of the agent loop: page 1 of these sort orders too
+    sorts = ("rating", "sales")  # other sort orders; eval-search compares them (the search reads the default)
 
     def search_url(self, query: str, page: int = 1, sort: str | None = None, filters: list[str] = ()) -> str:
         return search_url(query, page, sort, filters)

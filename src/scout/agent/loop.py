@@ -116,11 +116,11 @@ class UpdateNeeds(BaseModel):
 
 
 class SearchShop(BaseModel):
-    """Search amazon.se and store the new products (up to 8 product pages). Page 1 also reads the pages sorted by
-    customer rating and by sales. Python sets the filters of the shop for the budget and the number conditions of the
-    needs, and the worker reads the best matches first. When more results fit, the result says so: call again with
-    the same words, page and filters to read the next ones, without loading the search pages again. Takes one or two
-    minutes."""
+    """Search amazon.se and store the new products (up to 8 product pages). It reads the default order of the shop.
+    Python sets the filters of the shop for the number conditions of the needs and takes that list in turns with
+    the default order, and the worker reads the best matches first. When more results fit, the result says so: call
+    again with the same words, page and filters to read the next ones, without loading the search pages again.
+    Takes one or two minutes."""
     words: str = Field(description="Swedish search words, one phrase")
     page: int = Field(1, description="The result page, from 1")
     filters: list[str] = Field(default_factory=list, description="Word filters of the shop as 'Group: Option', "

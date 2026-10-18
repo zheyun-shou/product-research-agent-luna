@@ -86,3 +86,13 @@ def test_the_ranges_of_number_options_in_other_forms():
     assert _range("Upp till 47,9 cm") == {"high": 47.9, "unit": "cm"}
     assert _range("61 cm och mer") == {"low": 61.0, "unit": "cm"}
     assert _range("Red") == {}
+
+
+def test_the_other_colours_of_a_card():
+    html = """<div data-component-type="s-search-result" data-asin="B0AAAAAAA1"><h2>Earbuds</h2>
+      <a href="/-/en/Earbuds/dp/B0AAAAAAA1/ref=sr_1_5">Earbuds</a>
+      <a href="/-/en/Earbuds/dp/B0AAAAAAA1/ref=cs_sr_dp_1">black</a>
+      <a href="/-/en/Earbuds/dp/B0AAAAAAA2/ref=cs_sr_dp_2">green</a>
+      <a href="/-/en/Earbuds/dp/B0AAAAAAA3/ref=cs_sr_dp_3?x=1">white</a></div>"""
+    assert parse_search_page(html)[0].others == ["B0AAAAAAA2", "B0AAAAAAA3"]
+    assert cards()[0].others == []

@@ -32,6 +32,7 @@ class Candidate(BaseModel):
     rating: Decimal | None = None
     review_count: int | None = None
     sponsored: bool = False
+    others: list[str] = Field(default_factory=list)  # the ids of the other colours on the card
 
 
 class FilterOption(BaseModel):

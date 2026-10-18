@@ -16,6 +16,7 @@ _NUMBER = r"(\d+(?:[.,]\d+)?)"
 _UP_TO = re.compile(rf"^(?:Up to|Upp till|Under)\s+{_NUMBER}\s*(\S+)$", re.I)
 _BETWEEN = re.compile(rf"^{_NUMBER}\s*(?:[^\s\d-]+\s+)?(?:(?:to|till)\s+|[-–]\s*){_NUMBER}\s*(\S+)$", re.I)
 _ABOVE = re.compile(rf"^{_NUMBER}\s*(\S+)\s*(?:&|och)\s*(?:above|över|mer)$", re.I)
+_SWATCH = re.compile(r"/dp/([A-Z0-9]{10})/ref=cs_sr_dp_")  # the colour links under a card
 
 
 def parse_search_page(html: str) -> list[Candidate]:
@@ -44,9 +45,16 @@ def parse_search_page(html: str) -> list[Candidate]:
                 rating=parse_rating(rating_el.get_text()) if rating_el else None,
                 review_count=_review_count(card),
                 sponsored=_is_sponsored(card),
+                others=_others(card, asin),
             )
         )
     return found
+
+
+def _others(card: Tag, asin: str) -> list[str]:
+    """The other colours of the card (its swatch links). The card shows the price of one colour only."""
+    found = (_SWATCH.search(a.get("href") or "") for a in card.select("a[href]"))
+    return list(dict.fromkeys(m[1] for m in found if m and m[1] != asin))
 
 
 def has_next_page(html: str) -> bool:

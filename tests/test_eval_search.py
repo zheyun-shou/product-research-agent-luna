@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from scout.eval.hidden import SearchCase
-from scout.eval.search import FUSED, NEW, OLD, interleave, not_valid, search_target, summary_text
+from scout.eval.search import MID, NEW, OLD, interleave, not_valid, search_target, summary_text
 from scout.needs import ConditionSpec
 from scout.profiles import load_profile
 from scout.sources.amazon_se.adapter import AmazonSeAdapter
@@ -21,7 +21,7 @@ def cards(*ids, title="Fridge"):
             for i in ids]
 
 
-def test_the_place_of_the_target_before_and_with_the_filters():
+def test_the_place_of_the_target_in_the_three_searches():
     target = TARGET.model_copy(update={"search": CASE})
     wide = cards("W1", title="Fridge 70 cm wide")
     pages = {search_url("kyl frys", 1, sort): (wide + cards(*[f"X{n}" for n in range(12)], "B1"), False)
@@ -35,14 +35,14 @@ def test_the_place_of_the_target_before_and_with_the_filters():
         asked.append(url)
         return pages.get(url)
     rows = search_target(target, PROFILE, fetch, AmazonSeAdapter(None, None), lambda: GROUPS, list_pages=2)
-    assert rows[OLD]["place"] == 14 and rows[OLD]["calls"] == 2  # behind the wide one and 12 others
-    assert rows[FUSED]["place"] == 14 and rows[FUSED]["stop"] == "all results read"
+    assert rows[OLD]["place"] == 13 and rows[OLD]["calls"] == 2  # behind 12 others; the wide one is outside
+    assert rows[MID]["place"] == 1 and rows[MID]["candidates"] == 13
+    # The word-filter list and the default order in turns: B1 is first in the filtered list
     assert rows[NEW]["place"] == 1 and rows[NEW]["filters"] == ["p_36:-500000", "c:1"]
-    assert rows[NEW]["candidates"] == 13  # the wide one is outside the width
+    assert rows[NEW]["pages"] == {"default with the word filters": 1, "default": 1}
     text = summary_text([{"target": "t", **rows}, {"target": "u", "valid": False, "why": "out of stock"}])
-    assert ("t: before: place 14 of 14 (call 2); without filters: place 14 of 14 (call 2); with filters: place 1 of "
-            "13 (call 1)") in text
-    assert "u: not valid now (out of stock)" in text and "with filters: in the first 8 product pages for 1 of 1" in text
+    assert "t: 10/14: place 13 of 13 (call 2); 10/17: place 1 of 13 (call 1); 10/18: place 1 of 13 (call 1)" in text
+    assert "u: not valid now (out of stock)" in text and "10/18: in the first 8 product pages for 1 of 1" in text
 
 
 def test_a_target_that_does_not_fit_its_search_now():

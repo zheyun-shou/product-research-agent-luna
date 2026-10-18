@@ -621,7 +621,7 @@ def check_grader_command(
 def eval_search(
     targets: Path = ROOT / "eval" / "hidden" / "targets.yaml",
     only: Optional[str] = typer.Option(None, help="run only the targets with these ids, separated by commas"),
-    list_pages: int = typer.Option(2, help="result pages of each list that the Threshold Algorithm can read"),
+    list_pages: int = typer.Option(2, help="result pages of each list that a search reads"),
 ) -> None:
     """Find the place of each hidden product in the read order of its search, before and with the filters of the
     shop. It loads pages only and calls no model. The evaluation database keeps the fetch log and the filters."""
