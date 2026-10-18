@@ -9,7 +9,7 @@ from typing import Callable
 
 import psycopg
 
-from scout.db.store import (known_source_ids, load_filters, log_fetch, refresh_listings, save_filters, save_record,
+from scout.db.store import (known_source_ids, log_fetch, refresh_listings, save_filters, save_record,
                              stored_attributes)
 from scout.llm.client import LLMOutputError, LLMTimeout, LLMUnavailable
 from scout.search.merge import interleave_search
@@ -19,8 +19,6 @@ from scout.sources.base import Candidate, FilterGroup, ProductRecord, RawPage, S
 OnProblem = Callable[[SessionStatus, str], bool]
 Enricher = Callable[[ProductRecord], "tuple[ProductRecord, bool]"]
 Screener = Callable[[list[Candidate]], list[Candidate]]
-# filter groups -> (the price filter, the number filters, the word filters)
-FilterChooser = Callable[[list[FilterGroup]], tuple[list[str], list[str], list[str]]]
 CardCheck = Callable[[Candidate], bool]
 MAX_ATTEMPTS = 3
 MAX_COLOURS = 3  # the other colours that take the place of one card over the budget
@@ -44,7 +42,6 @@ class CrawlReport:
     notes: list[str] = field(default_factory=list)
     unread: list[Candidate] = field(default_factory=list)  # kept candidates past max_details, in order
     off_condition: int = 0
-    filters: list[str] = field(default_factory=list)  # the filters of the site that the search used
     list_pages: dict[str, int] = field(default_factory=dict)  # the result pages read in each list
     stop: str = ""  # why the search stopped reading result pages
     last_page: int = 0  # the last result page read in any list
@@ -80,22 +77,6 @@ def fetch_checked(
         if status.problem not in ("incomplete", "unavailable") and not on_problem(status, url):
             return None
     return None
-
-
-def result_lists(fetcher: Callable[[str | None, list[str], str], Callable[[int], Page | None]],
-                 price: list[str], numbers: list[str] = (), words: list[str] = ()) -> list[ResultList]:
-    """The result lists of one search, taken in turns (search.merge): the default order with the price and number
-    filters when there are number filters, the default order with all filters when the chat model gives word
-    filters, and the default order without filters. fetcher(sort, filters, name) gives the fetch of the pages of
-    one list. The price filter alone gives no list: the budget check of the cards does its work."""
-    lists = []
-    if numbers:
-        lists.append(ResultList("default with the number filters", fetcher(None, [*price, *numbers],
-                                                                           "default with the number filters")))
-    if words:
-        lists.append(ResultList("default with the word filters", fetcher(None, [*price, *numbers, *words],
-                                                                         "default with the word filters")))
-    return lists + [ResultList("default", fetcher(None, [], "default"))]
 
 
 def keep_cards(cards: list[Candidate], budget: Decimal | None, card_check: CardCheck | None,
@@ -135,55 +116,33 @@ def crawl(
     screen: Screener | None = None,
     first_page: int = 1,
     skip_known: bool = False,
-    filters: FilterChooser | None = None,
     card_check: CardCheck | None = None,
 ) -> CrawlReport:
-    """filters: chooses the filters of the site from its filter groups; a filtered list is taken in turns with the
-    default order without filters (result_lists), and max_pages pages of each list are read. card_check: True for a
-    card whose values are outside the needs.
+    """The search reads max_pages pages of the default order of the shop, without filters (search.merge). The
+    filters of the first page are stored for the evaluation. card_check: True for a card whose values are outside
+    the needs.
     The detail pages keep the limit max_details. The kept candidates past the limit are in report.unread, for
     read_details later."""
     if not getattr(adapter, "terms_check", ""):
         raise RuntimeError(f"Adapter {adapter.name} has no terms check recorded, so it stays disabled.")
     report = CrawlReport()
-    loaded: dict[tuple, Page] = {}
 
-    def fetcher(sort: str | None, chosen: list[str], name: str):
-        def fetch(number: int) -> Page | None:
-            key = (sort, tuple(chosen), number)
-            if key in loaded:
-                return loaded[key]
-            url = adapter.search_url(query, number, sort, chosen)
-            page = fetch_checked(adapter, conn, url, on_problem, report.notes)
-            if page is None:
-                report.notes.append(f"the {name} order did not load at page {number}: {url}")
-                return None
-            report.search_pages += 1
-            # The filters of the shop come from the first page without filters: a filtered page shows fewer
-            if not chosen and not report.page_filters and hasattr(adapter, "parse_filters"):
-                report.page_filters = adapter.parse_filters(page)
-                save_filters(conn, adapter.name, category, report.page_filters)
-            loaded[key] = adapter.parse_search(page)
-            return loaded[key]
-        return fetch
+    def fetch(number: int) -> Page | None:
+        url = adapter.search_url(query, number)
+        page = fetch_checked(adapter, conn, url, on_problem, report.notes)
+        if page is None:
+            report.notes.append(f"the default order did not load at page {number}: {url}")
+            return None
+        report.search_pages += 1
+        if not report.page_filters and hasattr(adapter, "parse_filters"):
+            report.page_filters = adapter.parse_filters(page)
+            save_filters(conn, adapter.name, category, report.page_filters)
+        return adapter.parse_search(page)
 
-    chosen: list[str] = []
-    price: list[str] = []
-    numbers: list[str] = []
-    words: list[str] = []
-    if filters is not None and hasattr(adapter, "parse_filters"):
-        groups = load_filters(conn, adapter.name, category)
-        if not groups:  # the first search of the category: its page gives the filters
-            fetcher(None, [], "default")(first_page)
-            groups = load_filters(conn, adapter.name, category)
-        price, numbers, words = filters(groups)
-        chosen = price + numbers + words
-    report.filters = chosen if numbers or words else []  # the price filter alone gives no list
-    lists = result_lists(fetcher, price, numbers, words)
-    found = interleave_search(lists, max_pages=max_pages, first_page=first_page)
+    found = interleave_search([ResultList("default", fetch)], max_pages=max_pages, first_page=first_page)
     report.list_pages, report.stop, report.last_page = found.pages, found.stop, found.last_page
-    if found.failed and len(found.failed) == len(lists):
-        report.notes.append(f"search stopped at page {first_page}: no result list loaded")
+    if found.failed:
+        report.notes.append(f"search stopped at page {first_page}: the result list did not load")
     report.candidates = len(found.order)
     candidates = keep_cards(found.order, budget, card_check, report.outcomes)
     report.other_colours = sum(v == "other_colours" for v in report.outcomes.values())

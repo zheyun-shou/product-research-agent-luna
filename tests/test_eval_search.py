@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from scout.eval.hidden import SearchCase
-from scout.eval.search import MID, NEW, OLD, interleave, not_valid, search_target, summary_text
+from scout.eval.search import MID, NEW, OLD, TURNS, interleave, lists_1018, not_valid, search_target, summary_text
 from scout.needs import ConditionSpec
 from scout.profiles import load_profile
 from scout.sources.amazon_se.adapter import AmazonSeAdapter
@@ -38,11 +38,14 @@ def test_the_place_of_the_target_in_the_three_searches():
     assert rows[OLD]["place"] == 13 and rows[OLD]["calls"] == 2  # behind 12 others; the wide one is outside
     assert rows[MID]["place"] == 1 and rows[MID]["candidates"] == 13
     # The word-filter list and the default order in turns: B1 is first in the filtered list
-    assert rows[NEW]["place"] == 1 and rows[NEW]["filters"] == ["p_36:-500000", "c:1"]
-    assert rows[NEW]["pages"] == {"default with the word filters": 1, "default": 1}
+    assert rows[TURNS]["place"] == 1 and rows[TURNS]["filters"] == ["p_36:-500000", "c:1"]
+    assert rows[TURNS]["pages"] == {"default with the word filters": 1, "default": 1}
+    # The search of the crawl now reads the default order only
+    assert rows[NEW]["place"] == 13 and rows[NEW]["pages"] == {"default": 1}
     text = summary_text([{"target": "t", **rows}, {"target": "u", "valid": False, "why": "out of stock"}])
-    assert "t: 10/14: place 13 of 13 (call 2); 10/17: place 1 of 13 (call 1); 10/18: place 1 of 13 (call 1)" in text
+    assert "t: 10/14: place 13 of 13 (call 2); 10/17: place 1 of 13 (call 1); 10/18: place 1 of 13 (call 1); 10/19: place 13 of 13 (call 2)" in text
     assert "u: not valid now (out of stock)" in text and "10/18: in the first 8 product pages for 1 of 1" in text
+    assert "10/19: in the first 8 product pages for 0 of 1" in text
 
 
 def test_a_target_that_does_not_fit_its_search_now():
@@ -60,3 +63,15 @@ def test_a_target_that_does_not_fit_its_search_now():
 def test_the_order_of_2026_10_14_takes_the_orders_in_turns():
     merged = interleave([cards("a", "b", "c"), cards("x", "a"), cards("y", "z")])
     assert [c.source_id for c in merged] == ["a", "x", "y", "b", "z", "c"]
+
+
+def test_the_lists_of_2026_10_18():
+    def fetcher(sort, filters, name):
+        return lambda n: (sort, tuple(filters))
+    lists = lists_1018(fetcher, ["p_36:-50000"], ["w:1"], ["c:red"])
+    assert [(r.name, r.fetch(1)) for r in lists] == [
+        ("default with the number filters", (None, ("p_36:-50000", "w:1"))),
+        ("default with the word filters", (None, ("p_36:-50000", "w:1", "c:red"))),
+        ("default", (None, ()))]
+    # The price filter alone gives no list: the budget check of the cards does its work
+    assert [r.name for r in lists_1018(fetcher, ["p_36:-50000"], [], [])] == ["default"]

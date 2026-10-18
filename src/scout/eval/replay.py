@@ -93,7 +93,8 @@ def methods(lists: dict, numbers: bool = False) -> dict[str, list[Candidate]]:
     """The read order of each method. U: no filters, page 1 only (the search of 2026-10-14). F: the filtered lists
     (the sorts with the safe filters and the default order with all filters), pages 1 and 2. default: the default
     order without filters, pages 1 and 2. numbers: the safe filters have number filters, not only the price; then
-    "10/18" (the search of the crawl since 2026-10-18) takes the default order with them in turns with the others."""
+    "10/18" (the search of the crawl on 2026-10-18) takes the default order with them in turns with the others.
+    "amazon default" is the search of the crawl since 2026-10-19."""
     def get(keys, count=None):
         return [cards_of(lists[k], count) for k in keys if k in lists]
     u1 = get([(s, "none") for s in SORTS], 1)

@@ -1,15 +1,16 @@
 """The search evaluation (phase 5 Task 7): where is the hidden product in the read order of a shop search?
 
 It runs the search of each target with fixed words and needs, so it calls no model and costs nothing but the page
-loads. It compares three searches, all with the same Python checks of the cards (the budget, the card values):
+loads. It compares four searches, all with the same Python checks of the cards (the budget, the card values):
 "10/14" is page 1 of the default, rating and sales orders taken in turns. "10/17" is the sorts with the price and
 number filters and the default order with the word filters, merged by the Threshold Algorithm (rank fusion), then
-the default order without filters. "10/18" is the search of the crawl now (crawl.result_lists, search.merge). The
-worker order of the title screen is not in it, because it needs a model."""
+the default order without filters. "10/18" is the default order with the number filters, the default order with the
+word filters and the default order without filters, taken in turns. "10/19" is the search of the crawl now: the
+default order without filters. The worker order of the title screen is not in it, because it needs a model."""
 from decimal import Decimal
 from typing import Callable
 
-from scout.crawl import keep_cards, result_lists
+from scout.crawl import keep_cards
 from scout.eval.hidden import Target
 from scout.needs import Needs
 from scout.profiles import CategoryProfile
@@ -19,8 +20,8 @@ from scout.search.threshold import Page, ResultList, threshold_search
 from scout.sources.base import FilterGroup
 
 READ_PAGES = 8  # the product pages of one search_shop call
-OLD, MID, NEW = "10/14", "10/17", "10/18"
-ROWS = (OLD, MID, NEW)
+OLD, MID, TURNS, NEW = "10/14", "10/17", "10/18", "10/19"
+ROWS = (OLD, MID, TURNS, NEW)
 
 
 def place_of(target: Target, order: list) -> int | None:
@@ -43,20 +44,20 @@ def search_target(target: Target, profile: CategoryProfile, fetch: Callable[[str
     words, unknown = word_filters(case.filters, groups())
     price, numbers = adapter.price_filter(budget), number_filters(needs, profile, groups())
     mid = threshold_search(lists_1017(fetcher, adapter.sorts, price + numbers, words), k=k, max_pages=list_pages)
-    new = interleave_search(result_lists(fetcher, price, numbers, words), max_pages=list_pages)
+    turns = interleave_search(lists_1018(fetcher, price, numbers, words), max_pages=list_pages)
+    new = interleave_search([ResultList("default", fetcher(None, [], ""))], max_pages=list_pages)
     check = lambda c: off_condition(c, needs, profile)  # noqa: E731
     rows = {}
-    for name, order, result in ((OLD, old, None), (MID, mid.order, mid), (NEW, new.order, new)):
+    for name, order, result in ((OLD, old, None), (MID, mid.order, mid), (TURNS, turns.order, turns),
+                                 (NEW, new.order, new)):
         kept = keep_cards(order, budget, check, {})
         place = place_of(target, kept)
         rows[name] = {"candidates": len(kept), "place": place,
                       "calls": None if place is None else (place - 1) // READ_PAGES + 1}
         if result is not None:
             rows[name] |= {"pages": result.pages, "stop": result.stop}
-    chosen = price + numbers + words
-    rows[NEW] |= {"price": price, "numbers": numbers, "words": words}
-    rows[NEW]["filters"] = chosen
-    rows[NEW]["unknown_filters"] = unknown
+    rows[TURNS] |= {"price": price, "numbers": numbers, "words": words, "filters": price + numbers + words,
+                    "unknown_filters": unknown}
     return rows
 
 
@@ -70,6 +71,16 @@ def lists_1017(fetcher, sorts: tuple[str, ...], safe: list[str], words: list[str
     if safe:
         lists.append(ResultList("default", fetcher(None, [], ""), first=False))
     return lists
+
+
+def lists_1018(fetcher, price: list[str], numbers: list[str], words: list[str]) -> list[ResultList]:
+    """The result lists of the search of 2026-10-18, for the comparison. The price filter alone gives no list."""
+    lists = []
+    if numbers:
+        lists.append(ResultList("default with the number filters", fetcher(None, [*price, *numbers], "")))
+    if words:
+        lists.append(ResultList("default with the word filters", fetcher(None, [*price, *numbers, *words], "")))
+    return lists + [ResultList("default", fetcher(None, [], ""))]
 
 
 def summary_text(results: list[dict]) -> str:

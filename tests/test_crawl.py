@@ -213,13 +213,12 @@ def test_stored_listings_get_the_rating_of_the_result_card(db, tmp_path):
     assert (row["rating"], row["review_count"]) == (Decimal("4.5"), 1234)
 
 
-def test_a_filtered_list_that_does_not_load_leaves_the_default_order(db, tmp_path):
+def test_a_default_page_that_does_not_load_stops_the_search(db, tmp_path):
     browser = site()
-    browser.pages[search_url("kylskåp", 1, None, ["c:1"])] = [CAPTCHA, CAPTCHA, CAPTCHA]
-    report = crawl(db, AmazonSeAdapter(browser, tmp_path), "fridge", "kylskåp", on_problem=lambda s, u: True,
-                   filters=lambda groups: ([], ["c:1"], []))
-    assert report.candidates == 3 and report.saved == 3
-    assert any("the default with the number filters order did not load" in n for n in report.notes)
+    browser.pages[search_url("kylskåp")] = [CAPTCHA, CAPTCHA, CAPTCHA]
+    report = crawl(db, AmazonSeAdapter(browser, tmp_path), "fridge", "kylskåp", on_problem=lambda s, u: True)
+    assert report.candidates == 0 and report.saved == 0
+    assert any("the result list did not load" in n for n in report.notes)
 
 
 def test_a_slow_extraction_on_one_page_does_not_stop_the_others(db, tmp_path):
@@ -251,19 +250,11 @@ def test_a_server_error_is_fetched_again_without_asking(db, tmp_path):
     assert browser.fetched.count(product_url("B0AAAAAAA1")) == 2
 
 
-def test_filtered_lists_come_first_and_the_default_page_is_loaded_once(db, tmp_path):
+def test_the_search_reads_the_default_order_only(db, tmp_path):
     browser = site()
-    browser.pages[search_url("kylskåp", 1, None, ["c:1"])] = [html("search_basic.html")]
-    seen = []
-
-    def choose(groups):
-        seen.append(groups)
-        return [], ["c:1"], []
-    report = crawl(db, AmazonSeAdapter(browser, tmp_path), "fridge", "kylskåp", on_problem=never_called,
-                   filters=choose)
-    # No stored filters yet: the default page gives them (the fixture has none), then the filtered list is read
-    assert seen == [[]] and report.filters == ["c:1"]
-    assert report.list_pages == {"default with the number filters": 1, "default": 1} and report.search_pages == 2
+    report = crawl(db, AmazonSeAdapter(browser, tmp_path), "fridge", "kylskåp", on_problem=never_called)
+    assert report.list_pages == {"default": 1} and report.search_pages == 1
+    assert [u for u in browser.fetched if "/s?" in u] == [search_url("kylskåp")]
     assert report.stop == "the page limit" and report.saved == 3
 
 
@@ -302,17 +293,3 @@ def test_a_card_over_the_budget_gives_its_place_to_its_other_colours():
     outcomes = {}
     assert keep_cards([card("A", "690", ["B"])], Decimal("400"), lambda c: True, outcomes) == []
     assert outcomes == {"A": "over_budget"}
-
-
-def test_the_default_order_and_the_filtered_lists():
-    from scout.crawl import result_lists
-
-    def fetcher(sort, filters, name):
-        return lambda n: (sort, tuple(filters))
-    lists = result_lists(fetcher, ["p_36:-50000"], ["w:1"], ["c:red"])
-    assert [(r.name, r.fetch(1)) for r in lists] == [
-        ("default with the number filters", (None, ("p_36:-50000", "w:1"))),
-        ("default with the word filters", (None, ("p_36:-50000", "w:1", "c:red"))),
-        ("default", (None, ()))]
-    # The price filter alone gives no list: the budget check of the cards does its work
-    assert [r.name for r in result_lists(fetcher, ["p_36:-50000"])] == ["default"]

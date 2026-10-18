@@ -251,3 +251,14 @@ Replay on the frozen pages, with the colour change for all methods (in-sample, n
 | 10/18 17:41 (held-out) | 8 | 5 | 5 | 3 | 5 |
 
 The number list helps narrow-cheap (19 to 10) and under-counter-quiet (21 to 10) but pushes tall-top-freezer down (7 to 15). The held-out run of about 100 targets decides between amazon default, 10/18 and 10/17.
+
+### Change of 2026-10-19: the default order only
+
+I chose the default order of amazon.se without the held-out run of about 100 targets. On the frozen pages it was never worse than the search of 10/18 (16 against 15 of 20 in-sample, 5 against 5 of 8 held-out). The difference is inside the noise between two runs of the same code (0 to 3 of 20). When two searches are not clearly different, I take the simpler one. It loads 2 search pages, not up to 6, so it also meets fewer captchas.
+
+- The crawl reads pages 1 and 2 of the default order without filters. The number filter list and the word filter list are removed from the crawl.
+- The chat model can no longer give word filters to search_shop. It searches with other words instead.
+- The filters of the first page are still stored, because eval-search needs them for the rows 10/17 and 10/18.
+- eval-search has four rows now: 10/14, 10/17, 10/18 and 10/19 (the default order, the search of the crawl).
+- Risk: a target with a narrow size condition (narrow-cheap, under-counter-quiet) can be after place 8. The chat model can read page 2 or search with other words.
+- This is a choice on little data, not a measured result. The claim is only that the default order was not worse than the merges on 28 targets.

@@ -1,9 +1,11 @@
-"""The read order of a shop search (2026-10-18): the result lists of the shop taken in turns.
+"""The read order of a shop search: the result lists of the shop taken in turns.
 
 The study of 2026-10-18 (the plan of phase 4) replayed all search runs. The default order of amazon, with only the
 Python checks, was never clearly worse than the merges of several sort orders (RRF, the Threshold Algorithm), and it
-loads far fewer pages. So a search reads the default order. A list with the number filters, or with the word filters
-that the chat model gives, is taken in turns with it: the first card of each list, then the second of each."""
+loads far fewer pages. On 2026-10-18 a search took the default order in turns with a list with the number filters
+and a list with the word filters of the chat model. These lists were not clearly better either, so since 2026-10-19
+the crawl reads the default order only. The evaluation still takes the lists of 2026-10-18 in turns, for the
+comparison."""
 from scout.search.threshold import ResultList, ThresholdResult
 from scout.sources.base import Candidate
 

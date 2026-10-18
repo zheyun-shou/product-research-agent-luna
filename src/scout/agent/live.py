@@ -47,7 +47,7 @@ class LazyBrowser:
 
 
 SHOPPER = "me"  # one shopper on this computer; the web page has no login
-LIST_PAGES = 2  # result pages of each list that the first search_shop call reads
+LIST_PAGES = 2  # result pages of the default order that the first search_shop call reads
 
 
 def shared_deps(conn, llm, crawl, refetch, k: int = 5, size_check: bool = True, find_missing: bool = True,
@@ -207,21 +207,12 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
     unread: dict[tuple, list] = {}
     read_to: dict[tuple, int] = {}  # the last result page read of a search, by the key of unread without the page
 
-    def search_shop(profile, needs, words, page, max_details, filters=()):
-        from scout.db.store import load_filters
-        from scout.search.filters import (filter_names, number_filters, off_condition, word_filters,
-                                          word_filters_text)
+    def search_shop(profile, needs, words, page, max_details):
+        from scout.search.filters import off_condition
         adapter = browser.adapter()
         enrich = lambda rec: enrich_record(rec, profile, llm)  # noqa: E731
         budget = needs.budget_sek()
-        groups = load_filters(conn, SOURCE, profile.category)
-        words_chosen, unknown = word_filters(list(filters), groups)
-        if unknown:
-            return (f"not run: the filters {', '.join(unknown)} are not on the pages of amazon.se. "
-                    + (f"The word filters are: {word_filters_text(groups)}" if groups
-                       else "Search once without filters: the result lists the filters.")), 0
-        key = (profile.category, words, page, budget, repr(needs.wanted(profile)), repr(needs.conditions),
-               tuple(sorted(words_chosen)))
+        key = (profile.category, words, page, budget, repr(needs.wanted(profile)), repr(needs.conditions))
         if unread.get(key):
             known = known_source_ids(conn, SOURCE, [c.source_id for c in unread[key]])
             refresh_listings(conn, [c for c in unread[key] if c.source_id in known])
@@ -235,32 +226,23 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
                     f"again: {report.saved} new products saved.")
             text = "\n".join([text, *report.notes])
         else:
-            def choose(found):
-                return adapter.price_filter(budget), number_filters(needs, profile, found), words_chosen
-            # The first call can read more than one page of each list: a later page starts after the last one read
+            # The first call can read more than one result page: a later page starts after the last one read
             search = key[:2] + key[3:]
             start = max(page, read_to.get(search, 0) + 1) if page > 1 else page
             report = run_crawl(conn, adapter, profile.category, words, on_problem=on_problem, first_page=start,
                                max_pages=LIST_PAGES if page == 1 else 1, max_details=max_details,
                                budget=budget, skip_known=True,
-                               enrich=enrich, filters=choose, card_check=lambda c: off_condition(c, needs, profile),
+                               enrich=enrich, card_check=lambda c: off_condition(c, needs, profile),
                                screen=lambda cands: screen_titles(cands, profile, llm, needs.wanted(profile),
                                                                   needs.text() or None))
             unread[key] = report.unread
             read_to[search] = max(read_to.get(search, 0), report.last_page)
-            groups = load_filters(conn, SOURCE, profile.category)
             text = crawl_text(report, words, start)
             if report.last_page > start:
                 text += (f"\nResult pages {start} to {report.last_page} are read. For more, call search_shop with "
                          f"page {report.last_page + 1}.")
-            if report.filters:
-                text += "\nFilters of the shop: " + ", ".join(filter_names(report.filters, groups)) + "."
-            if report.page_filters and not words_chosen:  # the filters of this search, not of all searches
-                text += ("\nWord filters that you can give in the next search (as 'Group: Option'): "
-                         + word_filters_text(report.page_filters))
         if search_log is not None:
-            search_log.append({"words": words, "page": page, "filters": list(filters),
-                               "outcomes": dict(report.outcomes)})
+            search_log.append({"words": words, "page": page, "outcomes": dict(report.outcomes)})
         if report.skipped:
             text += f"\n{len(report.skipped)} product pages did not load: " + ", ".join(report.skipped)
         if unread[key]:
