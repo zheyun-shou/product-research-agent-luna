@@ -50,11 +50,12 @@ def main(only=None, rerank=None, out_name="replay.json"):
             out.append({"run": run.name, "target": t.id, "category": t.category, "set": target_file,
                         "lists": list_places(t, lists), "sizes": {f"{s or 'default'}/{k}": sum(map(len, p))
                                                                  for (s, k), p in lists.items()},
-                        "methods": score_methods(t, profile, methods(lists), rerank),
+                        "methods": score_methods(t, profile, methods(lists, any(not f.startswith("p_36:") for f in safe)), rerank),
                         "eval": {k: r[k]["place"] for k in ("before", "without filters", "with filters") if k in r}})
             print(run.name, t.id, {k: v["place"] for k, v in out[-1]["methods"].items()}, flush=True)
     (ROOT / "eval" / "results" / out_name).write_text(json.dumps(out, indent=1, ensure_ascii=False), encoding="utf-8")
 
 
 if __name__ == "__main__":
-    main()
+    main(only=set(sys.argv[1:]) or None, out_name="replay-" + "-".join(sys.argv[1:]) + ".json" if sys.argv[1:]
+         else "replay.json")
