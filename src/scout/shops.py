@@ -1,6 +1,7 @@
 """read_page: one product page of a shop that is not amazon.se (design section 1a). The page data (JSON-LD) first,
 then the worker with the raw-text check for what is missing. The product goes into the database like an amazon.se
 product, as a listing of the same product when the GTIN, or the brand and the model, are the same."""
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable
@@ -69,19 +70,27 @@ def unique_reviews(rec: ProductRecord, known: set[str]) -> tuple[ProductRecord, 
 
 def read_page(conn: psycopg.Connection, fetch: Callable[[str], Fetched], url: str, category: str,
               enrich: Callable[[ProductRecord], tuple[ProductRecord, bool]] | None,
-              more: Callable[[str], list[dict]] = more_reviews) -> PageRead:
-    """more(url): the reviews that the page loads apart from its page data (scout.shop_reviews)."""
+              more: Callable[[str], list[dict]] = more_reviews, lock=None) -> PageRead:
+    """more(url): the reviews that the page loads apart from its page data (scout.shop_reviews). lock: the lock of
+    the database connection; the page loads and the worker reads it without the lock."""
     site = site_of(url)
     if is_amazon(url):
         return PageRead(AMAZON_NOTE + ".", 0)
     fetched = fetch(url)
     page = fetched.page
     rec, from_data, problem = read_record(fetched, enrich)
+    extra = more(page.final_url) if rec is not None else []
+    with lock or nullcontext():
+        return store_page(conn, url, site, fetched, rec, from_data, problem, extra, category)
+
+
+def store_page(conn: psycopg.Connection, url: str, site: str, fetched: Fetched, rec: ProductRecord | None,
+               from_data: list[str], problem: str, extra: list[dict], category: str) -> PageRead:
+    page = fetched.page
     log_fetch(conn, site, url, "ok" if not problem else "failed", page.status if page else None,
               page.duration_ms if page else None, problem)
     if rec is None:
         return PageRead(f"{url}: not read, {problem}.", 1)
-    extra = more(page.final_url)
     if extra:
         rec = rec.model_copy(update={"reviews": [*rec.reviews, *extra]})
     rec, copies = unique_reviews(rec, known_reviews(conn, rec, category))

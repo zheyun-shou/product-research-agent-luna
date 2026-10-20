@@ -4,12 +4,14 @@ review API, and Elgiganten from the Feefo widget. The other shops keep the revie
 Each review has the form of ProductRecord.reviews (title, rating, date, verified, text), never the author. The
 market or the locale of a review is put in front of its title, because Prisjakt and Feefo mix the Nordic sites."""
 import re
+import threading
+import time
 from typing import Callable
 from urllib.parse import parse_qs, urlparse
 
 import httpx
 
-from scout.fetch import HEADERS, site_of
+from scout.fetch import HEADERS, SITE_GAP, site_of
 
 MAX_REVIEWS = 50  # for one product page
 TIMEOUT = 20.0
@@ -70,14 +72,31 @@ def feefo_reviews(url: str, get: Get = httpx.get) -> list[dict]:
     return found
 
 
-def more_reviews(url: str, get: Get = httpx.get, post: Post = httpx.post) -> list[dict]:
+_last: dict[str, float] = {}
+_gap_lock = threading.Lock()
+
+
+def polite(site: str, gap: float = SITE_GAP, sleep=time.sleep, clock=time.monotonic) -> None:
+    """The same gap between two requests of one site as for its pages (scout.fetch). The first request waits the
+    full gap too, because the product page of the site loaded just before it."""
+    with _gap_lock:
+        last = _last.get(site)
+        wait = gap if last is None else last + gap - clock()
+        if wait > 0:
+            sleep(wait)
+        _last[site] = clock()
+
+
+def more_reviews(url: str, get: Get = httpx.get, post: Post = httpx.post, wait=polite) -> list[dict]:
     """The reviews that the page loads apart from its page data, for the sites that have such a reader."""
     site = site_of(url)
     try:
         if site == "prisjakt.nu":
+            wait(site)
             return prisjakt_reviews(url, post)
         if site in FEEFO_MERCHANTS:
+            wait("api.feefo.com")
             return feefo_reviews(url, get)
-    except (httpx.HTTPError, ValueError):  # the page data still counts
+    except Exception:  # an error or an unknown answer of the review service: the page data still counts
         return []
     return []

@@ -456,13 +456,16 @@ def save_web_chunks(conn: psycopg.Connection, listing_id: int, ref_prefix: str, 
         )
 
 
-def web_searched(conn: psycopg.Connection, listing_ids: list[int], since) -> set[int]:
-    """The listings whose product (any of its listings) had a web search since the given time."""
+def web_searched(conn: psycopg.Connection, listing_ids: list[int], since, but: str | None = None) -> set[int]:
+    """The listings whose product (any of its listings) had a web search since the given time. but: a regular
+    expression of search words that do not count (searches of shops or forums only)."""
     rows = conn.execute(
         """SELECT l.id FROM listings l
            WHERE l.id = ANY(%s) AND EXISTS (
                SELECT 1 FROM web_searches w JOIN listings o ON o.id = ANY(w.listing_ids)
-               WHERE o.product_id = l.product_id AND w.searched_at >= %s)""", (listing_ids, since)).fetchall()
+               WHERE o.product_id = l.product_id AND w.searched_at >= %s
+                 AND (%s::text IS NULL OR w.question !~ %s::text))""",
+        (listing_ids, since, but, but)).fetchall()
     return {row["id"] for row in rows}
 
 

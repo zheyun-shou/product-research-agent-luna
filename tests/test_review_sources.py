@@ -2,7 +2,6 @@ import httpx
 from langgraph.checkpoint.memory import InMemorySaver
 
 from scout.agent.loop import SameProduct, SearchWeb, build_agent_graph
-from scout.agent.researcher import scoped
 from scout.review_sources import site_query, sites
 from scout.shop_reviews import feefo_reviews, feefo_sku, more_reviews, prisjakt_id, prisjakt_reviews
 from scout.websearch import ProductRef, thread_pages, topic_question
@@ -26,6 +25,18 @@ def test_the_sites_of_a_kind_go_into_the_search_words_with_or():
 def test_the_sites_are_not_a_topic_for_the_reranker():
     product = ProductRef(1, "Sony WH-1000XM6", "WH-1000XM6", "Sony")
     assert topic_question("Sony WH-1000XM6 test (site:rtings.com OR site:soundguys.com)", [product]) == "test"
+    assert topic_question("OR mode (wired) noise", [product]) == "OR mode (wired) noise"  # words of the shopper
+
+
+def test_a_search_of_shops_or_forums_is_not_a_test_search():
+    import re
+    from scout.review_sources import is_forum, not_for_tests
+    pattern = not_for_tests(CONFIG)
+    assert re.search(pattern, site_query("q", "shops", None, CONFIG))
+    assert re.search(pattern, site_query("q", "forums", None, CONFIG))
+    assert not re.search(pattern, site_query("q", "tests", "headphones", CONFIG)) and not re.search(pattern, "q")
+    assert is_forum("https://www.sweclockers.com/forum/trad/1-x", CONFIG)
+    assert not is_forum("https://www.sweclockers.com/test/1-x", CONFIG)
 
 
 class Response:
@@ -68,8 +79,12 @@ def test_elgiganten_reviews_come_from_feefo():
 def test_more_reviews_only_for_the_sites_with_a_reader_and_a_failure_gives_none():
     def broken(*args, **kwargs):
         raise httpx.ConnectError("down")
-    assert more_reviews("https://www.netonnet.se/art/x/1.9293/", broken, broken) == []
-    assert more_reviews("https://www.prisjakt.nu/produkt.php?p=1", broken, broken) == []
+    def odd(*args, **kwargs):
+        return Response(200, ["not", "a", "dict"])
+    no_wait = lambda site: None  # noqa: E731
+    assert more_reviews("https://www.netonnet.se/art/x/1.9293/", broken, broken, no_wait) == []
+    assert more_reviews("https://www.prisjakt.nu/produkt.php?p=1", broken, broken, no_wait) == []
+    assert more_reviews("https://www.prisjakt.nu/produkt.php?p=1", odd, odd, no_wait) == []
 
 
 def test_thread_pages_are_the_same_thread_from_page_2():
@@ -78,6 +93,10 @@ def test_thread_pages_are_the_same_thread_from_page_2():
             '<a href="/forum/trad/1757274-sony?p=2">2</a><a href="/forum/trad/999-other?p=2">x</a>'
             '<a href="/forum/trad/1757274-sony?p=4">4</a>')
     assert thread_pages(html, url) == [url + "?p=2", url + "?p=3"]
+    assert thread_pages(html, url + "?p=2") == []  # only from the first page
+    shop = "https://www.prisjakt.nu/produkt.php"  # ?p= is a product here, not a page
+    assert thread_pages('<a href="/produkt.php?p=12345">x</a>', shop + "?p=999") == []
+    assert thread_pages('<a href="/produkt.php?p=12345">x</a>', shop) == []
 
 
 def test_search_web_with_sources_searches_the_sites_of_the_list():
@@ -91,6 +110,17 @@ def test_search_web_with_sources_searches_the_sites_of_the_list():
 
 
 def test_a_researcher_joins_another_listing_only_to_its_own_product():
-    assert scoped(SameProduct(id=7, same_as=2), 2) == SameProduct(id=7, same_as=2)
-    assert scoped(SameProduct(id=2, same_as=7), 2) == SameProduct(id=7, same_as=2)
-    assert scoped(SameProduct(id=5, same_as=7), 2) == SameProduct(id=5, same_as=2)
+    from scout.agent.researcher import refused
+    assert refused(SameProduct(id=7, same_as=2), 2) is None and refused(SameProduct(id=2, same_as=7), 2) is None
+    assert "only join another listing to your own product" in refused(SameProduct(id=5, same_as=7), 2)
+    assert refused(SameProduct(id=2, same_as=2), 2)
+
+
+def test_the_polite_gap_waits_also_before_the_first_request():
+    from scout.shop_reviews import _last, polite
+    waits, now = [], [100.0]
+    _last.pop("gap.test", None)
+    polite("gap.test", 3.0, waits.append, lambda: now[0])
+    now[0] += 1.0
+    polite("gap.test", 3.0, waits.append, lambda: now[0])
+    assert waits == [3.0, 2.0]

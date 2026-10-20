@@ -67,10 +67,14 @@ def scoped(call: BaseModel, listing_id: int) -> BaseModel:
     """The call for the own product of the researcher only."""
     if isinstance(call, (ReadProduct, FindMissing, SummarizeReviews, SearchText, SearchWeb)):
         return call.model_copy(update={"ids": [listing_id]})
-    if isinstance(call, SameProduct):  # it joins another listing to its own product only
-        other = call.same_as if call.id == listing_id else call.id
-        return call.model_copy(update={"id": other, "same_as": listing_id})
     return call
+
+
+def refused(call: BaseModel, listing_id: int) -> str | None:
+    """Why a call of a researcher does not run: same_product joins another listing to its own product only."""
+    if isinstance(call, SameProduct) and (listing_id not in (call.id, call.same_as) or call.id == call.same_as):
+        return f"same_product: not run, you can only join another listing to your own product (id {listing_id})."
+    return None
 
 
 @dataclass
@@ -150,7 +154,9 @@ def steps(done: Researched, deps, box: Toolbox, card, context: str, history: lis
             break
         for call, call_id in zip(calls, ids):
             call = scoped(call, card.listing_id)
-            if isinstance(call, SearchWeb):  # it takes the database lock inside, only for its database parts
+            if refused(call, card.listing_id):
+                report = refused(call, card.listing_id)
+            elif isinstance(call, (SearchWeb, ReadPage)):  # they take the database lock inside, only to store
                 report = box.run(call)
             else:  # the researchers share one database connection
                 with deps.db_lock:

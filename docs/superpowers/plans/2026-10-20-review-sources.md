@@ -37,3 +37,15 @@ Web search already finds tests and forum threads, but only by chance: the search
 - The reranker does not see the sites of the search words ("site:..." and "OR" are taken out of the topic).
 - A real check without a model (2026-10-20), read_page into the test database: the Prisjakt page of the AirPods Pro 3 stored 27 buyer reviews (all of them), the Elgiganten page of the Gorenje RI4182E1 stored 4 from Feefo, and the NetOnNet page of the Sony WH-1000XM6 stored 5 from its page data.
 - Not run with a model yet.
+
+### Code review (2026-10-20)
+
+The review found 10 problems. 7 are fixed, and 3 are known limits.
+
+- The next pages of a thread are read only on the forums of the list and only from the first page. On Prisjakt, `?p=` is a product, so the first version read other products as pages of the thread. The next page loads only while the text is shorter than the limit.
+- A search of shops or forums only does not count as a web search for tests (the web floor).
+- read_page loads the page, the reviews of Prisjakt or Feefo and the worker reading without the database lock. It takes the lock only to store. So a researcher can read a shop page while another one reads the database.
+- An unknown answer of Prisjakt or Feefo does not stop the read: the page data still counts. Their requests keep the gap of 3 seconds of the site, also the first one after the page.
+- same_product of a researcher runs only when one of the two ids is its own product, and never for one id with itself.
+- The reranker no longer loses the words "OR" and the brackets of the shopper; only the group of sites at the end is taken out.
+- Known limits: (1) the review requests of Prisjakt and Feefo are not in the fetch log; (2) a researcher reads shop pages without the browser, so a page that needs JavaScript gives only its page data (the main agent can read it again with the browser); (3) the test sites are listed by the names of the preset categories, so a drafted category with another name gets only the sites for all categories. Tavily, the second back end, may not follow "site:" with OR; SearXNG does.

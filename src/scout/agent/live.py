@@ -185,6 +185,7 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
     from scout.db.store import add_memory, forget_memories, memories
     from scout.db.store import save_web_chunks, save_web_search, stored_web_results, web_searched
     from scout.websearch import ProductRef, WebResult, WebStore, fetch_texts, url_ref
+    from scout.review_sources import not_for_tests
     from scout.websearch import research as run_research
     from scout.websearch import search_web as run_web_search
 
@@ -259,7 +260,7 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
 
     def read_page(url, profile, use_browser=True):
         got = read_shop_page(conn, lambda u: fetcher.fetch(u, use_browser=use_browser), url, profile.category,
-                             lambda rec: enrich_record(rec, profile, llm))
+                             lambda rec: enrich_record(rec, profile, llm), lock=db_lock)
         return got.text, got.pages, got.listing_id
 
     def same_product(listing_id, same_as):
@@ -420,7 +421,7 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
         find_missing=find_missing, read_reviews=reviews, reviews_read=reviews_read, summarize=summarize,
         search_web=search_web if client is not None else None,
         research_web=research_web if client is not None else None, read_page=read_page, same_product=same_product,
-        web_searched=lambda ids: web_searched(conn, ids, datetime.now(timezone.utc) - week),
+        web_searched=lambda ids: web_searched(conn, ids, datetime.now(timezone.utc) - week, not_for_tests()),
         memories=lambda: memories(conn, shopper),
         remember=lambda kind, text, category, thread, source="remember": add_memory(
             conn, shopper, kind, text, category, thread, source),

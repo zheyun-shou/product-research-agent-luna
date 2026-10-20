@@ -1,5 +1,6 @@
 """The sites of the review searches (config/review_sources.yaml): Swedish shops for buyer reviews, test sites and
 forums. search_web with a kind of source searches only on its sites, with OR in one search."""
+import re
 from functools import cache
 from pathlib import Path
 
@@ -33,3 +34,18 @@ def site_query(question: str, kind: str, category: str | None, config: dict | No
     if not chosen:
         return question
     return f"{question} (" + " OR ".join(f"site:{s}" for s in chosen) + ")"
+
+
+def is_forum(url: str, config: dict | None = None) -> bool:
+    """The address is on a forum of the list (a site, or a site and the start of a path)."""
+    from urllib.parse import urlsplit
+    parts = urlsplit(url)
+    where = parts.netloc.lower().removeprefix("www.") + parts.path
+    return any(where == f or where.startswith(f.rstrip("/") + "/") for f in sites("forums", None, config))
+
+
+def not_for_tests(config: dict | None = None) -> str | None:
+    """A regular expression for the search words of a search of shops or forums only: such a search does not
+    count as a web search for tests (the web floor)."""
+    chosen = [*sites("shops", None, config), *sites("forums", None, config)]
+    return r"\(site:(?:" + "|".join(re.escape(s) for s in chosen) + ")" if chosen else None

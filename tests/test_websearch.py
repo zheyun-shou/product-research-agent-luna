@@ -291,6 +291,13 @@ def test_web_searches_count_for_the_product_and_web_text_loses_its_header(db):
     assert len(rows) == 1 and sorted(rows[0]["listing_ids"]) == [2, 3] and rows[0]["searched_at"] == first
     assert web_searched(db, [1, 2, 3], week) == {1, 2, 3}  # listing 1 is the same product as 2
     assert web_searched(db, [1], now + timedelta(minutes=1)) == set()
+    shops = r"\(site:(?:prisjakt\.nu)"
+    db.execute("INSERT INTO products (category, name) VALUES ('fridge', 'P3')")
+    db.execute("INSERT INTO listings (product_id, source, source_id, url, fetched_at) VALUES "
+               "(3, 'amazon.se', 'D', 'u4', now())")
+    save_web_search(db, "Bomann test (site:prisjakt.nu OR site:power.se)", [4], [], week)
+    assert web_searched(db, [3, 4], week, shops) == {3}  # a search of shops only is not a search for tests
+    assert web_searched(db, [4], week) == {4}
     assert stored_web_results(db, "gorenje TEST", now - timedelta(days=7))[0]["url"] == TEST.url
     assert stored_web_results(db, "other", now - timedelta(days=7)) is None
     finding = Finding(WebResult(**{**vars(TEST), "raw": TEST_PAGE}), "test", True, [1])

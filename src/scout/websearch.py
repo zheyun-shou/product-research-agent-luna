@@ -233,9 +233,13 @@ THREAD_PAGES = 2  # more pages of one forum thread
 
 
 def thread_pages(html: str, url: str, limit: int = THREAD_PAGES) -> list[str]:
-    """The next pages of a forum thread that the page links to: the same address with ?p=N or ?page=N, N from 2."""
+    """The next pages of a forum thread that the page links to: the same address with ?p=N or ?page=N, N from 2.
+    Only on the forums of config/review_sources.yaml (on Prisjakt, ?p= is a product), and only from the first page."""
     from urllib.parse import urljoin, urlsplit
+    from scout.review_sources import is_forum
     base = urlsplit(url)
+    if not is_forum(url) or base.query:
+        return []
     found: dict[int, str] = {}
     for href in re.findall(r'href="([^"]+)"', html):
         link = urlsplit(urljoin(url, href.replace("&amp;", "&")))
@@ -258,6 +262,8 @@ def fetch_texts(fetch: Callable[[str], "Fetched"], urls: list[str], workers: int
         text = page_text(got.page.html, got.page.final_url)
         # A forum thread: its next pages, one at a time (the fetcher keeps the gap of the site)
         for later in thread_pages(got.page.html, got.page.final_url):
+            if len(text) >= STORED_CHARS:
+                break
             more = fetch(later)
             if more.page is None:
                 break
@@ -307,7 +313,7 @@ def topic_question(question: str, products: list[ProductRef]) -> str:
     spaces or hyphens ("RK 4182 PS4"). Model numbers that the question names are taken out too."""
     from scout.text.embed import model_numbers
     # The sites of a search of review sources ("(site:a OR site:b)") are not a topic
-    question = " ".join(re.sub(r"\bsite:\S+|\bOR\b|[()]", " ", question).split()) or question
+    question = re.sub(r"\s*\((?:site:\S+(?:\s+OR\s+)?)+\)\s*$", "", question) or question
     names = {n for p in products for n in (p.model, p.brand) if n} | set(model_numbers(question))
     text = question
     for name in sorted(names, key=len, reverse=True):
