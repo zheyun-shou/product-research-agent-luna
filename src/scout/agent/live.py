@@ -257,8 +257,9 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
 
     fetcher = PageFetcher(browser=browser.fetch)
 
-    def read_page(url, profile):
-        got = read_shop_page(conn, fetcher.fetch, url, profile.category, lambda rec: enrich_record(rec, profile, llm))
+    def read_page(url, profile, use_browser=True):
+        got = read_shop_page(conn, lambda u: fetcher.fetch(u, use_browser=use_browser), url, profile.category,
+                             lambda rec: enrich_record(rec, profile, llm))
         return got.text, got.pages, got.listing_id
 
     def same_product(listing_id, same_as):

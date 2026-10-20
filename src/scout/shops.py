@@ -12,6 +12,7 @@ from scout.db.store import (find_product, log_fetch, product_review_texts, same_
 from scout.extract.verify import normalise
 from scout.fetch import Fetched, site_of
 from scout.sources.base import ProductRecord
+from scout.shop_reviews import more_reviews
 from scout.sources.generic import read_generic
 
 AMAZON = "amazon.se"
@@ -67,7 +68,9 @@ def unique_reviews(rec: ProductRecord, known: set[str]) -> tuple[ProductRecord, 
 
 
 def read_page(conn: psycopg.Connection, fetch: Callable[[str], Fetched], url: str, category: str,
-              enrich: Callable[[ProductRecord], tuple[ProductRecord, bool]] | None) -> PageRead:
+              enrich: Callable[[ProductRecord], tuple[ProductRecord, bool]] | None,
+              more: Callable[[str], list[dict]] = more_reviews) -> PageRead:
+    """more(url): the reviews that the page loads apart from its page data (scout.shop_reviews)."""
     site = site_of(url)
     if is_amazon(url):
         return PageRead(AMAZON_NOTE + ".", 0)
@@ -78,6 +81,9 @@ def read_page(conn: psycopg.Connection, fetch: Callable[[str], Fetched], url: st
               page.duration_ms if page else None, problem)
     if rec is None:
         return PageRead(f"{url}: not read, {problem}.", 1)
+    extra = more(page.final_url)
+    if extra:
+        rec = rec.model_copy(update={"reviews": [*rec.reviews, *extra]})
     rec, copies = unique_reviews(rec, known_reviews(conn, rec, category))
     ids = save_record(conn, rec, category)
     save_review_read(conn, ids.listing_id, datetime.now(timezone.utc), complete=True)
@@ -113,6 +119,9 @@ def report(listing_id: int, rec: ProductRecord, from_data: list[str], copies: in
         lines.append("The same product as " + ", ".join(f"id {o['id']} ({o['source']})" for o in others) + ".")
     if via == "browser":
         lines.append("The page needed the browser.")
+    if site_of(rec.url) == "prisjakt.nu":
+        lines.append("Prisjakt compares prices: the price is the lowest offer of the shops that it lists, and its "
+                     "buyer reviews come from Prisjakt in several countries (the market is in the title).")
     lines.append(rec.url)
     return "\n".join(lines)
 

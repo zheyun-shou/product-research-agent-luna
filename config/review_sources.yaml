@@ -1,0 +1,28 @@
+# The sites of the review searches (plan 2026-10-20-review-sources.md). I edit this list.
+# search_web with sources "shops", "tests" or "forums" searches only on these sites.
+shops:  # Swedish shops and Prisjakt, for the buyer reviews (read_page reads them)
+  - prisjakt.nu
+  - elgiganten.se
+  - netonnet.se
+  - power.se
+forums:  # Flashback and Reddit block reading; their search results still give a short part
+  - sweclockers.com/forum
+  - flashback.org
+  - reddit.com
+tests:
+  all:
+    - testfakta.se
+    - radochron.se
+    - m3.se
+  fridge:
+    - alltomelektronik.se
+  headphones:
+    - rtings.com
+    - soundguys.com
+    - sweclockers.com
+    - ljudochbild.se
+  running_shoes:
+    - runrepeat.com
+    - runnersworld.com
+    - doctorsofrunning.com
+  incense: []

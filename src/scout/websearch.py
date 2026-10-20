@@ -229,6 +229,22 @@ def extract_credits(pages: int) -> int:
     return math.ceil(pages / 5)
 
 
+THREAD_PAGES = 2  # more pages of one forum thread
+
+
+def thread_pages(html: str, url: str, limit: int = THREAD_PAGES) -> list[str]:
+    """The next pages of a forum thread that the page links to: the same address with ?p=N or ?page=N, N from 2."""
+    from urllib.parse import urljoin, urlsplit
+    base = urlsplit(url)
+    found: dict[int, str] = {}
+    for href in re.findall(r'href="([^"]+)"', html):
+        link = urlsplit(urljoin(url, href.replace("&amp;", "&")))
+        number = re.fullmatch(r"(?:p|page)=(\d+)", link.query)
+        if number and link.netloc == base.netloc and link.path == base.path and int(number.group(1)) >= 2:
+            found.setdefault(int(number.group(1)), link.geturl())
+    return [found[n] for n in sorted(found)][:limit]
+
+
 def fetch_texts(fetch: Callable[[str], "Fetched"], urls: list[str], workers: int = READ_WORKERS) -> dict[str, str]:
     """The main text of each page that our own fetcher could read (scout.fetch), in place of Tavily Extract
     (decided 2026-10-07). Pages of different sites load in parallel; the fetcher keeps one page of a site at a
@@ -237,7 +253,18 @@ def fetch_texts(fetch: Callable[[str], "Fetched"], urls: list[str], workers: int
 
     def one(url: str) -> str:
         got = fetch(url)
-        return page_text(got.page.html, got.page.final_url)[:STORED_CHARS] if got.page is not None else ""
+        if got.page is None:
+            return ""
+        text = page_text(got.page.html, got.page.final_url)
+        # A forum thread: its next pages, one at a time (the fetcher keeps the gap of the site)
+        for later in thread_pages(got.page.html, got.page.final_url):
+            more = fetch(later)
+            if more.page is None:
+                break
+            text += f"\n\n[page {later}]\n" + page_text(more.page.html, more.page.final_url)
+            if len(text) >= STORED_CHARS:
+                break
+        return text[:STORED_CHARS]
     with ThreadPoolExecutor(workers) as pool:
         texts = dict(zip(urls, pool.map(one, urls)))
     return {url: text for url, text in texts.items() if text}
@@ -279,6 +306,8 @@ def topic_question(question: str, products: list[ProductRef]) -> str:
     judged to be about these products, so the parts must be scored by what they say. A model can be written with
     spaces or hyphens ("RK 4182 PS4"). Model numbers that the question names are taken out too."""
     from scout.text.embed import model_numbers
+    # The sites of a search of review sources ("(site:a OR site:b)") are not a topic
+    question = " ".join(re.sub(r"\bsite:\S+|\bOR\b|[()]", " ", question).split()) or question
     names = {n for p in products for n in (p.model, p.brand) if n} | set(model_numbers(question))
     text = question
     for name in sorted(names, key=len, reverse=True):

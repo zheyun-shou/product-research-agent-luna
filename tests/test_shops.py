@@ -146,3 +146,10 @@ def test_listings_of_one_shop_or_of_two_categories_are_not_joined(db):
     got = read_page(db, loaded(), URL, "incense", None)
     assert join_products(db, got.listing_id, one.listing_id) == "they are in different categories"
     assert db.execute("SELECT count(*) AS n FROM products").fetchone()["n"] == 3
+
+
+def test_reviews_that_the_page_loads_apart_are_added(db):
+    extra = [{"title": "Feefo sv_SE", "rating": 2, "date": "2025-01-01", "verified": False, "text": "Låter mycket."}]
+    got = read_page(db, loaded(), URL, "fridge", None, more=lambda url: extra)
+    assert len(page_texts(db, [got.listing_id])[got.listing_id]["reviews"]) == 3
+    assert "3 buyer reviews from this page stored." in got.text

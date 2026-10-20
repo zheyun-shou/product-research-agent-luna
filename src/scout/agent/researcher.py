@@ -9,16 +9,17 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from scout.agent.loop import (MAX_REPORT_CHARS, MAX_WEB_PAGES, MAX_WEB_SEARCHES, REPORT_LIMITS, FindMissing,
-                              ReadProduct, SearchText, SearchWeb, SummarizeReviews, Think, Toolbox, call_message,
-                              result_message)
+from scout.agent.loop import (MAX_PRODUCT_PAGES, MAX_REPORT_CHARS, MAX_WEB_PAGES, MAX_WEB_SEARCHES, REPORT_LIMITS,
+                              FindMissing, ReadPage, ReadProduct, SameProduct, SearchText, SearchWeb, SummarizeReviews,
+                              Think, Toolbox, call_message, result_message)
 from scout.llm.client import LLMOutputError, LLMUnavailable, tool_name
 from scout.needs import Needs
 from scout.websearch import quote_found
 
 MAX_STEPS = 8  # model calls of one researcher; in the last one it can only finish
 MAX_POINTS = 10
-WEB_SEARCHES_EACH = 2  # at most, and less when the turn has fewer left
+WEB_SEARCHES_EACH = 3  # at most, and less when the turn has fewer left: tests, forums and shops
+PRODUCT_PAGES_EACH = 3  # pages of other shops (read_page), at most
 ROLE = "researcher"  # config/models.yaml; without it the worker
 
 
@@ -43,16 +44,18 @@ SYSTEM = f"""You research one product for a shopping assistant. The assistant de
 
 - Check the product against each need of the shopper: read its stored page (read_product), look for a missing
   value (find_missing), and search its stored text (search_text).
-- Sum up the reviews of buyers (summarize_reviews). Search the web for tests and owner views of this model
-  (search_web with short words: the brand and model and one word such as test, recension or review), unless the
-  wish says not to.
+- Search the web for this model with short words (the brand and the model, and for tests one word such as test,
+  recension or review), unless the wish says not to. Use the sources of search_web: tests (test sites), forums
+  (owner views) and shops (Prisjakt and Swedish shops). On a shop or Prisjakt page of the same model, read_page
+  stores its buyer reviews. When read_page stores it as another product, and the brand and the model are the
+  same, call same_product. Then sum up all the buyer reviews (summarize_reviews).
 - A test or a review counts only when it is about the same model and variant (size, colour, finish).
 - Finish with research_file. Each point needs its source and a quote: the exact words of a tool result that you got.
   Python removes a point whose quote is not in your tool results. Write the points in English.
 - Say "unclear" when the facts do not show if the product fits. Do not guess.
 - You have at most {MAX_STEPS} steps. Call several tools in one step when they do not depend on each other."""
 
-TOOLS = [ReadProduct, SearchText, FindMissing, SummarizeReviews, SearchWeb, Think]
+TOOLS = [ReadProduct, SearchText, FindMissing, SummarizeReviews, SearchWeb, ReadPage, SameProduct, Think]
 
 
 def role_of(llm) -> str:
@@ -64,6 +67,9 @@ def scoped(call: BaseModel, listing_id: int) -> BaseModel:
     """The call for the own product of the researcher only."""
     if isinstance(call, (ReadProduct, FindMissing, SummarizeReviews, SearchText, SearchWeb)):
         return call.model_copy(update={"ids": [listing_id]})
+    if isinstance(call, SameProduct):  # it joins another listing to its own product only
+        other = call.same_as if call.id == listing_id else call.id
+        return call.model_copy(update={"id": other, "same_as": listing_id})
     return call
 
 
@@ -100,7 +106,7 @@ def context_of(state: dict, card, want: str) -> str:
 def research_one(deps, state: dict, thread: str, card, want: str, budget: dict) -> Researched:
     """One researcher. budget: the used counters to start from, so the limits of the turn give its own part."""
     done = Researched(card.listing_id, card.title)
-    box = Toolbox(deps, state, thread)
+    box = Toolbox(deps, state, thread, browser=False)
     box.used = dict(budget)
     history: list[dict] = []
     try:
@@ -109,10 +115,11 @@ def research_one(deps, state: dict, thread: str, card, want: str, budget: dict) 
         done.error = f"the researcher failed ({type(exc).__name__}: {exc})"
     if done.file is None and not done.error:
         done.error = "the researcher did not finish"
-    done.used |= {k: box.used.get(k, 0) - budget.get(k, 0) for k in ("web_searches", "web_pages", "web_credits")}
+    done.used |= {k: box.used.get(k, 0) - budget.get(k, 0)
+                  for k in ("web_searches", "web_pages", "web_credits", "product_pages")}
     if box.used.get("web_unavailable") and not budget.get("web_unavailable"):
         done.used["web_unavailable"] = box.used["web_unavailable"]
-    done.update = {k: v for k, v in box.update.items() if k == "web_searches"}
+    done.update = {k: v for k, v in box.update.items() if k in ("web_searches", "pages_read")}
     done.messages = history
     return done
 
@@ -174,7 +181,9 @@ def research_all(deps, state: dict, thread: str, cards: list, want: str, used: d
     pages_left = max(0, MAX_WEB_PAGES - used.get("web_pages", 0))
     each_searches = min(WEB_SEARCHES_EACH, searches_left // len(cards))
     each_pages = pages_left // len(cards)
-    budget = {"web_searches": MAX_WEB_SEARCHES - each_searches, "web_pages": MAX_WEB_PAGES - each_pages}
+    each_products = min(PRODUCT_PAGES_EACH, max(0, MAX_PRODUCT_PAGES - used.get("product_pages", 0)) // len(cards))
+    budget = {"web_searches": MAX_WEB_SEARCHES - each_searches, "web_pages": MAX_WEB_PAGES - each_pages,
+              "product_pages": MAX_PRODUCT_PAGES - each_products}
     if used.get("web_unavailable"):  # the researchers do not try a back end that failed in this turn
         budget["web_unavailable"] = used["web_unavailable"]
     with ThreadPoolExecutor(len(cards)) as pool:

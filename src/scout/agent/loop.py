@@ -76,6 +76,10 @@ How to work:
   product searches at the same time, and you get short points with quotes and addresses. Use short search words:
   the brand and model and one word such as test, recension, Testbericht, anmeldelse or review. A long question in a
   sentence finds manuals and shops. Put what you want to learn in want (for example "is it quiet").
+- search_web with sources tests, forums or shops searches only the sites of a list: test sites, forums, or
+  Prisjakt and Swedish shops. After a search of shops, read_page on the page of the same model stores its buyer
+  reviews (Prisjakt and Elgiganten give many). Buyer reviews of other shops count as buyer reviews; keep them apart
+  from tests.
 - search_web gives the best parts of the pages of one search. Use it for other questions and for more detail: with
   ids, about those products; without ids, which models testers recommend. A model that a test praises may not be sold in Sweden, but look for it: search_shop with its brand
   and model, and search_web with the model and a word such as pris or köp for the pages of other shops (read_page).
@@ -153,6 +157,10 @@ class SearchWeb(BaseModel):
     want: str = Field("", description="What you want to learn from the pages, for example 'is it quiet' or "
                                       "'problems after a year'. It ranks the parts of the text. Empty: the search "
                                       "words without the brand and the model")
+    sources: Literal["any", "tests", "forums", "shops"] = Field(
+        "any", description="any: the whole web. tests: the test sites of the list for the category. forums: "
+                           "SweClockers, Flashback and Reddit (only SweClockers can be read; the others give a short "
+                           "part). shops: Prisjakt and Swedish shops, for their buyer reviews (then read_page)")
 
 
 class ResearchItem(BaseModel):
@@ -659,8 +667,8 @@ def step_detail(report: str) -> tuple[str, str]:
 
 
 class Toolbox:
-    def __init__(self, deps: LoopDeps, state: dict, thread: str):
-        self.deps, self.state, self.thread = deps, state, thread
+    def __init__(self, deps: LoopDeps, state: dict, thread: str, browser: bool = True):
+        self.deps, self.state, self.thread, self.browser = deps, state, thread, browser
         self.needs = Needs.model_validate(state.get("needs") or {})
         self.used = dict(state.get("used") or {})
         self.update: dict = {}
@@ -745,12 +753,13 @@ class Toolbox:
         if left <= 0:
             return "the web pages of this turn are used up."
         cards, unknown = self.cards(call.ids[:5])
+        from scout.review_sources import site_query
+        question = site_query(call.question, call.sources, self.needs.category)
         self.deps.say(t("say_search_web", self.deps.lang, question=call.question))
         # Counted before the call: a search that fails after the back end answered can have used a credit
         self.used["web_searches"] = self.used.get("web_searches", 0) + 1
         try:
-            report, pages, credits = self.deps.search_web(call.question, [c.listing_id for c in cards], left,
-                                                          call.want)
+            report, pages, credits = self.deps.search_web(question, [c.listing_id for c in cards], left, call.want)
         except EnginesBusy as exc:
             # Busy engines can answer again later; the second time in a turn, web search stops for the turn
             self.used["web_busy"] = self.used.get("web_busy", 0) + 1
@@ -765,7 +774,7 @@ class Toolbox:
         self.used["web_pages"] = self.used.get("web_pages", 0) + pages
         self.used["web_credits"] = self.used.get("web_credits", 0) + credits
         done = self.current("web_searches")
-        self.update["web_searches"] = done + ([call.question] if call.question not in done else [])
+        self.update["web_searches"] = done + ([question] if question not in done else [])
         return report + "".join(f" There is no product with id {i}." for i in unknown)
 
     def research_products(self, call: ResearchProducts) -> str:
@@ -825,7 +834,7 @@ class Toolbox:
         self.deps.say(t("say_candidates", self.deps.lang, n=len(cards)))
         found = research_all(self.deps, {**self.state, **self.update}, self.thread, cards, call.want, self.used)
         for r in found:
-            for key in ("web_searches", "web_pages", "web_credits"):
+            for key in ("web_searches", "web_pages", "web_credits", "product_pages"):
                 self.used[key] = self.used.get(key, 0) + r.used.get(key, 0)
             if r.used.get("web_unavailable") and not self.used.get("web_unavailable"):  # the floor does not ask
                 self.used["web_unavailable"] = r.used["web_unavailable"]
@@ -835,6 +844,10 @@ class Toolbox:
                 "error": r.error}]
             done = self.current("web_searches")
             self.update["web_searches"] = done + [w for w in r.update.get("web_searches", []) if w not in done]
+            if r.update.get("pages_read"):  # the shop pages that it read count as read in this conversation
+                new = {q["id"] for q in r.update["pages_read"]}
+                read = [p for p in self.current("pages_read") if p["id"] not in new]
+                self.update["pages_read"] = read + [p for p in r.update["pages_read"] if p["id"] in new]
         self.shown(ids)
         head = (f"Research of {len(cards)} product(s), one researcher each at the same time. Python found the quote "
                 "of each point in the tool results of its researcher.")
@@ -849,7 +862,9 @@ class Toolbox:
         if self.used.get("product_pages", 0) >= MAX_PRODUCT_PAGES:
             return "the product pages of this turn are used up."
         self.deps.say(t("say_read_page", self.deps.lang, url=call.url))
-        report, pages, listing_id = self.deps.read_page(call.url, profile)
+        # The researchers run at the same time, and the browser works in one thread only
+        report, pages, listing_id = (self.deps.read_page(call.url, profile) if self.browser
+                                     else self.deps.read_page(call.url, profile, False))
         self.used["product_pages"] = self.used.get("product_pages", 0) + pages
         if listing_id is not None:
             done = [p for p in self.current("pages_read") if p["id"] != listing_id]
