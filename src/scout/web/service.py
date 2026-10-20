@@ -8,6 +8,7 @@ from typing import Any, Callable, Iterator
 from scout.agent.graph import Deps
 from scout.agent.history import assistant
 from scout.agent.loop import last_node
+from scout.lang import t
 from scout.picks.write import attribute_text
 
 PROBLEM_WAIT = 15 * 60  # seconds a turn waits for Done or Skip, then it skips
@@ -87,7 +88,7 @@ class ChatService:
         done = threading.Event()
         self._problem = {"done": done, "skip": True}
         if self._send:
-            self._send({"type": "problem", "detail": status.detail, "url": url})
+            self._send({"type": "problem", "problem": status.problem, "detail": status.detail, "url": url})
         done.wait(PROBLEM_WAIT)
         skip, self._problem = self._problem["skip"], None
         return not skip
@@ -130,6 +131,8 @@ class ChatService:
                                                 stream_mode="updates"):
                     for node, change in update.items():
                         change = change or {}
+                        if change.get("lang"):  # the page shows its own texts in the language of the turn
+                            send({"type": "lang", "lang": change["lang"]})
                         removed = change.get("removed", removed)
                         for message in change.get("messages", []):
                             if message.get("role") == "assistant":
@@ -140,7 +143,7 @@ class ChatService:
                                   "removed": [{"product_id": r["product_id"], "title": r["title"]} for r in removed]})
                 span.update(output="\n\n".join(replies))
         except Exception as exc:  # the nodes catch most problems; this keeps the conversation open
-            message = f"Something went wrong ({type(exc).__name__}: {exc}). You can try again."
+            message = t("went_wrong", self._lang(thread), exc=f"{type(exc).__name__}: {exc}")
             with contextlib.suppress(Exception):  # the thread gets the message, and the failed turn ends
                 self._end()
                 self.graph.update_state(config, {"messages": [assistant(message)]}, as_node=self._last_node)
@@ -149,14 +152,16 @@ class ChatService:
             self._end()
             send({"type": "picks", **self._picks(thread)})
         except Exception as exc:
-            send({"type": "error", "text": f"The picks could not be loaded ({type(exc).__name__}: {exc})."})
+            send({"type": "error", "text": t("picks_not_loaded", self._lang(thread),
+                                             exc=f"{type(exc).__name__}: {exc}")})
         send({"type": "done"})
 
     def history(self, thread: str) -> dict:
         with self._idle():
             messages = [{"role": m["role"], "content": m["content"]}
                         for m in self._values(thread).get("messages", []) if m.get("role") in ("user", "assistant")]
-            return {"thread": thread, "messages": messages, **self._picks(thread)}
+            return {"thread": thread, "messages": messages, "lang": self._values(thread).get("lang"),
+                    **self._picks(thread)}
 
     def remove(self, thread: str, product_id: int) -> dict:
         """The delete button: the same records as remove_picks, without an LLM call. The panel does not refill."""
@@ -168,7 +173,7 @@ class ChatService:
                 raise KeyError(product_id)
             self.deps.eliminate(thread, [product_id], "deleted on the web page")
             removed = [*values.get("removed", []), {k: gone[k] for k in ("product_id", "listing_id", "title")}]
-            message = f"Removed: {gone['title'][:60]}. It stays out for the rest of this conversation."
+            message = t("removed", values.get("lang"), title=gone["title"][:60])
             self.graph.update_state(self._config(thread), {
                 "picks": [p for p in picks if p is not gone], "removed": removed,
                 "messages": [assistant(message)]}, as_node=self._last_node)
@@ -189,6 +194,11 @@ class ChatService:
             self._end()
             if memory_id not in gone:
                 raise KeyError(memory_id)
+
+    def _lang(self, thread: str) -> str | None:
+        with contextlib.suppress(Exception):
+            return self._values(thread).get("lang") or getattr(self.deps, "lang", None)
+        return getattr(self.deps, "lang", None)
 
     def _picks(self, thread: str) -> dict:
         values = self._values(thread)

@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from scout.agent.graph import build_graph
 from scout.agent.history import assistant
 from scout.agent.live import LazyBrowser, live_deps, loop_deps
+from scout.lang import t
 from scout.agent.loop import build_agent_graph, last_node
 from scout.config import ROOT, load_settings
 from scout.crawl import crawl as run_crawl
@@ -485,8 +486,11 @@ def chat(thread: Optional[str] = typer.Option(None, help="the ID of a conversati
                                         typer.echo(f"\n{message['content']}")
                         span.update(output="\n\n".join(replies))
                 except Exception as exc:  # the nodes catch most problems; this keeps the conversation open
-                    message = f"Something went wrong ({type(exc).__name__}: {exc}). You can try again."
                     end_transaction(conn)
+                    lang = None
+                    with contextlib.suppress(Exception):
+                        lang = graph.get_state(config).values.get("lang")
+                    message = t("went_wrong", lang, exc=f"{type(exc).__name__}: {exc}")
                     with contextlib.suppress(Exception):  # the thread gets the message, and the failed turn ends
                         graph.update_state(config, {"messages": [assistant(message)]}, as_node=last_node(graph))
                     typer.echo(f"\n{message}")

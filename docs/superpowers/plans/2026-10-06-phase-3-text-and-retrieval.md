@@ -317,4 +317,4 @@ One researcher for each pick searches the web at the same time, and a cheap mode
 
 - The web page for the chat (decision 5). It gets its own plan, together with FastAPI from phase 7. It runs on my computer (localhost) first, because the dedicated browser window for amazon.se is there.
 - PaddleOCR-VL for images (phase 4). `read_images` with the worker stays.
-- Python's fixed messages in the shopper's language.
+- Python's fixed messages in the shopper's language. Done on 2026-10-20 in the web chat plan (step 7).

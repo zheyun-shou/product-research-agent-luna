@@ -68,7 +68,7 @@ def test_the_login_pause_waits_for_done():
     with pytest.raises(Busy):
         chat.history("t1")
     first = next(e for e in events if e["type"] != "status")
-    assert first == {"type": "problem", "detail": "Sign-in page", "url": "https://www.amazon.se/x"}
+    assert first == {"type": "problem", "problem": "signin", "detail": "Sign-in page", "url": "https://www.amazon.se/x"}
     threading.Timer(0.05, chat.answer_problem, kwargs={"skip": False}).start()
     rest = list(events)
     assert rest[-1] == {"type": "done"} and world.crawls
@@ -93,7 +93,8 @@ def test_the_routes():
     client = TestClient(create_app(service(world, FakeLLM([CategoryChoice(category="fridge"), ready()]))))
     assert client.get("/").status_code == 200
     assert client.get("/api/threads/bad%20id").status_code == 400
-    assert client.get("/api/threads/t1").json() == {"thread": "t1", "messages": [], "picks": [], "removed": []}
+    assert client.get("/api/threads/t1").json() == {"thread": "t1", "messages": [], "lang": None, "picks": [],
+                                                    "removed": []}
     with client.stream("POST", "/api/threads/t1/messages", json={"text": "A fridge with a freezer"}) as response:
         events = [json.loads(line) for line in response.iter_lines() if line]
     assert events[-1] == {"type": "done"} and len(events[-2]["picks"]) == 2
@@ -192,3 +193,20 @@ def test_the_memory_routes():
     assert client.delete("/api/memory/1").json() == {"ok": True}
     assert client.delete("/api/memory/1").status_code == 404
     assert [m["id"] for m in client.get("/api/memory").json()] == [2]
+
+
+def test_the_agent_loop_sends_the_language_of_the_turn():
+    from scout.agent.loop import ReadReviews, SearchShop, build_agent_graph
+    from tests.test_loop import NEEDS, PICKS, Shop
+
+    shop = Shop()
+    llm = FakeLLM([[NEEDS, SearchShop(words="kylskåp"), ReadReviews(ids=[2, 1])], [PICKS]])
+
+    def build(say, on_problem):
+        deps = dataclasses.replace(shop.deps(llm), say=say)
+        return build_agent_graph(deps, InMemorySaver()), deps
+    chat = ChatService(build)
+    events = list(chat.turn("t1", "我想买一个不超过 180 厘米的冰箱"))
+    assert {"type": "lang", "lang": "zh"} in events
+    assert chat.history("t1")["lang"] == "zh"
+    assert chat.remove("t1", 2)["message"].startswith("已删除")

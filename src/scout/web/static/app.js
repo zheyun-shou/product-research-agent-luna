@@ -1,7 +1,6 @@
 // The web chat page: one thread in the URL, the events of a turn as lines of JSON, and the picks panel.
 const $ = (id) => document.getElementById(id);
 const log = $("log"), input = $("input"), send = $("send"), cards = $("cards");
-const firstHint = input.placeholder;
 let thread = null, busy = false, picks = [];
 
 function newThread() {
@@ -36,6 +35,15 @@ function linked(text) {
   return frag;
 }
 
+// The text of a failed request: the page's own text, or the detail of the server (in English) on an English page
+async function errorText(response, fallback) {
+  if (response.status === 409) return tr("busy");
+  let detail = null;
+  try { detail = (await response.json()).detail; } catch (e) { /* no JSON body */ }
+  if (lang === "en" && typeof detail === "string" && detail) return detail;
+  return fallback ? tr(fallback) : tr("server", { status: response.status });
+}
+
 function scrollDown() {
   log.scrollTop = log.scrollHeight;
 }
@@ -52,8 +60,7 @@ function addMessage(role, text) {
 function setBusy(on) {
   busy = on;
   send.disabled = on || !input.value.trim();
-  input.placeholder = on ? "Wait for the reply"
-    : document.body.classList.contains("empty") ? firstHint : "Ask about the picks, or say what you want";
+  input.placeholder = tr(on ? "wait_hint" : document.body.classList.contains("empty") ? "first_hint" : "next_hint");
 }
 
 function grow() {
@@ -69,7 +76,7 @@ function openPanel(open) {
 
 function chip(attr) {
   const node = el("span", attr.doubtful ? "chip doubtful" : "chip", `${attr.name} ${attr.text}`);
-  if (attr.doubtful) node.title = "The size on the page does not agree with the other sizes or the volume";
+  if (attr.doubtful) node.title = tr("doubtful");
   return node;
 }
 
@@ -81,7 +88,7 @@ function card(pick) {
     img.src = pick.image; img.alt = ""; img.loading = "lazy"; img.referrerPolicy = "no-referrer";
     thumb.append(img);
   } else {
-    thumb.append(el("span", null, "no image"));
+    thumb.append(el("span", null, tr("no_image")));
   }
   const body = el("div", "card-body");
   const title = el("a", "card-title");
@@ -89,9 +96,9 @@ function card(pick) {
   title.append(el("span", "num", String(pick.number)), pick.title);
   title.title = pick.title;
   const facts = el("div", "facts");
-  facts.append(el("span", "price", pick.price || "price unknown"));
-  facts.append(el("span", null, pick.rating ? `★ ${pick.rating} (${pick.review_count ?? 0})` : "no ratings"));
-  if (pick.in_stock === false) facts.append(el("span", null, "sold out"));
+  facts.append(el("span", "price", pick.price || tr("price_unknown")));
+  facts.append(el("span", null, pick.rating ? `★ ${pick.rating} (${pick.review_count ?? 0})` : tr("no_ratings")));
+  if (pick.in_stock === false) facts.append(el("span", null, tr("sold_out")));
   body.append(title, facts);
   if (pick.attributes.length) {
     const chips = el("div", "chips");
@@ -101,8 +108,8 @@ function card(pick) {
   if (pick.note) body.append(el("div", "card-note", pick.note));
   const del = el("button", "icon delete");
   del.type = "button";
-  del.setAttribute("aria-label", `Delete pick ${pick.number}`);
-  del.title = "Delete this pick";
+  del.setAttribute("aria-label", tr("delete_pick", { n: pick.number }));
+  del.title = tr("delete_this");
   del.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
   del.addEventListener("click", () => removePick(pick, item));
   item.append(thumb, body, del);
@@ -129,7 +136,7 @@ async function removePick(pick, item) {
   const response = await fetch(`/api/threads/${thread}/picks/${pick.product_id}`, { method: "DELETE" });
   if (!response.ok) {
     item.classList.remove("leaving");
-    addMessage("error", (await response.json()).detail || "The pick could not be deleted.");
+    addMessage("error", await errorText(response, "not_deleted"));
     return;
   }
   const data = await response.json();
@@ -139,7 +146,8 @@ async function removePick(pick, item) {
 
 // Login or captcha pause
 function showProblem(event) {
-  $("problem-detail").textContent = `amazon.se needs you: ${event.detail || "a check"}`;
+  const known = { signin: "signin", captcha: "captcha" };
+  $("problem-detail").textContent = tr("needs_you", { detail: tr(known[event.problem] || "other_problem") });
   $("problem-url").href = event.url;
   $("problem").hidden = false;
 }
@@ -161,11 +169,11 @@ const ICONS = {
   check: "M12 3l8 3v6c0 4.4-3.4 8-8 9-4.6-1-8-4.6-8-9V6zM8.5 12l2.5 2.5 4.5-5",
   note: "M12 8v5M12 16h.01",
 };
-const METER = [["calls", "calls"], ["product_pages", "product pages"], ["web_searches", "web searches"]];
+const METER = ["calls", "product_pages", "web_searches"];
 
 function clock(seconds) {
   const s = Math.round(seconds);
-  return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, "0")} s`;
+  return s < 60 ? tr("sec", { s }) : tr("min", { m: Math.floor(s / 60), s: String(s % 60).padStart(2, "0") });
 }
 
 function icon(kind) {
@@ -178,8 +186,8 @@ function progress() {
   const box = el("details", "progress");
   box.open = true;
   const summary = el("summary");
-  const title = el("span", "p-title", "Working");
-  const time = el("span", "p-time", "0 s");
+  const title = el("span", "p-title", tr("working"));
+  const time = el("span", "p-time", clock(0));
   const meter = el("span", "p-meter");
   summary.append(el("span", "p-spin"), title, time, meter);
   const list = el("ol", "steps");
@@ -225,7 +233,7 @@ function onStep(p, event) {
     li.querySelector(".s-detail").textContent = parts.join(" · ");
   }
   if (event.used) {
-    p.meter.textContent = METER.map(([key, name]) => `${name} ${event.used[key]}/${event.limits[key]}`).join(" · ");
+    p.meter.textContent = METER.map((key) => `${tr(key)} ${event.used[key]}/${event.limits[key]}`).join(" · ");
   }
 }
 
@@ -242,8 +250,8 @@ function finish(p) {
   settle(p);
   if (!p.list.childElementCount) { p.box.remove(); return; }
   p.box.classList.add("finished");
-  p.title.textContent = `Worked for ${clock((Date.now() - p.started) / 1000)}`;
-  p.time.textContent = `${p.count} step${p.count === 1 ? "" : "s"}`;
+  p.title.textContent = tr("worked", { time: clock((Date.now() - p.started) / 1000) });
+  p.time.textContent = p.count === 1 ? tr("step_one") : tr("steps", { n: p.count });
   p.box.open = false;
 }
 
@@ -261,7 +269,7 @@ async function sendMessage(text) {
     const response = await fetch(`/api/threads/${thread}/messages`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
     if (!response.ok) {
-      addMessage("error", (await response.json()).detail || `The server answered ${response.status}.`);
+      addMessage("error", await errorText(response));
       return;
     }
     const reader = response.body.getReader();
@@ -279,7 +287,7 @@ async function sendMessage(text) {
       }
     }
   } catch (err) {
-    addMessage("error", `The connection to the server failed (${err.message}). Is scout web still running?`);
+    addMessage("error", tr("connection", { error: err.message }));
   } finally {
     finish(p);
     $("problem").hidden = true;
@@ -293,6 +301,8 @@ function handle(event, p) {
     onStep(p, event);
   } else if (event.type === "status") {
     onStatus(p, event.text);
+  } else if (event.type === "lang") {
+    setLang(event.lang);
   } else if (event.type === "problem") {
     showProblem(event);
   } else if (event.type === "reply") {
@@ -319,10 +329,11 @@ async function load() {
   }
   const response = await fetch(`/api/threads/${thread}`);
   if (!response.ok) {
-    addMessage("error", (await response.json()).detail || "The conversation could not be loaded.");
+    addMessage("error", await errorText(response, "not_loaded"));
     return;
   }
   const data = await response.json();
+  setLang(data.lang);
   data.messages.forEach((m) => addMessage(m.role, m.content));
   setBusy(false);
   showPicks(data, true);
@@ -347,21 +358,21 @@ async function showMemory() {
     const response = await fetch("/api/memory");
     if (response.ok) items = await response.json();
   } catch (e) { /* the message below */ }
-  if (!items) { list.replaceChildren(el("li", "empty-note", "The memory could not be loaded. Try again later.")); return; }
-  if (!items.length) { list.replaceChildren(el("li", "empty-note", "Nothing yet.")); return; }
+  if (!items) { list.replaceChildren(el("li", "empty-note", tr("memory_failed"))); return; }
+  if (!items.length) { list.replaceChildren(el("li", "empty-note", tr("nothing"))); return; }
   list.replaceChildren(...items.map((m) => {
     const li = el("li");
     const body = el("div", "m-body");
     const meta = el("div", "m-meta");
-    meta.append(el("span", `m-kind ${m.kind}`, m.kind), ` · ${m.category || "all categories"} · ${m.date}`);
+    meta.append(el("span", `m-kind ${m.kind}`, tr(m.kind)), ` · ${m.category || tr("all_categories")} · ${m.date}`);
     body.append(meta, el("div", null, m.text));
-    const remove = el("button", "ghost", "Delete");
+    const remove = el("button", "ghost", tr("delete"));
     remove.type = "button";
-    remove.setAttribute("aria-label", `Delete: ${m.text}`);
+    remove.setAttribute("aria-label", tr("delete_memory", { text: m.text }));
     remove.addEventListener("click", async () => {
       const r = await fetch(`/api/memory/${m.id}`, { method: "DELETE" });
       if (r.ok) showMemory();
-      else remove.textContent = "Try later";
+      else remove.textContent = tr("try_later");
     });
     li.append(body, remove);
     return li;
@@ -374,5 +385,6 @@ $("problem-done").addEventListener("click", () => answerProblem(false));
 $("problem-skip").addEventListener("click", () => answerProblem(true));
 window.addEventListener("popstate", () => { if (!busy) load(); });
 window.addEventListener("hashchange", () => { if (!busy && threadFromHash() !== thread) load(); });
+setLang(lang);
 setBusy(false);
 load();

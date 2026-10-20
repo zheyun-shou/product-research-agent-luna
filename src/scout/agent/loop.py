@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from scout.agent.history import assistant, compact, history_text, user_numbers
 from scout.agent.state import ChatState
+from scout.lang import t, turn_lang
 from scout.llm.client import LLMOutputError, LLMUnavailable, tool_name
 from scout.needs import ConditionSpec, Needs, check_needs
 from scout.extract.variants import size_page
@@ -334,6 +335,7 @@ class LoopDeps:
     remember: Callable[..., int] | None = None
     forget: Callable[[list[int]], list[int]] | None = None
     say: Callable[[str], None] = print
+    lang: str = "en"  # the language of the shopper in this turn (scout.lang); the start of each turn sets it
     step: Callable[[dict], None] = lambda event: None  # the progress of a turn, for the web page
     tracer: Any = field(default_factory=NoTracer)
 
@@ -493,7 +495,8 @@ def check_final(call: BaseModel, state: dict, deps: LoopDeps, thread: str, used:
     return errors
 
 
-def picks_text(call: ShowPicks, cards: dict[int, Card], sizes: dict[int, str] | None = None) -> str:
+def picks_text(call: ShowPicks, cards: dict[int, Card], sizes: dict[int, str] | None = None, lang: str = "en") \
+        -> str:
     """sizes: listing id -> the product id of the page of the size of the needs (variants.size_page). That page
     gives the price, the variant and the link of the pick."""
     from scout.sources.amazon_se.urls import product_url
@@ -502,8 +505,9 @@ def picks_text(call: ShowPicks, cards: dict[int, Card], sizes: dict[int, str] | 
         card = cards[pick.id]
         size = card.variants.get((sizes or {}).get(pick.id) or "")
         price, currency = (size["price"], size["currency"]) if size else (card.price, card.currency)
-        price = f"{price} {currency}" if price is not None else "price unknown"
-        rating = f"{card.rating} ({card.review_count} ratings)" if card.rating is not None else "no ratings"
+        price = f"{price} {currency}" if price is not None else t("price_unknown", lang)
+        rating = (t("ratings", lang, rating=card.rating, count=card.review_count) if card.rating is not None
+                  else t("no_ratings", lang))
         variant = f" | {size['label']}" if size and size.get("label") else ""
         url = product_url(sizes[pick.id]) if size else card.url
         lines += [f"{n}. {card.title}", f"   {price}{variant} | {rating} | id {card.listing_id}", f"   {pick.text}",
@@ -523,53 +527,51 @@ LIMITS = {"calls": MAX_TOOL_CALLS, "product_pages": MAX_PRODUCT_PAGES, "web_sear
 STEP_DETAIL_CHARS = 160
 
 
-def _products(ids: list[int]) -> str:
-    return f"{len(ids)} product" + ("" if len(ids) == 1 else "s")
-
-
-def step_title(call: BaseModel) -> tuple[str, str]:
-    """(kind, title) of a tool call, for the progress on the web page. The kind groups the steps: needs, shop,
-    web, db, reviews."""
+def step_title(call: BaseModel, lang: str = "en") -> tuple[str, str]:
+    """(kind, title) of a tool call, for the progress on the web page, in the language of the shopper. The kind
+    groups the steps: needs, shop, web, db, reviews."""
     if isinstance(call, UpdateNeeds):
-        return "needs", "Record the needs"
+        return "needs", t("step_needs", lang)
     if isinstance(call, SearchShop):
-        return "shop", f"Search amazon.se for '{call.words}'" + (f", result page {call.page}" if call.page > 1 else "")
+        return "shop", t("step_search_shop", lang, words=call.words) + (
+            t("step_page", lang, page=call.page) if call.page > 1 else "")
     if isinstance(call, SearchWeb):
-        return "web", f"Search the web for '{call.question}'"
+        return "web", t("step_search_web", lang, question=call.question)
     if isinstance(call, ReadPage):
-        return "web", f"Read a shop page on {urlparse(call.url).netloc or call.url}"
+        return "web", t("step_read_page", lang, host=urlparse(call.url).netloc or call.url)
     if isinstance(call, SameProduct):
-        return "db", f"Join two listings of one product (ids {call.id} and {call.same_as})"
+        return "db", t("step_same_product", lang, id=call.id, same=call.same_as)
     if isinstance(call, FindProducts):
-        return "db", "Find the stored products that meet the needs"
+        return "db", t("step_find_products", lang)
     if isinstance(call, ReadProduct):
-        return "db", f"Read the stored pages of {_products(call.ids)}"
+        return "db", t("step_read_product", lang, n=len(call.ids))
     if isinstance(call, SearchText):
-        return "db", f"Search the stored text for '{call.question}'"
+        return "db", t("step_search_text", lang, question=call.question)
     if isinstance(call, SimilarProducts):
-        near = " and ".join(([f"product {call.like}"] if call.like is not None else [])
-                            + ([f"'{call.wish}'"] if call.wish.strip() else []))
-        return "db", f"Find products near {near or 'nothing'}"
+        near = t("step_and", lang).join(
+            ([t("step_similar_product", lang, id=call.like)] if call.like is not None else [])
+            + ([f"'{call.wish}'"] if call.wish.strip() else []))
+        return "db", t("step_similar", lang, near=near or t("step_nothing", lang))
     if isinstance(call, ReadImages):
-        return "db", f"Look at the images of product {call.id}"
+        return "db", t("step_images", lang, id=call.id)
     if isinstance(call, FindMissing):
-        return "db", f"Look for missing values ({', '.join(call.attributes)})"
+        return "db", t("step_missing", lang, names=", ".join(call.attributes))
     if isinstance(call, ReadReviews):
-        return "reviews", f"Read the amazon.se reviews of {_products(call.ids)}"
+        return "reviews", t("step_read_reviews", lang, n=len(call.ids))
     if isinstance(call, SummarizeReviews):
-        return "reviews", f"Sum up the reviews of {_products(call.ids)}"
+        return "reviews", t("step_summarize", lang, n=len(call.ids))
     if isinstance(call, RemoveProducts):
-        return "needs", f"Remove {_products(call.ids)}"
+        return "needs", t("step_remove", lang, n=len(call.ids))
     if isinstance(call, RestoreProducts):
-        return "needs", f"Bring back {_products(call.ids)}"
+        return "needs", t("step_restore", lang, n=len(call.ids))
     if isinstance(call, Remember):
-        return "needs", f"Remember a {call.kind}"
+        return "needs", t(f"step_remember_{call.kind}", lang)
     if isinstance(call, UpdateProfile):
-        return "needs", "Change the profile of the category"
+        return "needs", t("step_profile", lang)
     if isinstance(call, Forget):
-        return "needs", f"Forget {len(call.ids)} memor{'y' if len(call.ids) == 1 else 'ies'}"
+        return "needs", t("step_forget", lang, n=len(call.ids))
     if isinstance(call, Think):
-        return "note", "Think it over"  # the note itself is not for the shopper
+        return "note", t("step_think", lang)  # the note itself is not for the shopper
     return "db", tool_name(type(call))
 
 
@@ -655,7 +657,7 @@ class Toolbox:
         left = MAX_PRODUCT_PAGES - self.used.get("product_pages", 0)
         if left <= 0:
             return "the product pages of this turn are used up."
-        self.deps.say(f"Searching amazon.se for '{call.words}', result page {call.page}. This can take a few minutes.")
+        self.deps.say(t("say_search_shop", self.deps.lang, words=call.words, page=call.page))
         report, pages = self.deps.search_shop(profile, self.needs, call.words, call.page, min(SEARCH_DETAILS, left))
         self.used["product_pages"] = self.used.get("product_pages", 0) + pages
         searches = dict(self.update["searches"] if "searches" in self.update else self.state.get("searches") or {})
@@ -676,7 +678,7 @@ class Toolbox:
         if left <= 0:
             return "the web pages of this turn are used up."
         cards, unknown = self.cards(call.ids[:5])
-        self.deps.say(f"Searching the web for '{call.question}'.")
+        self.deps.say(t("say_search_web", self.deps.lang, question=call.question))
         # Counted before the call: a search that fails after the back end answered can have used a credit
         self.used["web_searches"] = self.used.get("web_searches", 0) + 1
         try:
@@ -707,7 +709,7 @@ class Toolbox:
             return "record the category with update_needs first."
         if self.used.get("product_pages", 0) >= MAX_PRODUCT_PAGES:
             return "the product pages of this turn are used up."
-        self.deps.say(f"Reading {call.url}")
+        self.deps.say(t("say_read_page", self.deps.lang, url=call.url))
         report, pages, listing_id = self.deps.read_page(call.url, profile)
         self.used["product_pages"] = self.used.get("product_pages", 0) + pages
         if listing_id is not None:
@@ -944,7 +946,8 @@ def build_agent_graph(deps: LoopDeps, checkpointer=None):
     llm = deps.llm
 
     def start_node(state, config):
-        return {"turn_context": None, "turn_messages": [], "used": {}, "gate_errors": [],
+        deps.lang = turn_lang(state.get("messages") or [], state.get("lang"))
+        return {"lang": deps.lang, "turn_context": None, "turn_messages": [], "used": {}, "gate_errors": [],
                 "gate_rounds": 0, "pending": [], "final": None}
 
     def compact_node(state, config):
@@ -959,17 +962,17 @@ def build_agent_graph(deps: LoopDeps, checkpointer=None):
         history = list(state.get("turn_messages") or [])
         used_up = (state.get("used") or {}).get("calls", 0) >= MAX_TOOL_CALLS
         deps.step({"id": next(STEP_IDS), "kind": "think", "state": "run",
-                   "title": "Plan the next step" if history else "Read the message and plan the work"})
+                   "title": t("step_plan" if history else "step_plan_first", deps.lang)})
         with deps.tracer.span("agent"):
             try:
                 calls = llm.tools("chat", SYSTEM, context, WORK_TOOLS + FINAL_TOOLS, name="Agent", text_reply=Reply,
                                   history=history + ([{"role": "user", "content": USED_UP}] if used_up else []))
             except LLMUnavailable as exc:
                 return {"final": None, "pending": [], "gate_errors": [],
-                        "messages": [assistant(f"I cannot work on this now. {exc}")]}
+                        "messages": [assistant(t("llm_unavailable", deps.lang, exc=exc))]}
             except LLMOutputError as exc:
-                return {"final": None, "pending": [], "gate_errors": [], "messages": [assistant(
-                    f"The model did not give a usable reply ({exc}). You can say it in other words.")]}
+                return {"final": None, "pending": [], "gate_errors": [],
+                        "messages": [assistant(t("llm_output", deps.lang, exc=exc))]}
         ids = [f"call_{len(history)}_{n}" for n in range(len(calls))]
         history.append(call_message(calls, ids))
         finals = [(c, i) for c, i in zip(calls, ids) if isinstance(c, tuple(FINAL_TOOLS))]
@@ -986,8 +989,7 @@ def build_agent_graph(deps: LoopDeps, checkpointer=None):
         if finals:
             final, final_id = finals[0]
         else:
-            final, final_id = Reply(text="I could not finish this within the limits of one turn. You can ask me to "
-                                         "go on."), None
+            final, final_id = Reply(text=t("turn_limits", deps.lang)), None
         return {**update, "turn_messages": history, "pending": [], "final": {**to_state(final), "id": final_id}}
 
     def tools_node(state, config):
@@ -999,7 +1001,7 @@ def build_agent_graph(deps: LoopDeps, checkpointer=None):
             else:
                 box.used["calls"] = box.used.get("calls", 0) + 1
                 call = from_state(item)
-                kind, title = step_title(call)
+                kind, title = step_title(call, deps.lang)
                 step = {"id": next(STEP_IDS), "kind": kind, "title": title}
                 deps.step({**step, "state": "run"})
                 began = time.monotonic()
@@ -1022,13 +1024,11 @@ def build_agent_graph(deps: LoopDeps, checkpointer=None):
         call = from_state(state["final"])
         used = dict(state.get("used") or {})
         step = {"id": next(STEP_IDS), "kind": "check",
-                "title": "Check the picks: the price and stock now, the reviews, the web tests"
-                if isinstance(call, ShowPicks) else "Check the reply"}
+                "title": t("step_check_picks" if isinstance(call, ShowPicks) else "step_check_reply", deps.lang)}
         deps.step({**step, "state": "run"})
         errors = check_final(call, state, deps, thread, used)
-        problems = f"{len(errors)} problem" + ("" if len(errors) == 1 else "s")
-        deps.step({**step, "state": "done",
-                   "detail": f"{problems} sent back to the model" if errors else "All checks pass"})
+        deps.step({**step, "state": "done", "detail": t("step_problems", deps.lang, n=len(errors)) if errors
+                   else t("step_checks_pass", deps.lang)})
         # What the floors and the live check stopped is kept in used, for the evaluation
         if errors:
             used["gate_stops"] = used.get("gate_stops", []) + errors
@@ -1042,8 +1042,8 @@ def build_agent_graph(deps: LoopDeps, checkpointer=None):
                     "used": used, "turn_messages": history}
         if errors:
             used["gate_gave_up"] = 1
-            return {"final": None, "gate_errors": [], "used": used, "messages": [assistant(
-                "I could not finish the research for these picks, so I changed nothing. You can ask again.")]}
+            return {"final": None, "gate_errors": [], "used": used,
+                    "messages": [assistant(t("gate_gave_up", deps.lang))]}
         # The facts of the answer are graded in the evaluation (scout grade), not here
         if isinstance(call, Reply):
             return {"final": None, "gate_errors": [], "messages": [assistant(call.text)]}
@@ -1056,7 +1056,7 @@ def build_agent_graph(deps: LoopDeps, checkpointer=None):
                   "doubtful": [], "note": None} for p in call.picks]
         seen = sorted(set(state.get("seen", [])) | {p["product_id"] for p in picks})
         return {"final": None, "gate_errors": [], "picks": picks, "seen": seen, "phase": "picks",
-                "messages": [assistant(picks_text(call, cards, sizes))]}
+                "messages": [assistant(picks_text(call, cards, sizes, deps.lang))]}
 
     def after_agent(state):
         if state.get("pending"):

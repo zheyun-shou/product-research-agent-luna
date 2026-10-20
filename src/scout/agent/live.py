@@ -15,6 +15,7 @@ from scout.picks.pipeline import make_picks, refetcher, shortlist, variant_refet
 from scout.picks.opinions import pick_opinions
 from scout.picks.rank import load_cards_by_ids
 from scout.profiles import load_profile, profile_names, save_draft
+from scout.lang import t
 from scout.reviews import FRESH, read_reviews
 from scout.sources.amazon_se.adapter import AmazonSeAdapter
 from scout.sources.amazon_se.urls import SOURCE, asin_from_url
@@ -319,7 +320,8 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
     def reviews(ids):
         asins = listing_source_ids(conn, SOURCE, ids)
         missing = [i for i in ids if i not in asins]
-        report = read_reviews(conn, browser.adapter, [(i, asins[i]) for i in ids if i in asins], on_problem, say=say)
+        report = read_reviews(conn, browser.adapter, [(i, asins[i]) for i in ids if i in asins], on_problem, say=say,
+                              notice=t("say_reviews", deps.lang))
         text = report.text() + "".join(f" Id {i} is from another shop: read_page stored the reviews that its "
                                        "page shows." for i in missing)
         return text.strip(), report.pages, missing + ([i for i in ids if i in asins] if report.skipped else [])
@@ -374,7 +376,7 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
         return report.text, report.pages, report.credits
 
     verdicts: dict = {}  # (wish, listing id) -> the worker's verdict, for the session
-    return LoopDeps(
+    deps = LoopDeps(
         llm=llm, profile_names=profile_names, load_profile=load_profile, save_draft=save_draft,
         cards=lambda ids: load_cards_by_ids(conn, ids),
         find=lambda profile, needs, excluded: shortlist(conn, profile, needs, llm, excluded, screened).ranked,
@@ -394,3 +396,4 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
         forget=lambda ids: forget_memories(conn, shopper, ids),
         say=say, tracer=tracer,
     )
+    return deps

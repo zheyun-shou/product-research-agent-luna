@@ -497,3 +497,18 @@ def test_a_near_name_is_not_a_new_category_and_a_draft_keeps_the_asked_name():
     run(build_agent_graph(deps, InMemorySaver()), "Hörlurar")
     assert "Did you mean fridge?" in llm.requests[1][1]
     assert list(saved) == ["earphones"]  # the draft was named headphones
+
+
+def test_python_texts_follow_the_language_of_the_shopper():
+    shop = Shop()
+    steps = []
+    deps = shop.deps(FakeLLM([[NEEDS, SearchShop(words="kylskåp"), ReadReviews(ids=[2, 1])], [PICKS], "好的。"]))
+    deps.step = steps.append
+    graph = build_agent_graph(deps, InMemorySaver())
+    state = run(graph, "我想买一个不超过 180 厘米的冰箱")
+    assert state["lang"] == "zh"
+    assert "搜索“kylskåp”" in shop.said[0]
+    assert any(s["title"] == "在 amazon.se 搜索“kylskåp”" for s in steps)
+    assert "个评分）" in state["messages"][-1]["content"]
+    state = run(graph, "ok")  # a message without a clear sign keeps the language of the turn before
+    assert state["lang"] == "zh"

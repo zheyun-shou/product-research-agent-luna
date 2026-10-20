@@ -7,6 +7,7 @@ from typing import Callable
 import psycopg
 
 from scout.crawl import OnProblem, fetch_checked
+from scout.lang import t
 from scout.db.store import complete_review_reads, save_review_read, save_shop_reviews
 
 MAX_PICKS = 10
@@ -54,9 +55,11 @@ def page_plan(more: dict[str, bool], done: list[tuple[str, str]]) -> tuple[str, 
 
 def read_reviews(conn: psycopg.Connection, adapter: Callable[[], object], targets: list[tuple[int, str]],
                  on_problem: OnProblem, max_pages: int = MAX_PAGES, now: datetime | None = None,
-                 say: Callable[[str], None] = lambda text: None) -> ReviewReport:
+                 say: Callable[[str], None] = lambda text: None, notice: str = t("say_reviews", "en")) \
+        -> ReviewReport:
     """Read the review pages of each (listing_id, ASIN) and store the reviews. adapter() opens the browser only
-    when a page must be read. When the shopper skips a login or a captcha, the step stops."""
+    when a page must be read. say(notice) tells the shopper before the first page. When the shopper skips a
+    login or a captcha, the step stops."""
     report = ReviewReport()
     targets = targets[:MAX_PICKS]
     now = now or datetime.now(timezone.utc)
@@ -77,8 +80,7 @@ def read_reviews(conn: psycopg.Connection, adapter: Callable[[], object], target
             report.stopped = f"Stopped at the limit of {max_pages} review pages for one search."
             break
         if not report.pages and not report.notes:
-            say("Reading the positive and the critical shop reviews of the picks on amazon.se. "
-                "This needs the login in the product-scout Chrome window.")
+            say(notice)
         source = adapter()
         found: dict[str, dict] = {}
         done: list[tuple[str, str]] = []

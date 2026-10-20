@@ -16,6 +16,7 @@ class ChatState(TypedDict, total=False):
     pages_read: list[dict]  # id (listing) and url of each shop page that read_page stored in this conversation
     removed: list[dict]  # product_id, listing_id and title of each product that the shopper removed
     opinions: dict     # listing_id (as text) -> the checked pros and complaints of that pick, with their sources
+    lang: str          # the language of the shopper in the last turn (scout.lang)
     route: dict        # what the follow-up tools of this turn did, and the next step
     # The agent loop (agent/loop.py). Each turn starts them again.
     turn_context: str | None  # the context and the conversation at the start of the turn: the first message

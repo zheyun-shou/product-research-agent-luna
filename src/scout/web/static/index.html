@@ -15,9 +15,9 @@
   <header class="top">
     <a class="brand" href="/" id="brand"><span class="mark" aria-hidden="true"></span>product-scout</a>
     <div class="top-actions">
-      <button class="ghost" id="new-chat" type="button">New chat</button>
-      <button class="ghost" id="memory-open" type="button">Memory</button>
-      <button class="ghost picks-toggle" id="picks-toggle" type="button" hidden>Picks <span class="count" id="picks-count">0</span></button>
+      <button class="ghost" id="new-chat" type="button" data-t="new_chat">New chat</button>
+      <button class="ghost" id="memory-open" type="button" data-t="memory">Memory</button>
+      <button class="ghost picks-toggle" id="picks-toggle" type="button" hidden><span data-t="picks">Picks</span> <span class="count" id="picks-count">0</span></button>
     </div>
   </header>
 
@@ -25,26 +25,26 @@
     <div class="log" id="log" aria-live="polite"></div>
 
     <section class="hero" id="hero">
-      <h1>What do you want to buy?</h1>
-      <p>I search amazon.se, check each number against the product pages, and show my top picks.</p>
+      <h1 data-t="hero_title">What do you want to buy?</h1>
+      <p data-t="hero_text">I search amazon.se, check each number against the product pages, and show my top picks.</p>
     </section>
 
     <div class="dock">
       <div class="problem" id="problem" hidden>
         <div class="problem-text">
-          <strong id="problem-detail">amazon.se needs you</strong>
-          <span>Log in or solve the check in the product-scout Chrome window, then click Done. I never type passwords.</span>
-          <a id="problem-url" href="#" target="_blank" rel="noopener">The page</a>
+          <strong id="problem-detail" data-t="problem_default">amazon.se needs you</strong>
+          <span data-t="problem_help">Log in or solve the check in the product-scout Chrome window, then click Done. I never type passwords.</span>
+          <a id="problem-url" href="#" target="_blank" rel="noopener" data-t="problem_page">The page</a>
         </div>
         <div class="problem-actions">
-          <button type="button" class="primary" id="problem-done">Done</button>
-          <button type="button" class="ghost" id="problem-skip">Skip</button>
+          <button type="button" class="primary" id="problem-done" data-t="done">Done</button>
+          <button type="button" class="ghost" id="problem-skip" data-t="skip">Skip</button>
         </div>
       </div>
 
       <form class="composer" id="composer">
-        <textarea id="input" rows="1" placeholder="For example: a fridge with a freezer, under 180 cm, up to 6000 kr" aria-label="Message"></textarea>
-        <button type="submit" class="send" id="send" aria-label="Send">
+        <textarea id="input" rows="1" placeholder="For example: a fridge with a freezer, under 180 cm, up to 6000 kr" aria-label="Message" data-t-placeholder="first_hint" data-t-aria="message"></textarea>
+        <button type="submit" class="send" id="send" aria-label="Send" data-t-aria="send">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
         </button>
       </form>
@@ -59,30 +59,31 @@
 
   <aside class="panel" id="panel" aria-label="Picks">
     <div class="panel-head">
-      <h2>Picks</h2>
-      <button class="icon" id="panel-close" type="button" aria-label="Close the picks">
+      <h2 data-t="picks">Picks</h2>
+      <button class="icon" id="panel-close" type="button" aria-label="Close the picks" data-t-aria="close_picks">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
     </div>
-    <p class="panel-hint">Open a title to see it on amazon.se. Delete a pick to keep it out of this conversation.</p>
+    <p class="panel-hint" data-t="picks_hint">Open a title to see it on amazon.se. Delete a pick to keep it out of this conversation.</p>
     <ol class="cards" id="cards"></ol>
     <details class="removed" id="removed" hidden>
-      <summary>Removed <span id="removed-count">0</span></summary>
+      <summary><span data-t="removed">Removed</span> <span id="removed-count">0</span></summary>
       <ul id="removed-list"></ul>
-      <p>To bring one back, ask in the chat.</p>
+      <p data-t="bring_back">To bring one back, ask in the chat.</p>
     </details>
   </aside>
 </div>
 <dialog class="memory" id="memory" aria-labelledby="memory-title">
   <div class="panel-head">
-    <h2 id="memory-title">What I remember</h2>
-    <button class="icon" id="memory-close" type="button" aria-label="Close the memory">
+    <h2 id="memory-title" data-t="memory_title">What I remember</h2>
+    <button class="icon" id="memory-close" type="button" aria-label="Close the memory" data-t-aria="close_memory">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
     </button>
   </div>
-  <p class="panel-hint">I keep what you tell me that will still be true in a later chat, and the reasons when you remove a pick. Delete what is wrong.</p>
+  <p class="panel-hint" data-t="memory_hint">I keep what you tell me that will still be true in a later chat, and the reasons when you remove a pick. Delete what is wrong.</p>
   <ul class="memory-list" id="memory-list"></ul>
 </dialog>
+<script src="/static/lang.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

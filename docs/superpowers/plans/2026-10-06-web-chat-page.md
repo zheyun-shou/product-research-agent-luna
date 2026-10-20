@@ -53,9 +53,17 @@ Tasks 1 to 4 are done (2026-10-06, 275 tests). All turns run in one worker threa
 
 6. **Progress of a turn (2026-10-13).** A turn takes about 10 minutes, so the page shows each step while it works. The agent loop sends a `step` event when a tool call starts and ends: the kind (needs, shop, web, db, reviews, check), a short title, the first line of the tool report, the seconds, and the calls, product pages and web searches used of the turn limits. The status lines of a tool (the search pages, the login) show under its step. A planning step of the model shows only while the model thinks. When the turn ends, the list closes to one line ("Worked for 10 min 32 s, 19 steps"), and a click opens it again. The steps are not stored, so a reload shows only the messages. The default port is now 9000: Windows keeps the ports 7276 to 8818 on this computer, so 8000 cannot open. I checked the page in Chrome with a demo server that sends scripted events.
 
+7. **Fixed texts in the language of the shopper (2026-10-20).** Python and the page show their own texts in English, Swedish or Chinese. These are the buttons and hints of the page, the step titles, the status lines of the tools, the problem banner, and the messages that Python writes into the chat (errors, the turn limits, the gate that gives up, a deleted pick, and the labels of the pick lines).
+   - `src/scout/lang.py` keeps the texts of Python. `src/scout/web/static/lang.js` keeps the texts of the page.
+   - The start of each turn finds the language of the last message of the shopper and keeps it in the state (`lang`). Chinese characters give Chinese. Otherwise, common short words that are only Swedish or only English decide, and å, ä or ö count for Swedish. A message without a clear sign ("ok", "180 cm") keeps the language of the turn before. Other languages get English.
+   - The page starts in the language of the browser. Each turn sends a `lang` event, and the history of a thread gives its language, so the page changes with the shopper.
+   - What stays in English: the first line of each tool report under a step (it is written for the chat model), the names of the attributes on the pick cards, the details of the server errors on a page in another language (the page shows its own text), and the old fixed pipeline (`agent/graph.py`).
+   - Checked with a fake agent loop in headless Chrome: a Chinese message turned the page, the step titles and the pick lines into Chinese, a Swedish browser showed the Swedish page, and the console had no errors.
+
 ## Not in this plan
 
 - A list of old threads in a sidebar.
 - Streaming of the reply word by word. The chat node checks each number before the text shows, so the text can only show when it is complete.
+- More languages than English, Swedish and Chinese.
 - Accounts, more than one shopper at a time, and a public deployment.
 - Buttons for "show more" and "bring back". The shopper writes these in the chat.
