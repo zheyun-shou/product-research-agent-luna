@@ -262,3 +262,13 @@ I chose the default order of amazon.se without the held-out run of about 100 tar
 - eval-search has four rows now: 10/14, 10/17, 10/18 and 10/19 (the default order, the search of the crawl).
 - Risk: a target with a narrow size condition (narrow-cheap, under-counter-quiet) can be after place 8. The chat model can read page 2 or search with other words.
 - This is a choice on little data, not a measured result. The claim is only that the default order was not worse than the merges on 28 targets.
+
+### Task 10: draft profile against preset profile (2026-10-20)
+
+`scout/eval/profiles.py`. For each new category, the chat model (Haiku 5.5) drafted a profile from the opening of the first target, as update_needs does. Then it wrote the conditions of each search case again in the attributes of the draft. The saved search pages of the eval-search runs of 10/17 (9 targets) and 10/18 (8 held-out targets) were scored offline with each profile, in the default order with the Python checks. 8 model calls, 0.0039 USD, no page loads.
+
+- All 3 drafts were valid in the first try. All conditions were mapped; none was left out.
+- The draft gives the title check more attributes than my preset: headphones 2 against 1, incense 3 against 0, running shoes 4 against 0.
+- The place of the target and the number of candidates were the same with both profiles for all 17 targets.
+- This does not show that the draft is as good. The test cannot see a difference here: only the 5 running shoe targets have conditions, all of them a shoe size, and the search titles do not show the size. The other 12 have only a budget, and the budget check does not use the profile.
+- The profile matters later in a turn: the needs that the chat model records, the ranking of the stored products, and the values that the worker extracts. Only eval-hidden with a draft profile can show that. I decide later if that run is worth its cost.
