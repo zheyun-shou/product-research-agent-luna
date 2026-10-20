@@ -549,6 +549,16 @@ LIMITS = {"calls": MAX_TOOL_CALLS, "product_pages": MAX_PRODUCT_PAGES, "web_sear
 STEP_DETAIL_CHARS = 160
 
 
+def research_items(call: ResearchProducts) -> list[ResearchItem]:
+    """The products of a research_products call with search words, each id once."""
+    items, seen = [], set()
+    for item in call.products:
+        if item.id not in seen and item.words.strip():
+            seen.add(item.id)
+            items.append(item)
+    return items
+
+
 def step_title(call: BaseModel, lang: str = "en") -> tuple[str, str]:
     """(kind, title) of a tool call, for the progress on the web page, in the language of the shopper. The kind
     groups the steps: needs, shop, web, db, reviews."""
@@ -560,7 +570,7 @@ def step_title(call: BaseModel, lang: str = "en") -> tuple[str, str]:
     if isinstance(call, SearchWeb):
         return "web", t("step_search_web", lang, question=call.question)
     if isinstance(call, ResearchProducts):
-        return "web", t("step_research", lang, n=len(call.products))
+        return "web", t("step_research", lang, n=len(research_items(call)))
     if isinstance(call, ReadPage):
         return "web", t("step_read_page", lang, host=urlparse(call.url).netloc or call.url)
     if isinstance(call, SameProduct):
@@ -736,18 +746,17 @@ class Toolbox:
             return "the web searches of this turn are used up."
         if pages <= 0:
             return "the web pages of this turn are used up."
-        items, seen = [], set()
-        for item in call.products:
-            if item.id not in seen and item.words.strip():
-                seen.add(item.id)
-                items.append(item)
+        items = research_items(call)
+        no_words = sorted({i.id for i in call.products if not i.words.strip()} - {i.id for i in items})
         cards, unknown = self.cards([i.id for i in items])
         known = {c.listing_id for c in cards}
-        todo = [(i.id, i.words.strip()) for i in items if i.id in known][:min(MAX_RESEARCH, searches)]
+        # Each researcher judges at least one page, so there are not more researchers than pages left
+        todo = [(i.id, i.words.strip()) for i in items if i.id in known][:min(MAX_RESEARCH, searches, pages)]
         later = [i.id for i in items if i.id in known][len(todo):]
+        notes = "".join(f" There is no product with id {i}." for i in unknown) + (
+            f" Not researched (no search words): ids {', '.join(map(str, no_words))}." if no_words else "")
         if not todo:
-            return "give the ids of stored products with their search words." + "".join(
-                f" There is no product with id {i}." for i in unknown)
+            return "give the ids of stored products with their search words." + notes
         from scout.websearch import RESULTS
         self.deps.say(t("say_research", self.deps.lang, n=len(todo)))
         # Counted before the call: a search that fails after the back end answered can have used a credit
@@ -760,7 +769,7 @@ class Toolbox:
             return f"not available: {report.unavailable}. Tell the shopper that the picks have no web tests."
         done = self.current("web_searches")
         self.update["web_searches"] = done + [w for _, w in todo if w not in done]
-        return report.text + "".join(f" There is no product with id {i}." for i in unknown) + (
+        return report.text + notes + (
             f" Not researched (the limits of this turn): ids {', '.join(map(str, later))}." if later else "")
 
     def read_page(self, call: ReadPage) -> str:

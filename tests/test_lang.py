@@ -8,6 +8,8 @@ def test_detect_gives_the_language_of_a_message():
     assert detect("I want a quiet fridge for my kitchen") == "en"
     assert detect("ok") is None
     assert detect("2000") is None
+    assert detect("fridge under 6000 kr") is None  # kr, min and men are also in English shop texts
+    assert detect("razor for men, min 3 blades") == "en"
 
 
 def test_turn_lang_keeps_the_language_before_when_the_message_shows_no_sign():

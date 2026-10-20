@@ -530,7 +530,7 @@ class Brief(BaseModel):
 
 
 def _plain(text: str) -> str:
-    return " ".join(re.sub(r"[\"“”„«»‘’]", "", text).split()).lower()
+    return " ".join(re.sub(r"[\"'`“”„«»‘’]", "", text).split()).lower()
 
 
 def quote_found(quote: str, text: str) -> bool:
@@ -572,12 +572,15 @@ def research_one(product: ProductRef, words: str, client, llm, store: WebStore,
     except WebSearchUnavailable as exc:
         done.error, done.unavailable = str(exc), not isinstance(exc, EnginesBusy)
         return done
+    except Exception as exc:  # one researcher must not lose the results of the others
+        done.error = f"the search failed ({type(exc).__name__}: {exc})"
+        return done
     if not done.report.sources:
         return done
     try:
         brief = llm.structured("worker", BRIEF_SYSTEM, brief_prompt(product, want, done.report.sources), Brief)
-    except (LLMOutputError, LLMUnavailable) as exc:
-        done.error = f"the worker could not sum up the pages ({exc})"
+    except Exception as exc:  # LLMOutputError, LLMUnavailable or a problem of the provider
+        done.error = f"the worker could not sum up the pages ({type(exc).__name__}: {exc})"
         return done
     for point in brief.points[:BRIEF_POINTS]:
         source = done.report.sources[point.page - 1] if 1 <= point.page <= len(done.report.sources) else None

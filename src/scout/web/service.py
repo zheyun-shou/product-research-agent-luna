@@ -158,10 +158,10 @@ class ChatService:
 
     def history(self, thread: str) -> dict:
         with self._idle():
+            values = self._values(thread)
             messages = [{"role": m["role"], "content": m["content"]}
-                        for m in self._values(thread).get("messages", []) if m.get("role") in ("user", "assistant")]
-            return {"thread": thread, "messages": messages, "lang": self._values(thread).get("lang"),
-                    **self._picks(thread)}
+                        for m in values.get("messages", []) if m.get("role") in ("user", "assistant")]
+            return {"thread": thread, "messages": messages, "lang": values.get("lang"), **self._picks(thread)}
 
     def remove(self, thread: str, product_id: int) -> dict:
         """The delete button: the same records as remove_picks, without an LLM call. The panel does not refill."""

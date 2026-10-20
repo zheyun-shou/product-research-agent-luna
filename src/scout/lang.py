@@ -8,15 +8,16 @@ import re
 LANGS = ("en", "sv", "zh")
 CJK = re.compile(r"[㐀-鿿豈-﫿]")
 WORD = re.compile(r"[a-zåäöéü]+")
-# Common short words that are only Swedish or only English
+# Common short words that are only Swedish or only English. Not words that the other language or a shop also
+# uses, such as "kr", "min", "men", "de", "om" (Swedish) or "i" (English).
 SV_WORDS = frozenset(
-    "och är jag en ett att det som för med inte till på av har vill kan ska eller men om vad hur var mig min mitt "
-    "mina den de du ni vi så också bara mer mindre än utan efter innan ingen inga något några bra billig billigt "
-    "tyst tystare köpa behöver hitta letar söker gärna tack hej kr".split())
+    "och är jag en ett att det som för med inte till på av har vill kan ska eller vad hur var mig mitt mina den du "
+    "ni vi så också bara mer mindre än utan efter innan ingen inga något några bra billig billigt tyst tystare "
+    "köpa behöver hitta letar söker gärna tack hej".split())
 EN_WORDS = frozenset(
-    "and is i a an the to it that for with not of have want can should or but if what how was me my mine you we "
-    "so also only more less than without after before no some good cheap quiet buy need find looking please thanks "
-    "hi which this these those".split())
+    "and is a an the to it that for with not of have want can should or but if what how was me my mine you we so "
+    "also only more less than without after before no some good cheap quiet buy need find looking please thanks hi "
+    "which this these those".split())
 
 
 def detect(text: str) -> str | None:

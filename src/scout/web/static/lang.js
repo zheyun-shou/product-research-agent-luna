@@ -109,12 +109,12 @@ function tr(key, values = {}) {
   return text.replace(/\{(\w+)\}/g, (_, name) => (name in values ? values[name] : `{${name}}`));
 }
 
-// Set the language and the texts of the fixed parts of the page
+// Set the language and the texts of the fixed parts of the page. The hint in the message box changes with the
+// state of the page, so setBusy in app.js sets it
 function setLang(next) {
   if (!next || !(next in TEXT)) return;
   lang = next;
   document.documentElement.lang = next;
   document.querySelectorAll("[data-t]").forEach((node) => { node.textContent = tr(node.dataset.t); });
-  document.querySelectorAll("[data-t-placeholder]").forEach((node) => { node.placeholder = tr(node.dataset.tPlaceholder); });
   document.querySelectorAll("[data-t-aria]").forEach((node) => node.setAttribute("aria-label", tr(node.dataset.tAria)));
 }

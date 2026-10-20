@@ -147,7 +147,10 @@ async function removePick(pick, item) {
 // Login or captcha pause
 function showProblem(event) {
   const known = { signin: "signin", captcha: "captcha" };
-  $("problem-detail").textContent = tr("needs_you", { detail: tr(known[event.problem] || "other_problem") });
+  // Other problems keep the detail of the server (in English), for example the status of the page
+  const detail = known[event.problem] ? tr(known[event.problem])
+    : lang === "en" ? event.detail || tr("other_problem") : `${tr("other_problem")} (${event.detail || event.problem})`;
+  $("problem-detail").textContent = tr("needs_you", { detail });
   $("problem-url").href = event.url;
   $("problem").hidden = false;
 }
@@ -303,6 +306,7 @@ function handle(event, p) {
     onStatus(p, event.text);
   } else if (event.type === "lang") {
     setLang(event.lang);
+    setBusy(busy);
   } else if (event.type === "problem") {
     showProblem(event);
   } else if (event.type === "reply") {

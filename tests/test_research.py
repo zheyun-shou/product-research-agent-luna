@@ -49,6 +49,7 @@ def test_quote_found_ignores_spaces_case_and_quote_marks():
     assert quote_found("Vi mätte ljudnivån ... en familj", text)
     assert not quote_found("Vi mätte ljudnivån till 35 dB", text)
     assert not quote_found("dB", text)  # too short to show anything
+    assert quote_found("it doesn't run quiet", "It doesn’t run quiet at night.")
 
 
 def test_each_product_gets_points_with_quotes_that_are_in_the_page():
@@ -118,3 +119,30 @@ def test_research_products_meets_the_web_floor_and_counts_the_searches():
     assert "There is no product with id 9." in llm.requests[1][1]
     assert any(s["title"] == "Research 3 products on the web" for s in steps)
     assert any(x.startswith("Researching 2 products on the web") for x in shop.said), shop.said
+
+
+def test_one_failed_researcher_does_not_lose_the_others():
+    class Flaky(Client):
+        def search(self, query, max_results=20):
+            if "Bomann" in query:
+                raise RuntimeError("socket closed")
+            return super().search(query, max_results)
+    briefs = {PRODUCTS[0].title: Brief(points=[BriefPoint(text="39 dB.", page=1, quote="ljudnivån till 39 dB")])}
+    report = research([(PRODUCTS[0], "Gorenje RK4182PS4 test"), (PRODUCTS[1], "Bomann KG 320 test")],
+                      Flaky([TEST], texts={TEST.url: TEST_PAGE}), Worker(briefs), Store().web_store(), rerank,
+                      max_pages=20)
+    assert "39 dB." in report.text and "not researched: the search failed (RuntimeError: socket closed)" in report.text
+    assert report.searches == 1 and not report.unavailable
+
+
+def test_research_products_names_what_it_did_not_research():
+    shop = ResearchShop()
+    call = ResearchProducts(products=[ResearchItem(id=2, words="RK4182 test"), ResearchItem(id=1, words=" "),
+                                      ResearchItem(id=3, words="Fridge 3 test")])
+    llm = FakeLLM([[NEEDS, call], "Done."])
+    state = build_agent_graph(shop.deps(llm), InMemorySaver()).invoke(
+        {"messages": [{"role": "user", "content": "A fridge, at most 180 cm"}],
+         "used": {}}, {"configurable": {"thread_id": "t"}})
+    assert shop.research_calls[0][0] == [(2, "RK4182 test"), (3, "Fridge 3 test")]
+    assert "Not researched (no search words): ids 1." in llm.requests[1][1]
+    assert state["used"]["web_searches"] == 2
