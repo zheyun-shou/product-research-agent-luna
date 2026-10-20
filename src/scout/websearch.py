@@ -626,10 +626,10 @@ def research_text(found: list[Research]) -> str:
 def research(items: list[tuple[ProductRef, str]], client, llm, store: WebStore,
              rerank: Callable[[str, list[str]], list[float]], max_pages: int, want: str = "",
              extract: Callable[[list[str]], dict[str, str]] | None = None,
-             workers: int = RESEARCHERS) -> ResearchReport:
+             workers: int = RESEARCHERS, lock=None) -> ResearchReport:
     """One researcher for each (product, search words), RESEARCHERS at the same time. The database and the reranker
-    are used by one researcher at a time."""
-    lock = threading.Lock()
+    are used by one researcher at a time. lock: the lock of the database connection, when the caller has one."""
+    lock = lock or threading.Lock()
 
     def locked(fn):
         def call(*args):

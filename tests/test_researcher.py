@@ -116,3 +116,33 @@ def test_the_last_step_can_only_finish():
     llm.tools = spy
     run(llm, shop)
     assert len(seen) == MAX_STEPS and seen[-1] == ["ResearchFile"] and "ReadProduct" in seen[0]
+
+
+def test_a_point_cannot_quote_the_needs_or_the_wish_and_errors_of_the_reviews_do_not_stop_the_research():
+    shop = Shop()
+
+    def broken(ids):
+        raise RuntimeError("browser closed")
+    wish = FilePoint(topic="pro", text="Quiet.", source="wish", quote="is it quiet")
+    fact = FilePoint(topic="need", text="152 cm.", source="facts", quote="height 152.0")
+    llm = Router([[NEEDS, ResearchCandidates(ids=[2], want="is it quiet")], "Done."],
+                 {2: [[file_of("fits", wish, fact)]]})
+    deps = shop.deps(llm)
+    deps.read_reviews = broken
+    build_agent_graph(deps, InMemorySaver()).invoke(
+        {"messages": [{"role": "user", "content": "A quiet fridge, at most 180 cm"}]},
+        {"configurable": {"thread_id": "t"}})
+    result = llm.requests[1][1]
+    assert "Reviews: not read (RuntimeError: browser closed). Call read_reviews later." in result
+    assert '"height 152.0" (facts)' in result and "Quiet." not in result and "(1 point(s) left out" in result
+
+
+def test_a_web_search_that_is_not_available_reaches_the_turn():
+    shop = Shop()
+    shop.down = "no credits"
+    steps = {2: [[SearchWeb(question="Fridge 2 test")], [file_of("fits")]]}
+    picks = ShowPicks(picks=[Pick(id=2, text="Fits.")])
+    llm = Router([[NEEDS, ResearchCandidates(ids=[2])], [picks]], steps)
+    state = run(llm, shop)
+    assert state["used"]["web_unavailable"] == "no credits"
+    assert [p["listing_id"] for p in state["picks"]] == [2]  # the web floor does not ask for it

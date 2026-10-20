@@ -33,3 +33,15 @@ eval-hidden with and without the tool, on the same targets: the hit rate, the co
 - The main agent counts the research as one tool call. `used` keeps the steps of the researchers (`researcher_steps`) and the transcript of each researcher with the kept and dropped points (`researchers`), so eval-hidden saves them.
 - The reranker of the web search runs for one researcher at a time (a lock).
 - Tests with fakes: each researcher works only on its own product, Python reads the reviews before the researchers start, a point with a quote that is not in the tool results is left out, one failed researcher does not lose the files of the others, and in the last step a researcher can only finish. Not run with a real model yet.
+
+### Code review (2026-10-20)
+
+The review found 10 problems. 9 are fixed, and 1 is a known limit.
+
+- One lock for the database connection (`LoopDeps.db_lock`). The researchers share one connection, and it is not in autocommit, so all database work takes this lock. search_web takes it only for its database parts, so a researcher can search the web while another one reads the database.
+- Known limit: summarize_reviews and find_missing hold the lock during their worker calls. So these two tools of different researchers run one after the other. A pool of connections would fix this. I add it only if the evaluation shows that the research is too slow.
+- A point cannot quote the needs or the wish of the main agent. It can quote the stored facts of the product and the tool results.
+- The reports of the researchers have the same length limits as for the main agent (search_web up to 60,000 characters).
+- When the web search is not available for a researcher, the turn knows it, so the web floor does not ask again.
+- A failed review read does not stop the research. The main agent gets the full review report.
+- A researcher that fails keeps its counts of web searches, pages and credits for the turn.

@@ -4,6 +4,7 @@ the answers are graded in the evaluation (scout grade)."""
 import itertools
 import json
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Literal
@@ -375,6 +376,9 @@ class LoopDeps:
     lang: str = "en"  # the language of the shopper in this turn (scout.lang); the start of each turn sets it
     step: Callable[[dict], None] = lambda event: None  # the progress of a turn, for the web page
     tracer: Any = field(default_factory=NoTracer)
+    # The lock of the database connection. The candidate researchers run their tools that use the database with it;
+    # search_web takes it inside, only for its database parts.
+    db_lock: Any = field(default_factory=threading.RLock)
 
 
 # ---- text for the model ----
@@ -585,7 +589,7 @@ def step_title(call: BaseModel, lang: str = "en") -> tuple[str, str]:
     if isinstance(call, SearchWeb):
         return "web", t("step_search_web", lang, question=call.question)
     if isinstance(call, ResearchCandidates):
-        return "web", t("step_candidates", lang, n=len(dict.fromkeys(call.ids[:MAX_RESEARCH])))
+        return "web", t("step_candidates", lang, n=len(list(dict.fromkeys(call.ids))[:MAX_RESEARCH]))
     if isinstance(call, ResearchProducts):
         return "web", t("step_research", lang, n=len(research_items(call)))
     if isinstance(call, ReadPage):
@@ -799,14 +803,20 @@ class Toolbox:
         lines = []
         # The reviews first: the browser works in one thread only, so the researchers do not read them
         if self.deps.read_reviews is not None:
-            todo = [i for i in ids if i not in self.deps.reviews_read(ids)]
+            read = self.deps.reviews_read(ids)
+            todo = [i for i in ids if i not in read]
             if todo:
-                lines.append("Reviews: " + self.read_reviews(ReadReviews(ids=todo)).split("\n", 1)[0])
+                try:
+                    lines.append("Reviews: " + self.read_reviews(ReadReviews(ids=todo)))
+                except Exception as exc:  # the researchers still work with the stored text
+                    lines.append(f"Reviews: not read ({type(exc).__name__}: {exc}). Call read_reviews later.")
         self.deps.say(t("say_candidates", self.deps.lang, n=len(cards)))
         found = research_all(self.deps, {**self.state, **self.update}, self.thread, cards, call.want, self.used)
         for r in found:
             for key in ("web_searches", "web_pages", "web_credits"):
                 self.used[key] = self.used.get(key, 0) + r.used.get(key, 0)
+            if r.used.get("web_unavailable") and not self.used.get("web_unavailable"):  # the floor does not ask
+                self.used["web_unavailable"] = r.used["web_unavailable"]
             self.used["researcher_steps"] = self.used.get("researcher_steps", 0) + r.used.get("steps", 0)
             self.used["researchers"] = [*self.used.get("researchers", []), {
                 "id": r.listing_id, "messages": r.messages, "kept": len(r.points), "dropped": r.dropped,

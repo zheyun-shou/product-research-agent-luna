@@ -352,6 +352,14 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
         rows = stored_web_results(conn, question, datetime.now(timezone.utc) - week)
         return [WebResult(**r) for r in rows] if rows else None
 
+    db_lock = threading.RLock()  # the candidate researchers share this connection (agent/researcher.py)
+
+    def locked(fn):
+        def call(*args):
+            with db_lock:
+                return fn(*args)
+        return call
+
     web_store = WebStore(
         stored=stored,
         save_search=lambda question, ids, results: save_web_search(
@@ -373,12 +381,16 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
             return loaded_reranker[0](question, texts)
 
     def search_web(question, ids, max_pages, want=""):
-        cards = load_cards_by_ids(conn, ids)
+        with db_lock:
+            cards = load_cards_by_ids(conn, ids)
         products = [ProductRef(c.listing_id, c.title, c.model, c.brand) for c in cards]
-        # Plain requests only: the texts load in worker threads, where the browser cannot run
-        report = run_web_search(question, products, client, llm, web_store, reranker, max_pages, want=want,
+        # Plain requests only: the texts load in worker threads, where the browser cannot run. The database parts
+        # take the lock, so a researcher can search the web while another one reads the database.
+        store = WebStore(locked(web_store.stored), locked(web_store.save_search), locked(web_store.save_chunks))
+        report = run_web_search(question, products, client, llm, store, reranker, max_pages, want=want,
                                 extract=lambda urls: fetch_texts(lambda u: fetcher.fetch(u, use_browser=False), urls))
-        conn.commit()
+        with db_lock:
+            conn.commit()
         return report.text, report.pages, report.credits
 
     def research_web(items, max_pages, want=""):
@@ -386,8 +398,10 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
         todo = [(ProductRef(i, cards[i].title, cards[i].model, cards[i].brand), words) for i, words in items
                 if i in cards]
         report = run_research(todo, client, llm, web_store, reranker, max_pages, want=want,
-                              extract=lambda urls: fetch_texts(lambda u: fetcher.fetch(u, use_browser=False), urls))
-        conn.commit()
+                              extract=lambda urls: fetch_texts(lambda u: fetcher.fetch(u, use_browser=False), urls),
+                              lock=db_lock)
+        with db_lock:
+            conn.commit()
         return report
 
     verdicts: dict = {}  # (wish, listing id) -> the worker's verdict, for the session
@@ -410,6 +424,6 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
         remember=lambda kind, text, category, thread, source="remember": add_memory(
             conn, shopper, kind, text, category, thread, source),
         forget=lambda ids: forget_memories(conn, shopper, ids),
-        say=say, tracer=tracer,
+        say=say, tracer=tracer, db_lock=db_lock,
     )
     return deps

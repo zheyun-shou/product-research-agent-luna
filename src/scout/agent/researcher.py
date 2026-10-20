@@ -3,16 +3,16 @@ own context and gives the main agent a short file. One researcher for each produ
 
 Python keeps a point of a file only when its quote is in a tool result that this researcher got."""
 import contextvars
-import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from scout.agent.loop import (MAX_REPORT_CHARS, MAX_WEB_PAGES, MAX_WEB_SEARCHES, FindMissing, ReadProduct, SearchText,
-                              SearchWeb, SummarizeReviews, Think, Toolbox, call_message, result_message)
-from scout.llm.client import LLMOutputError, LLMUnavailable
+from scout.agent.loop import (MAX_REPORT_CHARS, MAX_WEB_PAGES, MAX_WEB_SEARCHES, REPORT_LIMITS, FindMissing,
+                              ReadProduct, SearchText, SearchWeb, SummarizeReviews, Think, Toolbox, call_message,
+                              result_message)
+from scout.llm.client import LLMOutputError, LLMUnavailable, tool_name
 from scout.needs import Needs
 from scout.websearch import quote_found
 
@@ -80,27 +80,46 @@ class Researched:
     messages: list[dict] = field(default_factory=list)  # its transcript, for the evaluation
 
 
+def facts_of(card) -> str:
+    """The product line and its stored facts: a source that a point can quote."""
+    return (f"Your product: id {card.listing_id}, {card.title[:200]}" + (f", model {card.model}" if card.model else "")
+            + (f", brand {card.brand}" if card.brand else "") + "\nIts stored facts: "
+            + (", ".join(f"{name} {(value or {}).get('value')}" for name, value in card.attributes.items()) or "none"))
+
+
 def context_of(state: dict, card, want: str) -> str:
     needs = Needs.model_validate(state.get("needs") or {})
     return "\n".join([
         f"The needs of the shopper: {needs.text() or 'none recorded'}" + (
             f"; budget {needs.budget}" if needs.budget is not None else ""),
         f"The wish of the assistant: {want.strip() or 'check the needs; tests, problems and opinions of owners'}",
-        f"Your product: id {card.listing_id}, {card.title[:200]}" + (f", model {card.model}" if card.model else "")
-        + (f", brand {card.brand}" if card.brand else ""),
-        "Its stored facts: " + (", ".join(f"{name} {(value or {}).get('value')}"
-                                           for name, value in card.attributes.items()) or "none"),
+        facts_of(card),
     ])
 
 
-def research_one(deps, state: dict, thread: str, card, want: str, budget: dict, lock: threading.Lock) -> Researched:
+def research_one(deps, state: dict, thread: str, card, want: str, budget: dict) -> Researched:
     """One researcher. budget: the used counters to start from, so the limits of the turn give its own part."""
     done = Researched(card.listing_id, card.title)
     box = Toolbox(deps, state, thread)
     box.used = dict(budget)
-    context = context_of(state, card, want)
-    seen = [context]
     history: list[dict] = []
+    try:
+        steps(done, deps, box, card, context_of(state, card, want), history)
+    except Exception as exc:  # what it used still counts for the turn
+        done.error = f"the researcher failed ({type(exc).__name__}: {exc})"
+    if done.file is None and not done.error:
+        done.error = "the researcher did not finish"
+    done.used |= {k: box.used.get(k, 0) - budget.get(k, 0) for k in ("web_searches", "web_pages", "web_credits")}
+    if box.used.get("web_unavailable") and not budget.get("web_unavailable"):
+        done.used["web_unavailable"] = box.used["web_unavailable"]
+    done.update = {k: v for k, v in box.update.items() if k == "web_searches"}
+    done.messages = history
+    return done
+
+
+def steps(done: Researched, deps, box: Toolbox, card, context: str, history: list[dict]) -> None:
+    # The needs and the wish are not a source: a point cannot quote them
+    seen = [facts_of(card)]
     role = role_of(deps.llm)
     for step in range(MAX_STEPS):
         tools = [ResearchFile] if step == MAX_STEPS - 1 else TOOLS + [ResearchFile]
@@ -124,20 +143,14 @@ def research_one(deps, state: dict, thread: str, card, want: str, budget: dict, 
             break
         for call, call_id in zip(calls, ids):
             call = scoped(call, card.listing_id)
-            if isinstance(call, SearchWeb):  # long and with its own locks inside
+            if isinstance(call, SearchWeb):  # it takes the database lock inside, only for its database parts
                 report = box.run(call)
-            else:
-                with lock:
+            else:  # the researchers share one database connection
+                with deps.db_lock:
                     report = box.run(call)
-            report = report[:MAX_REPORT_CHARS]
+            report = report[:REPORT_LIMITS.get(tool_name(type(call)), MAX_REPORT_CHARS)]
             seen.append(report)
             history.append(result_message(call_id, report))
-    if done.file is None and not done.error:
-        done.error = "the researcher did not finish"
-    done.used |= {k: box.used.get(k, 0) - budget.get(k, 0) for k in ("web_searches", "web_pages", "web_credits")}
-    done.update = {k: v for k, v in box.update.items() if k == "web_searches"}
-    done.messages = history
-    return done
 
 
 def file_text(r: Researched) -> str:
@@ -164,10 +177,9 @@ def research_all(deps, state: dict, thread: str, cards: list, want: str, used: d
     budget = {"web_searches": MAX_WEB_SEARCHES - each_searches, "web_pages": MAX_WEB_PAGES - each_pages}
     if used.get("web_unavailable"):  # the researchers do not try a back end that failed in this turn
         budget["web_unavailable"] = used["web_unavailable"]
-    lock = threading.Lock()
     with ThreadPoolExecutor(len(cards)) as pool:
-        futures = [pool.submit(contextvars.copy_context().run, research_one, deps, state, thread, card, want, budget,
-                               lock) for card in cards]
+        futures = [pool.submit(contextvars.copy_context().run, research_one, deps, state, thread, card, want, budget)
+                   for card in cards]
         found = []
         for card, future in zip(cards, futures):
             try:
