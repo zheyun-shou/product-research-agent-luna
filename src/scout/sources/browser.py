@@ -1,8 +1,11 @@
 """A dedicated Chrome profile driven by Playwright, one page at a time."""
+import ipaddress
 import random
+import socket
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import sync_playwright
@@ -34,20 +37,52 @@ class PoliteTimer:
         self._last = self._clock()
 
 
+def cdp_endpoint(url: str) -> str:
+    """The address with an IP in place of a host name. Chrome refuses a DevTools request whose Host header is a name
+    other than localhost, and the app in Docker reaches Chrome on the computer as host.docker.internal."""
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    if host == "localhost":
+        return url
+    try:
+        ipaddress.ip_address(host)
+        return url
+    except ValueError:
+        pass
+    ip = socket.gethostbyname(host)
+    netloc = ip + (f":{parts.port}" if parts.port else "")
+    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+
+
 class BrowserSession:
     """Opens the product-scout Chrome profile in a visible window.
 
     The profile lives in browser-profile/, separate from the everyday Chrome profile,
     because Chrome locks a profile that is in use and refuses automation on the default one.
+
+    With cdp_url, the session connects to a Chrome window that is already open with this profile and the DevTools
+    port (scripts/start-browser.ps1). This is how the app in Docker uses the window on the computer, where I log in
+    and solve captchas. The session opens its own tab and closes only that tab.
     """
 
-    def __init__(self, profile_dir: Path, timer: PoliteTimer | None = None):
+    def __init__(self, profile_dir: Path, timer: PoliteTimer | None = None, cdp_url: str | None = None):
         self.profile_dir = profile_dir
         self.timer = timer or PoliteTimer()
+        self.cdp_url = cdp_url
+        self._browser = None
 
     def __enter__(self) -> "BrowserSession":
-        self.profile_dir.mkdir(parents=True, exist_ok=True)
         self._pw = sync_playwright().start()
+        if self.cdp_url:
+            try:
+                self._browser = self._pw.chromium.connect_over_cdp(cdp_endpoint(self.cdp_url))
+            except Exception:
+                self._pw.stop()
+                raise
+            self._ctx = self._browser.contexts[0] if self._browser.contexts else self._browser.new_context()
+            self._page = self._ctx.new_page()
+            return self
+        self.profile_dir.mkdir(parents=True, exist_ok=True)
         try:
             self._ctx = self._pw.chromium.launch_persistent_context(
                 str(self.profile_dir),
@@ -65,7 +100,13 @@ class BrowserSession:
 
     def __exit__(self, *exc) -> None:
         try:
-            self._ctx.close()
+            if self._browser is not None:  # the window stays open: close our tab and disconnect
+                try:
+                    self._page.close()
+                finally:
+                    self._browser.close()
+            else:
+                self._ctx.close()
         finally:
             self._pw.stop()
 

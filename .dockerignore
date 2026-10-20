@@ -1,0 +1,13 @@
+.git
+.env
+.claude
+.pytest_cache
+**/__pycache__
+browser-profile
+data
+snapshots
+eval
+docs
+tests
+db
+searxng

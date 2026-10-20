@@ -32,7 +32,8 @@ class LazyBrowser:
 
     def adapter(self) -> AmazonSeAdapter:
         if self._adapter is None:
-            self._session = BrowserSession(self._settings.browser_profile_dir).__enter__()
+            self._session = BrowserSession(self._settings.browser_profile_dir,
+                                           cdp_url=self._settings.browser_cdp_url).__enter__()
             self._adapter = AmazonSeAdapter(self._session, self._settings.snapshot_dir)
         return self._adapter
 

@@ -19,5 +19,25 @@ services:
     volumes:
       - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
     restart: unless-stopped
+  # The web app (phase 7). Only with: docker compose --profile app up -d --build. Start Chrome first with
+  # scripts/start-browser.ps1: the app uses that window for amazon.se over the DevTools port.
+  app:
+    profiles: [app]
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://scout:scout@db:5432/product_scout
+      SEARXNG_URL: http://searxng:8080
+      BROWSER_CDP_URL: http://host.docker.internal:9222
+    ports:
+      - "127.0.0.1:9000:9000"
+    volumes:
+      - ./data:/app/data
+      - ./snapshots:/app/snapshots
+      - ${HF_CACHE:-~/.cache/huggingface}:/root/.cache/huggingface
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on: [db, searxng]
+    restart: unless-stopped
 volumes:
   pgdata: {}
