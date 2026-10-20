@@ -680,6 +680,7 @@ def eval_hidden(
     turns: int = typer.Option(MAX_SHOPPER_TURNS, help="the most shopper messages after the first one"),
     keep: bool = typer.Option(False, help="keep the products of the earlier targets in the evaluation database"),
     yes: bool = typer.Option(False, help="start without the question"),
+    researchers: bool = typer.Option(True, help="the research_candidates tool (the candidate researchers)"),
 ) -> None:
     """The hidden-target test: a simulated shopper wants one real product, and the chat model must find it on amazon.se.
     Uses the evaluation database (EVAL_DATABASE_URL), which is emptied before each target. Costs money."""
@@ -733,6 +734,7 @@ def eval_hidden(
                                  make_embedder=embedder,
                                  # a new shopper for each target and run: no memory of other targets or runs
                                  shopper=f"eval-{target.id}-{uuid.uuid4().hex[:8]}")
+                deps.researchers = researchers
                 graph = build_agent_graph(deps, InMemorySaver())
 
                 def source_ids(ids):
@@ -763,9 +765,11 @@ def eval_hidden(
         tracer.flush()
     summary = {"chat_model": llm.model_for("chat"), "worker_model": llm.model_for("worker"),
                "shopper_model": llm.model_for("shopper"), "run_at": datetime.now(timezone.utc).isoformat(),
+               "researchers": researchers, "researcher_model": llm.model_for("researcher") if researchers else None,
                "limits": LIMITS, **summarize_hidden(records)}
     slug = re.sub(r"[^\w.-]", "_", llm.model_for("chat"))
-    out = ROOT / "eval" / "results" / f"hidden-{slug}-{datetime.now():%Y%m%d-%H%M}.json"
+    variant = "" if researchers else "-no-researchers"
+    out = ROOT / "eval" / "results" / f"hidden-{slug}{variant}-{datetime.now():%Y%m%d-%H%M}.json"
     out.write_text(json.dumps({"summary": summary, "runs": records}, indent=2, ensure_ascii=False), encoding="utf-8")
     typer.echo(hidden_text(summary))
     report_llm_use(llm)

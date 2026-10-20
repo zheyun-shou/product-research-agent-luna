@@ -41,6 +41,12 @@ REPORT_LIMITS = {"read_product": 3 * (MAX_READ_CHARS + 300) + 500,
                  "research_products": 20_000,  # 5 products with up to 6 points and their quotes
                  "research_candidates": 20_000}  # 5 files with up to 10 points
 
+# The line of the prompt about research_candidates; a run without the researchers leaves it out (eval-hidden)
+RESEARCH_CANDIDATES_TEXT = """- When you have the candidates that you may recommend, call research_candidates with them (at most 5). A
+  researcher for each one reads its page, its reviews and the web in its own context and gives you a short file.
+  This keeps your context short. Then read more yourself only where a file says that something is unclear.
+"""
+
 SYSTEM = """You are product-scout, a shopping research assistant. You help the shopper choose products. The shopper
 is in Sweden. You find candidates in shops, check them against the shopper's needs, read what buyers say, and give a
 few picks with the reasons. You work with tools. Python runs them and gives you the results.
@@ -66,10 +72,7 @@ How to work:
   still be true in a later conversation: a size of the space, a brand or a feature that they want or do not want.
   When the shopper says that a memory is wrong or asks to forget it, use forget.
 - Read the buyers' reviews of the products that you want to recommend (read_reviews, then summarize_reviews).
-- When you have the candidates that you may recommend, call research_candidates with them (at most 5). A
-  researcher for each one reads its page, its reviews and the web in its own context and gives you a short file.
-  This keeps your context short. Then read more yourself only where a file says that something is unclear.
-- To research products on the web only, use research_products: one researcher for each
+{research_candidates}- To research products on the web only, use research_products: one researcher for each
   product searches at the same time, and you get short points with quotes and addresses. Use short search words:
   the brand and model and one word such as test, recension, Testbericht, anmeldelse or review. A long question in a
   sentence finds manuals and shops. Put what you want to learn in want (for example "is it quiet").
@@ -105,6 +108,14 @@ Rules:
   tests (research_candidates, research_products or search_web, in the last 7 days), unless the shopper does not want
   that (update_needs with web_tests false). Python opens each pick again for the price and the stock now.
 - Reply in the language of the shopper's last message."""
+
+
+def system_prompt(researchers: bool = True) -> str:
+    return SYSTEM.replace("{research_candidates}", RESEARCH_CANDIDATES_TEXT if researchers else "")
+
+
+def work_tools(researchers: bool = True) -> list:
+    return [t for t in WORK_TOOLS if researchers or t is not ResearchCandidates]
 
 
 # ---- tools ----
@@ -379,6 +390,7 @@ class LoopDeps:
     # The lock of the database connection. The candidate researchers run their tools that use the database with it;
     # search_web takes it inside, only for its database parts.
     db_lock: Any = field(default_factory=threading.RLock)
+    researchers: bool = True  # the research_candidates tool; eval-hidden compares runs with and without it
 
 
 # ---- text for the model ----
@@ -1092,7 +1104,8 @@ def build_agent_graph(deps: LoopDeps, checkpointer=None):
                    "title": t("step_plan" if history else "step_plan_first", deps.lang)})
         with deps.tracer.span("agent"):
             try:
-                calls = llm.tools("chat", SYSTEM, context, WORK_TOOLS + FINAL_TOOLS, name="Agent", text_reply=Reply,
+                calls = llm.tools("chat", system_prompt(deps.researchers), context,
+                                  work_tools(deps.researchers) + FINAL_TOOLS, name="Agent", text_reply=Reply,
                                   history=history + ([{"role": "user", "content": USED_UP}] if used_up else []))
             except LLMUnavailable as exc:
                 return {"final": None, "pending": [], "gate_errors": [],

@@ -146,3 +146,10 @@ def test_a_web_search_that_is_not_available_reaches_the_turn():
     state = run(llm, shop)
     assert state["used"]["web_unavailable"] == "no credits"
     assert [p["listing_id"] for p in state["picks"]] == [2]  # the web floor does not ask for it
+
+
+def test_a_run_without_the_researchers_has_no_tool_and_no_prompt_line_for_them():
+    from scout.agent.loop import system_prompt, work_tools
+    assert "research_candidates with them" in system_prompt() and ResearchCandidates in work_tools()
+    assert "research_candidates with them" not in system_prompt(False)
+    assert ResearchCandidates not in work_tools(False) and "{" not in system_prompt(False)[:40]
