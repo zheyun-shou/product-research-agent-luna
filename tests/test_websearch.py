@@ -249,8 +249,8 @@ def test_the_picks_wait_for_a_web_search_of_each_pick():
     assert shop.web_calls == [("RK4182 test", [2], 120)]
     assert [p["listing_id"] for p in state["picks"]] == [2]
     assert state["web_searches"] == ["RK4182 test"] and state["used"]["web_pages"] == 3
-    assert state["used"]["gate_stops"] == ["id 2 had no web search for tests yet. Call search_web with its id and "
-                                            "its model"]
+    assert state["used"]["gate_stops"] == ["id 2 had no web search for tests yet. Call research_products with its id "
+                                            "and its model"]
 
 
 def test_no_floor_when_the_shopper_does_not_want_it_or_tavily_is_down():

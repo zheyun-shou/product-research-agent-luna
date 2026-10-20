@@ -29,13 +29,15 @@ MAX_PRODUCT_PAGES = 30
 MAX_REVIEW_PAGES = 30
 MAX_WEB_PAGES = 120  # pages that the worker judges; a search gives up to 20, so 6 searches (5 picks and 1 more)
 MAX_WEB_SEARCHES = 10  # a new search costs one Tavily credit; SearXNG is free but asks other engines
+MAX_RESEARCH = 5  # products in one research_products call
 MAX_GATE_ROUNDS = 3
 MAX_REPORT_CHARS = 6_000  # of one tool report in the prompt
 SEARCH_DETAILS = 8  # new product pages for each search_shop call
 MAX_READ_CHARS = 5_000  # of the text of one product in read_product
 # Three products must fit in one report: each text is cut at MAX_READ_CHARS, the title and the question at 200
 REPORT_LIMITS = {"read_product": 3 * (MAX_READ_CHARS + 300) + 500,
-                 "search_web": 60_000}  # up to websearch.MAX_CHAT_PARTS parts of about 1,000 characters
+                 "search_web": 60_000,  # up to websearch.MAX_CHAT_PARTS parts of about 1,000 characters
+                 "research_products": 20_000}  # 5 products with up to 6 points and their quotes
 
 SYSTEM = """You are product-scout, a shopping research assistant. You help the shopper choose products. The shopper
 is in Sweden. You find candidates in shops, check them against the shopper's needs, read what buyers say, and give a
@@ -62,11 +64,12 @@ How to work:
   still be true in a later conversation: a size of the space, a brand or a feature that they want or do not want.
   When the shopper says that a memory is wrong or asks to forget it, use forget.
 - Read the buyers' reviews of the products that you want to recommend (read_reviews, then summarize_reviews).
-- Search the web for tests and forum views of the products that you want to recommend (search_web with their ids).
-  Use short search words: the brand and model and one word such as test, recension, Testbericht, anmeldelse or
-  review. A long question in a sentence finds manuals and shops. Put what you want to learn in want (for example
-  "is it quiet"): it chooses the parts of the pages that you get. Without ids, search_web finds which models testers
-  recommend. A model that a test praises may not be sold in Sweden, but look for it: search_shop with its brand
+- Research the products that you want to recommend on the web with research_products: one researcher for each
+  product searches at the same time, and you get short points with quotes and addresses. Use short search words:
+  the brand and model and one word such as test, recension, Testbericht, anmeldelse or review. A long question in a
+  sentence finds manuals and shops. Put what you want to learn in want (for example "is it quiet").
+- search_web gives the best parts of the pages of one search. Use it for other questions and for more detail: with
+  ids, about those products; without ids, which models testers recommend. A model that a test praises may not be sold in Sweden, but look for it: search_shop with its brand
   and model, and search_web with the model and a word such as pris or köp for the pages of other shops (read_page).
   Say when you could not find it in a shop.
 - read_page reads the product page of another shop (for example one that search_web found) and stores the product.
@@ -93,7 +96,8 @@ Rules:
 - Each number that you write is a value from a tool result, a number that the shopper wrote, or your own
   calculation. Say when a number comes from a test or a forum, and name the site.
 - Before show_picks, Python checks: a shop was searched or a shop page was read in this conversation, the reviews
-  of each pick were read (good and bad, or the reviews on the page of another shop), and it had a web search for tests (in the last 7 days), unless the shopper does not want
+  of each pick were read (good and bad, or the reviews on the page of another shop), and it had a web search for
+  tests (research_products or search_web, in the last 7 days), unless the shopper does not want
   that (update_needs with web_tests false). Python opens each pick again for the price and the stock now.
 - Reply in the language of the shopper's last message."""
 
@@ -133,6 +137,21 @@ class SearchWeb(BaseModel):
     want: str = Field("", description="What you want to learn from the pages, for example 'is it quiet' or "
                                       "'problems after a year'. It ranks the parts of the text. Empty: the search "
                                       "words without the brand and the model")
+
+
+class ResearchItem(BaseModel):
+    id: int
+    words: str = Field(description="Short search words: the brand and the model and one word such as test, "
+                                   "recension, Testbericht or review")
+
+
+class ResearchProducts(BaseModel):
+    """Research the products that you want to recommend on the web, at most 5. One researcher for each product
+    searches the web at the same time; the worker judges the pages and sums up the best parts. You get short points,
+    each with a quote and the address of its page. The relevant pages are stored, so search_text finds them later."""
+    products: list[ResearchItem] = Field(description="Each product with its own search words")
+    want: str = Field("", description="What you want to learn from the pages, for example 'is it quiet'. Empty: "
+                                      "tests, problems and opinions of owners")
 
 
 class ReadPage(BaseModel):
@@ -278,7 +297,7 @@ class Reply(BaseModel):
     text: str
 
 
-WORK_TOOLS = [UpdateNeeds, SearchShop, SearchWeb, ReadPage, SameProduct, FindProducts, ReadProduct, SearchText,
+WORK_TOOLS = [UpdateNeeds, SearchShop, ResearchProducts, SearchWeb, ReadPage, SameProduct, FindProducts, ReadProduct, SearchText,
               SimilarProducts, ReadImages, FindMissing, ReadReviews, SummarizeReviews, RemoveProducts,
               RestoreProducts, UpdateProfile, Remember, Forget, Think]
 FINAL_TOOLS = [ShowPicks, Reply]
@@ -325,6 +344,9 @@ class LoopDeps:
     # (search words, listing ids, at most this many pages, what to learn) -> (report, pages, credits);
     # raises WebSearchUnavailable
     search_web: Callable[[str, list[int], int, str], tuple[str, int, int]] | None = None
+    # ([(listing id, search words)], at most this many pages for each, what to learn) -> ResearchReport;
+    # one researcher for each product at the same time (websearch.research)
+    research_web: Callable[[list[tuple[int, str]], int, str], Any] | None = None
     web_searched: Callable[[list[int]], set[int]] = lambda ids: set()  # listings with a web search, last 7 days
     # (url, profile) -> (report, pages loaded, the listing id or None); stores the product of another shop
     read_page: Callable[[str, CategoryProfile], tuple[str, int, int | None]] | None = None
@@ -483,8 +505,8 @@ def check_final(call: BaseModel, state: dict, deps: LoopDeps, thread: str, used:
     needs = Needs.model_validate(state.get("needs") or {})
     if deps.search_web is not None and needs.web_tests and not used.get("web_unavailable"):
         searched = deps.web_searched(ids)
-        errors += [f"id {i} had no web search for tests yet. Call search_web with its id and its model" for i in ids
-                   if i not in searched]
+        errors += [f"id {i} had no web search for tests yet. Call research_products with its id and its model"
+                   for i in ids if i not in searched]
     if errors:
         return errors
     # The price and the stock now, for the picks that were not checked in this turn
@@ -537,6 +559,8 @@ def step_title(call: BaseModel, lang: str = "en") -> tuple[str, str]:
             t("step_page", lang, page=call.page) if call.page > 1 else "")
     if isinstance(call, SearchWeb):
         return "web", t("step_search_web", lang, question=call.question)
+    if isinstance(call, ResearchProducts):
+        return "web", t("step_research", lang, n=len(call.products))
     if isinstance(call, ReadPage):
         return "web", t("step_read_page", lang, host=urlparse(call.url).netloc or call.url)
     if isinstance(call, SameProduct):
@@ -700,6 +724,44 @@ class Toolbox:
         done = self.current("web_searches")
         self.update["web_searches"] = done + ([call.question] if call.question not in done else [])
         return report + "".join(f" There is no product with id {i}." for i in unknown)
+
+    def research_products(self, call: ResearchProducts) -> str:
+        if self.deps.research_web is None:
+            return "not available: no web search back end is set. Use search_web."
+        if self.used.get("web_unavailable"):
+            return f"not available in this turn: {self.used['web_unavailable']}."
+        searches = MAX_WEB_SEARCHES - self.used.get("web_searches", 0)
+        pages = MAX_WEB_PAGES - self.used.get("web_pages", 0)
+        if searches <= 0:
+            return "the web searches of this turn are used up."
+        if pages <= 0:
+            return "the web pages of this turn are used up."
+        items, seen = [], set()
+        for item in call.products:
+            if item.id not in seen and item.words.strip():
+                seen.add(item.id)
+                items.append(item)
+        cards, unknown = self.cards([i.id for i in items])
+        known = {c.listing_id for c in cards}
+        todo = [(i.id, i.words.strip()) for i in items if i.id in known][:min(MAX_RESEARCH, searches)]
+        later = [i.id for i in items if i.id in known][len(todo):]
+        if not todo:
+            return "give the ids of stored products with their search words." + "".join(
+                f" There is no product with id {i}." for i in unknown)
+        from scout.websearch import RESULTS
+        self.deps.say(t("say_research", self.deps.lang, n=len(todo)))
+        # Counted before the call: a search that fails after the back end answered can have used a credit
+        self.used["web_searches"] = self.used.get("web_searches", 0) + len(todo)
+        report = self.deps.research_web(todo, min(RESULTS, max(1, pages // len(todo))), call.want)
+        self.used["web_pages"] = self.used.get("web_pages", 0) + report.pages
+        self.used["web_credits"] = self.used.get("web_credits", 0) + report.credits
+        if report.unavailable:
+            self.used["web_unavailable"] = report.unavailable
+            return f"not available: {report.unavailable}. Tell the shopper that the picks have no web tests."
+        done = self.current("web_searches")
+        self.update["web_searches"] = done + [w for _, w in todo if w not in done]
+        return report.text + "".join(f" There is no product with id {i}." for i in unknown) + (
+            f" Not researched (the limits of this turn): ids {', '.join(map(str, later))}." if later else "")
 
     def read_page(self, call: ReadPage) -> str:
         profile = self.profile()

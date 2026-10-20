@@ -96,6 +96,7 @@ Most tools exist already as code. The table gives what changes.
 | `update_needs(needs)` | Records the needs: kind, conditions, budget, preferences | Each number is one that the shopper wrote (`check_needs`) | the clarify step |
 | `search_shop(site, words, page, sort)` | Searches a shop, drops titles off the topic (worker), opens up to 8 new product pages, stores them. The kept results past the 8 stay in memory; the next call with the same words reads them without the search pages | Polite fetching, the floors of section 5, the raw-text check, the login pause | `crawl` |
 | `search_web(question)` | Tavily search, reads the found pages in parallel | Stores test and forum text as chunks; shop pages go through the generic reader | Task 9 |
+| `research_products(products, want)` | One web search for each product (at most 5), 3 at the same time; the worker sums up the best parts in points with quotes | The same as search_web; Python keeps only the points whose quote is in the page | 2026-10-20 |
 | `read_page(url)` | Reads one product page of any shop | schema.org JSON-LD first, then the worker with the raw-text check | new (generic reader of section 1a of the main design) |
 | `query_products(conditions)` | Lists stored candidates that meet conditions, with their cards | SQL and Python filter; candidates over the budget are not given; the result is a list for Luna, not a decision | `query_products`, `shortlist` |
 | `find_missing(products, attributes)` | Looks for missing values in the stored text | Raw text in the cited chunk, the unit check | Task 6 |

@@ -182,6 +182,7 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
     from scout.db.store import add_memory, forget_memories, memories
     from scout.db.store import save_web_chunks, save_web_search, stored_web_results, web_searched
     from scout.websearch import ProductRef, WebResult, WebStore, fetch_texts, url_ref
+    from scout.websearch import research as run_research
     from scout.websearch import search_web as run_web_search
 
     from scout.agent.graph import crawl_text
@@ -375,6 +376,15 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
         conn.commit()
         return report.text, report.pages, report.credits
 
+    def research_web(items, max_pages, want=""):
+        cards = {c.listing_id: c for c in load_cards_by_ids(conn, [i for i, _ in items])}
+        todo = [(ProductRef(i, cards[i].title, cards[i].model, cards[i].brand), words) for i, words in items
+                if i in cards]
+        report = run_research(todo, client, llm, web_store, reranker, max_pages, want=want,
+                              extract=lambda urls: fetch_texts(lambda u: fetcher.fetch(u, use_browser=False), urls))
+        conn.commit()
+        return report
+
     verdicts: dict = {}  # (wish, listing id) -> the worker's verdict, for the session
     deps = LoopDeps(
         llm=llm, profile_names=profile_names, load_profile=load_profile, save_draft=save_draft,
@@ -388,7 +398,8 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
         similar_products=search_text.similar, read_images=image_reader(llm),
         judge_wishes=lambda cards, wishes: judge_wishes(llm, cards, wishes, search_text.wishes, verdicts),
         find_missing=find_missing, read_reviews=reviews, reviews_read=reviews_read, summarize=summarize,
-        search_web=search_web if client is not None else None, read_page=read_page, same_product=same_product,
+        search_web=search_web if client is not None else None,
+        research_web=research_web if client is not None else None, read_page=read_page, same_product=same_product,
         web_searched=lambda ids: web_searched(conn, ids, datetime.now(timezone.utc) - week),
         memories=lambda: memories(conn, shopper),
         remember=lambda kind, text, category, thread, source="remember": add_memory(

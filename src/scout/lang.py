@@ -83,6 +83,10 @@ TEXTS: dict[str, dict[str, str]] = {
         "en": "Searching the web for '{question}'.",
         "sv": "Söker på webben efter '{question}'.",
         "zh": "正在网上搜索“{question}”。"},
+    "say_research": {
+        "en": "Researching {n} product(s) on the web at the same time. This can take a few minutes.",
+        "sv": "Undersöker {n} produkt(er) på webben samtidigt. Det kan ta några minuter.",
+        "zh": "正在同时上网调研 {n} 个商品。可能要几分钟。"},
     "say_read_page": {"en": "Reading {url}", "sv": "Läser {url}", "zh": "正在读取 {url}"},
     "say_reviews": {
         "en": "Reading the positive and the critical shop reviews of the picks on amazon.se. This needs the login "
@@ -110,6 +114,8 @@ TEXTS: dict[str, dict[str, str]] = {
     "step_page": {"en": ", result page {page}", "sv": ", resultatsida {page}", "zh": "，第 {page} 页"},
     "step_search_web": {"en": "Search the web for '{question}'", "sv": "Sök på webben efter '{question}'",
                         "zh": "在网上搜索“{question}”"},
+    "step_research": {"en": "Research {n} product(s) on the web", "sv": "Undersök {n} produkt(er) på webben",
+                      "zh": "上网调研 {n} 个商品"},
     "step_read_page": {"en": "Read a shop page on {host}", "sv": "Läs en butikssida på {host}",
                        "zh": "读取 {host} 上的商品页"},
     "step_same_product": {"en": "Join two listings of one product (ids {id} and {same})",

@@ -22,6 +22,7 @@ import contextvars
 import hashlib
 import math
 import re
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Callable, Literal
@@ -400,6 +401,8 @@ class WebReport:
     pages: int  # pages that the worker judged
     credits: int  # Tavily credits: the search (0 for stored results) and the extraction
     parts: int = 0  # parts in the report
+    # The chosen parts of each page, best page first: the page facts (site, kind, published, title, url) and "text"
+    sources: list[dict] = field(default_factory=list)
 
 
 def page_line(finding: Finding) -> str:
@@ -460,14 +463,20 @@ def search_web(question: str, products: list[ProductRef], client: TavilyClient, 
     for p in chosen:
         if p.rank is not None:
             best[p.page] = min(best.get(p.page, p.rank), p.rank)
+    sources = []
     for n, page in enumerate(sorted(best, key=lambda i: best[i]), 1):
         lines += ["", f"[web page {n}] {page_line(findings[page])}"]
-        last = None
+        last, texts = None, []
         for p in (p for p in chosen if p.page == page):
             if last is not None and p.n != last + 1:
                 lines.append("[...]")
+                texts.append("[...]")
             lines.append((f"(best part {p.rank}) " if p.rank is not None else "") + p.text)
+            texts.append(p.text)
             last = p.n
+        r = findings[page].result
+        sources.append({"site": r.site, "kind": findings[page].kind, "published": r.published, "title": r.title,
+                        "url": r.url, "text": "\n".join(texts)})
     others = [i for i in range(len(findings)) if i not in best]
     if others:
         lines += ["", "The other pages:"]
@@ -486,4 +495,150 @@ def search_web(question: str, products: list[ProductRef], client: TavilyClient, 
     if len(results) > len(todo):
         lines.append(f"{len(results) - len(todo)} more pages were found and not judged (the web pages of this turn "
                      "are used up).")
-    return WebReport("\n".join(lines), len(todo), credits, len(chosen))
+    return WebReport("\n".join(lines), len(todo), credits, len(chosen), sources)
+
+
+# ---- researchers: one web search for each product at the same time, summed up by the worker ----
+# The "conduct research" step of open_deep_research (phase 3, later with Task 9; built on 2026-10-20). The chat model
+# gets short points with quotes in place of up to 40 parts of each search, so five products fit in its context.
+
+RESEARCHERS = 3  # searches at the same time; SearXNG asks other engines, so not too many
+BRIEF_POINTS = 6
+QUOTE_WORDS = 30
+
+BRIEF_SYSTEM = f"""You read the best parts of web pages about one product, for a shopping research assistant. Write
+what the pages say that helps a shopper decide: tests, measurements, problems, what owners like and dislike.
+
+- points: at most {BRIEF_POINTS}, the most useful first. Each point has a short sentence in English (text), the number
+  of the page, and a quote: the exact words of that page that show the point, at most {QUOTE_WORDS} words, in the
+  language of the page. Copy the quote; do not translate or change it.
+- Only what the pages say about this product. A page about another model or variant (another size, colour or
+  version) does not count; leave it out, or say in the point that it is about another variant.
+- missing: in one short sentence, what the pages do not say about the wish of the shopper. Empty when nothing is
+  missing."""
+
+
+class BriefPoint(BaseModel):
+    text: str
+    page: int
+    quote: str
+
+
+class Brief(BaseModel):
+    points: list[BriefPoint] = Field(default_factory=list)
+    missing: str = ""
+
+
+def _plain(text: str) -> str:
+    return " ".join(re.sub(r"[\"“”„«»‘’]", "", text).split()).lower()
+
+
+def quote_found(quote: str, text: str) -> bool:
+    """The quote is in the text, apart from spaces, case and quote marks. A quote with "..." needs each piece."""
+    pieces = [_plain(piece).strip(" .,;:") for piece in re.split(r"\.\.\.|…|\[\.\.\.\]", quote)]
+    pieces = [piece for piece in pieces if piece]
+    page = _plain(text)
+    return bool(pieces) and sum(map(len, pieces)) >= 8 and all(piece in page for piece in pieces)
+
+
+def brief_prompt(product: ProductRef, want: str, sources: list[dict]) -> str:
+    lines = [f"Product: {product.title[:200]}" + (f" (model {product.model})" if product.model else ""),
+             f"Wish of the shopper: {want.strip() or 'tests, problems and opinions of owners'}"]
+    for n, source in enumerate(sources, 1):
+        lines += ["", f"[page {n}] {source['site']}, {source['kind']}, published {source['published'] or 'not known'}"
+                      f": {source['title'][:150]}", source["text"]]
+    return "\n".join(lines)
+
+
+@dataclass
+class Research:
+    product: ProductRef
+    words: str
+    report: WebReport | None = None
+    points: list[tuple[BriefPoint, dict]] = field(default_factory=list)  # each point with its page
+    missing: str = ""
+    dropped: int = 0  # points whose quote Python did not find in the page
+    error: str = ""
+    unavailable: bool = False  # the search back end was not available (not only busy)
+
+
+def research_one(product: ProductRef, words: str, client, llm, store: WebStore,
+                 rerank: Callable[[str, list[str]], list[float]], max_pages: int, want: str = "",
+                 extract: Callable[[list[str]], dict[str, str]] | None = None) -> Research:
+    """One researcher: one web search for one product, and the worker's points from the best parts."""
+    done = Research(product, words)
+    try:
+        done.report = search_web(words, [product], client, llm, store, rerank, max_pages, want=want, extract=extract)
+    except WebSearchUnavailable as exc:
+        done.error, done.unavailable = str(exc), not isinstance(exc, EnginesBusy)
+        return done
+    if not done.report.sources:
+        return done
+    try:
+        brief = llm.structured("worker", BRIEF_SYSTEM, brief_prompt(product, want, done.report.sources), Brief)
+    except (LLMOutputError, LLMUnavailable) as exc:
+        done.error = f"the worker could not sum up the pages ({exc})"
+        return done
+    for point in brief.points[:BRIEF_POINTS]:
+        source = done.report.sources[point.page - 1] if 1 <= point.page <= len(done.report.sources) else None
+        if source is not None and quote_found(point.quote, source["text"]):
+            done.points.append((point, source))
+        else:
+            done.dropped += 1
+    done.missing = brief.missing.strip()
+    return done
+
+
+@dataclass
+class ResearchReport:
+    text: str
+    pages: int  # pages that the worker judged
+    credits: int
+    searches: int  # searches that the back end made or that came from the store
+    unavailable: str = ""  # set when no researcher could search: the reason
+
+
+def research_text(found: list[Research]) -> str:
+    lines = [f"Web research of {len(found)} product(s), one search each at the same time. The worker summed up the "
+             "best parts of the relevant pages. Python found the quote of each point in its page."]
+    for r in found:
+        lines += ["", f"[id {r.product.listing_id}] {r.product.title[:100]}, search '{r.words}'"]
+        if r.error and not r.points:
+            lines.append(f"- not researched: {r.error}")
+            continue
+        if r.report is not None and not r.report.sources:
+            lines.append("- " + r.report.text.split("\n", 1)[0] + " No page part was found about it.")
+        for point, source in r.points:
+            lines.append(f"- {point.text} \"{' '.join(point.quote.split())}\" ({source['site']}, {source['kind']}, "
+                         f"published {source['published'] or 'not known'}, {source['url']})")
+        if r.missing:
+            lines.append(f"Not in the pages: {r.missing}")
+        if r.dropped:
+            lines.append(f"({r.dropped} point(s) left out: the quote was not in the page.)")
+        if r.error:
+            lines.append(f"({r.error})")
+    return "\n".join(lines)
+
+
+def research(items: list[tuple[ProductRef, str]], client, llm, store: WebStore,
+             rerank: Callable[[str, list[str]], list[float]], max_pages: int, want: str = "",
+             extract: Callable[[list[str]], dict[str, str]] | None = None,
+             workers: int = RESEARCHERS) -> ResearchReport:
+    """One researcher for each (product, search words), RESEARCHERS at the same time. The database and the reranker
+    are used by one researcher at a time."""
+    lock = threading.Lock()
+
+    def locked(fn):
+        def call(*args):
+            with lock:
+                return fn(*args)
+        return call
+    shared = WebStore(locked(store.stored), locked(store.save_search), locked(store.save_chunks))
+    with ThreadPoolExecutor(max(1, min(workers, len(items)))) as pool:
+        futures = [pool.submit(contextvars.copy_context().run, research_one, product, words, client, llm, shared,
+                               locked(rerank), max_pages, want, extract) for product, words in items]
+        found = [future.result() for future in futures]
+    reports = [r.report for r in found if r.report is not None]
+    unavailable = "; ".join(sorted({r.error for r in found if r.unavailable}))
+    return ResearchReport(research_text(found), sum(r.pages for r in reports), sum(r.credits for r in reports),
+                          len(reports), unavailable if found and all(r.unavailable for r in found) else "")

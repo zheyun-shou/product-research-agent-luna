@@ -313,6 +313,17 @@ On 2026-10-07 I removed `scout eval-chat` and its 24 scripts. They checked the r
 
 One researcher for each pick searches the web at the same time, and a cheap model makes the found pages short, with their URLs. This is the "conduct research" tool of open_deep_research.
 
+Built on 2026-10-20 as the tool `research_products(products, want)`.
+
+- The chat model gives each product (at most 5) with its own search words. Python starts one researcher for each product, 3 at the same time (`websearch.RESEARCHERS`), because SearXNG asks other engines and many requests at once can bring captchas.
+- Each researcher runs the steps of search_web for its product: one search, the worker judges the pages, our fetcher reads the relevant ones, the reranker chooses the best parts, and the relevant pages are stored as chunks of the product.
+- Then the worker reads the best parts and writes at most 6 points. Each point has a short sentence, the page and a quote in the words of the page. Python keeps a point only when it finds the quote in the text of that page (spaces, case and quote marks do not count). The report says how many points were left out. This is the same rule as for the extracted values: the raw text must be in the source.
+- The chat model gets the points with the site, the kind, the date and the address of each page, and what the pages do not say. This is much shorter than up to 40 parts of each search, so 5 products fit in one result (at most 20,000 characters).
+- Each researcher counts as one web search of the turn. The web pages of the turn are shared between the products, at most 20 for each.
+- The database and the reranker are used by one researcher at a time (a lock). The worker calls and the page reads run in parallel.
+- The web floor accepts research_products and search_web. search_web stays for other questions: which models testers recommend, a price in another shop, or more detail on one product.
+- Not measured yet. The tests use fakes. The first real run waits for the evaluations at the end.
+
 ## Not in this plan
 
 - The web page for the chat (decision 5). It gets its own plan, together with FastAPI from phase 7. It runs on my computer (localhost) first, because the dedicated browser window for amazon.se is there.
