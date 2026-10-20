@@ -23,7 +23,12 @@ The goal is one command that starts the whole app: the web page, the database an
 
 1. The CDP option in `BrowserSession`, `BROWSER_CDP_URL` in the settings, `--host` for `scout web`. Tests with fakes. (done, 2026-10-20)
 2. `Dockerfile`, `.dockerignore`, the `app` service, `scripts/start-browser.ps1`. (written, 2026-10-20)
-3. Build the image and start it. Check: the page opens, a turn reaches the database, SearXNG answers, and a search opens a tab in the Chrome window. This needs downloads (the Python image, torch for the CPU and the packages), so it waits for my OK.
+3. Build the image and start it. Check: the page opens, a turn reaches the database, SearXNG answers, and a search opens a tab in the Chrome window. Done on 2026-10-20 after my OK. It needed downloads (the Python image, torch for the CPU and the packages), so it waits for my OK.
+   - The image is 1.72 GB.
+   - Docker Desktop passes `host.docker.internal` (192.168.65.254) to 127.0.0.1 of the computer. The app read the DevTools version of Chrome, opened its own tab, loaded an amazon.se search page (status 200) and closed the tab. The window stayed open.
+   - The page answered on 127.0.0.1:9000. The history and the memory routes read the database. SearXNG gave 20 results for one search.
+   - bge-m3 loaded from the mounted cache without the network (`HF_HUB_OFFLINE=1`) in 63 s on the CPU, the first time in the container.
+   - Not checked yet: a full turn with the chat model. It is part of the evaluations at the end.
 
 ## Not in this plan
 
