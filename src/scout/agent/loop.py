@@ -37,7 +37,8 @@ MAX_READ_CHARS = 5_000  # of the text of one product in read_product
 # Three products must fit in one report: each text is cut at MAX_READ_CHARS, the title and the question at 200
 REPORT_LIMITS = {"read_product": 3 * (MAX_READ_CHARS + 300) + 500,
                  "search_web": 60_000,  # up to websearch.MAX_CHAT_PARTS parts of about 1,000 characters
-                 "research_products": 20_000}  # 5 products with up to 6 points and their quotes
+                 "research_products": 20_000,  # 5 products with up to 6 points and their quotes
+                 "research_candidates": 20_000}  # 5 files with up to 10 points
 
 SYSTEM = """You are product-scout, a shopping research assistant. You help the shopper choose products. The shopper
 is in Sweden. You find candidates in shops, check them against the shopper's needs, read what buyers say, and give a
@@ -64,7 +65,10 @@ How to work:
   still be true in a later conversation: a size of the space, a brand or a feature that they want or do not want.
   When the shopper says that a memory is wrong or asks to forget it, use forget.
 - Read the buyers' reviews of the products that you want to recommend (read_reviews, then summarize_reviews).
-- Research the products that you want to recommend on the web with research_products: one researcher for each
+- When you have the candidates that you may recommend, call research_candidates with them (at most 5). A
+  researcher for each one reads its page, its reviews and the web in its own context and gives you a short file.
+  This keeps your context short. Then read more yourself only where a file says that something is unclear.
+- To research products on the web only, use research_products: one researcher for each
   product searches at the same time, and you get short points with quotes and addresses. Use short search words:
   the brand and model and one word such as test, recension, Testbericht, anmeldelse or review. A long question in a
   sentence finds manuals and shops. Put what you want to learn in want (for example "is it quiet").
@@ -97,7 +101,7 @@ Rules:
   calculation. Say when a number comes from a test or a forum, and name the site.
 - Before show_picks, Python checks: a shop was searched or a shop page was read in this conversation, the reviews
   of each pick were read (good and bad, or the reviews on the page of another shop), and it had a web search for
-  tests (research_products or search_web, in the last 7 days), unless the shopper does not want
+  tests (research_candidates, research_products or search_web, in the last 7 days), unless the shopper does not want
   that (update_needs with web_tests false). Python opens each pick again for the price and the stock now.
 - Reply in the language of the shopper's last message."""
 
@@ -152,6 +156,17 @@ class ResearchProducts(BaseModel):
     products: list[ResearchItem] = Field(description="Each product with its own search words")
     want: str = Field("", description="What you want to learn from the pages, for example 'is it quiet'. Empty: "
                                       "tests, problems and opinions of owners")
+
+
+class ResearchCandidates(BaseModel):
+    """Research the products that you may recommend, at most 5. Python reads their amazon.se reviews first. Then one
+    researcher for each product checks it against the needs and reads its page, its reviews and the web, all at the
+    same time, in their own context. You get a short file for each product: does it fit, and points with a source
+    and a quote."""
+    ids: list[int] = Field(description="Product ids, at most 5")
+    want: str = Field("", description="What the researchers must find out, for example 'is it quiet' or 'does it "
+                                      "fit a niche of 60 cm'. Empty: the needs, tests, problems and opinions of "
+                                      "owners")
 
 
 class ReadPage(BaseModel):
@@ -297,7 +312,7 @@ class Reply(BaseModel):
     text: str
 
 
-WORK_TOOLS = [UpdateNeeds, SearchShop, ResearchProducts, SearchWeb, ReadPage, SameProduct, FindProducts, ReadProduct, SearchText,
+WORK_TOOLS = [UpdateNeeds, SearchShop, ResearchCandidates, ResearchProducts, SearchWeb, ReadPage, SameProduct, FindProducts, ReadProduct, SearchText,
               SimilarProducts, ReadImages, FindMissing, ReadReviews, SummarizeReviews, RemoveProducts,
               RestoreProducts, UpdateProfile, Remember, Forget, Think]
 FINAL_TOOLS = [ShowPicks, Reply]
@@ -500,13 +515,13 @@ def check_final(call: BaseModel, state: dict, deps: LoopDeps, thread: str, used:
     if deps.read_reviews is not None:
         read = deps.reviews_read(ids)
         skipped = set(used.get("reviews_skipped", []))
-        errors += [f"the reviews of id {i} were not read. Call read_reviews" for i in ids
+        errors += [f"the reviews of id {i} were not read. Call research_candidates or read_reviews" for i in ids
                    if i not in read and i not in skipped]
     needs = Needs.model_validate(state.get("needs") or {})
     if deps.search_web is not None and needs.web_tests and not used.get("web_unavailable"):
         searched = deps.web_searched(ids)
-        errors += [f"id {i} had no web search for tests yet. Call research_products with its id and its model"
-                   for i in ids if i not in searched]
+        errors += [f"id {i} had no web search for tests yet. Call research_candidates or research_products with "
+                   "its id" for i in ids if i not in searched]
     if errors:
         return errors
     # The price and the stock now, for the picks that were not checked in this turn
@@ -569,6 +584,8 @@ def step_title(call: BaseModel, lang: str = "en") -> tuple[str, str]:
             t("step_page", lang, page=call.page) if call.page > 1 else "")
     if isinstance(call, SearchWeb):
         return "web", t("step_search_web", lang, question=call.question)
+    if isinstance(call, ResearchCandidates):
+        return "web", t("step_candidates", lang, n=len(dict.fromkeys(call.ids[:MAX_RESEARCH])))
     if isinstance(call, ResearchProducts):
         return "web", t("step_research", lang, n=len(research_items(call)))
     if isinstance(call, ReadPage):
@@ -771,6 +788,35 @@ class Toolbox:
         self.update["web_searches"] = done + [w for _, w in todo if w not in done]
         return report.text + notes + (
             f" Not researched (the limits of this turn): ids {', '.join(map(str, later))}." if later else "")
+
+    def research_candidates(self, call: ResearchCandidates) -> str:
+        from scout.agent.researcher import file_text, research_all
+        cards, unknown = self.cards(list(dict.fromkeys(call.ids))[:MAX_RESEARCH])
+        notes = "".join(f" There is no product with id {i}." for i in unknown)
+        if not cards:
+            return "give the ids of stored products." + notes
+        ids = [c.listing_id for c in cards]
+        lines = []
+        # The reviews first: the browser works in one thread only, so the researchers do not read them
+        if self.deps.read_reviews is not None:
+            todo = [i for i in ids if i not in self.deps.reviews_read(ids)]
+            if todo:
+                lines.append("Reviews: " + self.read_reviews(ReadReviews(ids=todo)).split("\n", 1)[0])
+        self.deps.say(t("say_candidates", self.deps.lang, n=len(cards)))
+        found = research_all(self.deps, {**self.state, **self.update}, self.thread, cards, call.want, self.used)
+        for r in found:
+            for key in ("web_searches", "web_pages", "web_credits"):
+                self.used[key] = self.used.get(key, 0) + r.used.get(key, 0)
+            self.used["researcher_steps"] = self.used.get("researcher_steps", 0) + r.used.get("steps", 0)
+            self.used["researchers"] = [*self.used.get("researchers", []), {
+                "id": r.listing_id, "messages": r.messages, "kept": len(r.points), "dropped": r.dropped,
+                "error": r.error}]
+            done = self.current("web_searches")
+            self.update["web_searches"] = done + [w for w in r.update.get("web_searches", []) if w not in done]
+        self.shown(ids)
+        head = (f"Research of {len(cards)} product(s), one researcher each at the same time. Python found the quote "
+                "of each point in the tool results of its researcher.")
+        return "\n\n".join([head + notes, *lines, *map(file_text, found)])
 
     def read_page(self, call: ReadPage) -> str:
         profile = self.profile()

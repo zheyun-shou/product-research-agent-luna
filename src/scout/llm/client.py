@@ -16,7 +16,7 @@ from scout.llm.config import LLMConfig, ModelConfig
 from scout.llm.ratelimit import RateLimiter
 from scout.trace import NoTracer
 
-Role = Literal["chat", "worker", "judge", "shopper"]
+Role = Literal["chat", "worker", "researcher", "judge", "shopper"]
 T = TypeVar("T", bound=BaseModel)
 
 
@@ -157,7 +157,7 @@ class LLM:
     MAX_ATTEMPTS = 3
     TIMEOUT = 120  # seconds without data for one request
     # Seconds for one call in all, by role. The chat model reads a long context and can think first.
-    DEADLINES = {"chat": 180.0, "worker": 60.0, "judge": 120.0, "shopper": 60.0}
+    DEADLINES = {"chat": 180.0, "worker": 60.0, "researcher": 120.0, "judge": 120.0, "shopper": 60.0}
     TIMEOUT_ATTEMPTS = 2  # a call past its deadline is tried one more time, then LLMTimeout
 
     def __init__(self, config: LLMConfig, clients: dict[str, Any] | None = None, sleep=time.sleep,

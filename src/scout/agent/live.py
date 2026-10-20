@@ -1,4 +1,6 @@
 """The real dependencies of the chat graph: Postgres, the amazon.se browser and the LLM."""
+import threading
+
 from scout.agent.graph import Deps
 from scout.agent.lookup import image_reader
 from scout.crawl import CrawlReport, read_details
@@ -359,14 +361,16 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
     )
 
     loaded_reranker: list = []
+    rerank_lock = threading.Lock()  # the candidate researchers search the web at the same time
 
     def reranker(question, texts):  # loads at the first web search that has text to score
         if not texts:
             return []
-        if not loaded_reranker:
-            from scout.text.rerank import BgeReranker
-            loaded_reranker.append(BgeReranker())
-        return loaded_reranker[0](question, texts)
+        with rerank_lock:
+            if not loaded_reranker:
+                from scout.text.rerank import BgeReranker
+                loaded_reranker.append(BgeReranker())
+            return loaded_reranker[0](question, texts)
 
     def search_web(question, ids, max_pages, want=""):
         cards = load_cards_by_ids(conn, ids)

@@ -88,6 +88,10 @@ TEXTS: dict[str, dict[str, str]] = {
         "en": "Researching {n} product(s) on the web at the same time. This can take a few minutes.",
         "sv": "Undersöker {n} produkt(er) på webben samtidigt. Det kan ta några minuter.",
         "zh": "正在同时上网调研 {n} 个商品。可能要几分钟。"},
+    "say_candidates": {
+        "en": "{n} researcher(s) check the candidates at the same time. This can take a few minutes.",
+        "sv": "{n} forskare kontrollerar kandidaterna samtidigt. Det kan ta några minuter.",
+        "zh": "{n} 个调研员正在同时调研候选商品。可能要几分钟。"},
     "say_read_page": {"en": "Reading {url}", "sv": "Läser {url}", "zh": "正在读取 {url}"},
     "say_reviews": {
         "en": "Reading the positive and the critical shop reviews of the picks on amazon.se. This needs the login "
@@ -117,6 +121,9 @@ TEXTS: dict[str, dict[str, str]] = {
                         "zh": "在网上搜索“{question}”"},
     "step_research": {"en": "Research {n} product(s) on the web", "sv": "Undersök {n} produkt(er) på webben",
                       "zh": "上网调研 {n} 个商品"},
+    "step_candidates": {"en": "Research {n} candidate(s), one researcher each",
+                        "sv": "Undersök {n} kandidat(er), en forskare för varje",
+                        "zh": "调研 {n} 个候选，每个一个调研员"},
     "step_read_page": {"en": "Read a shop page on {host}", "sv": "Läs en butikssida på {host}",
                        "zh": "读取 {host} 上的商品页"},
     "step_same_product": {"en": "Join two listings of one product (ids {id} and {same})",
@@ -155,7 +162,8 @@ TEXTS: dict[str, dict[str, str]] = {
 # Plural forms where the count matters
 PLURAL = {"product(s)": ("product", "products"), "problem(s)": ("problem", "problems"),
           "memory(s)": ("memory", "memories"), "produkt(er)": ("produkt", "produkter"),
-          "minne(n)": ("minne", "minnen")}
+          "minne(n)": ("minne", "minnen"), "researcher(s)": ("researcher", "researchers"),
+          "candidate(s)": ("candidate", "candidates"), "kandidat(er)": ("kandidat", "kandidater")}
 
 
 def t(key: str, lang: str | None, **values) -> str:

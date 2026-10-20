@@ -35,6 +35,15 @@ roles:
       provider: gemini
       model: gemini-3.5-flash-lite
       rpm: 15
+  researcher:  # the candidate researcher, a subagent (2026-10-20). The worker model first, because it is cheap; the
+               # evaluation shows if it is good enough.
+    provider: openrouter
+    model: google/gemma-4-26b-a4b-it
+    rpm: 60
+    fallback:
+      provider: gemini
+      model: gemini-3.5-flash-lite
+      rpm: 15
   judge:  # the grader. Haiku 5.5 from 2026-10-11 (check-grader: all faults found, no correct reply failed). Since
           # the chat model is Haiku, the grader must be another maker: GPT-6 Luna Pro from 2026-10-13. check-grader:
           # all 32 planted faults found, but 6 correct replies failed (honest 2, plain 3, facts 1). So honest and
