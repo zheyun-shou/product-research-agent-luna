@@ -249,13 +249,18 @@ def thread_pages(html: str, url: str, limit: int = THREAD_PAGES) -> list[str]:
     return [found[n] for n in sorted(found)][:limit]
 
 
-def fetch_texts(fetch: Callable[[str], "Fetched"], urls: list[str], workers: int = READ_WORKERS) -> dict[str, str]:
+def fetch_texts(fetch: Callable[[str], "Fetched"], urls: list[str], workers: int = READ_WORKERS,
+                read: Callable[[str], str | None] | None = None) -> dict[str, str]:
     """The main text of each page that our own fetcher could read (scout.fetch), in place of Tavily Extract
     (decided 2026-10-07). Pages of different sites load in parallel; the fetcher keeps one page of a site at a
-    time."""
+    time. read(url): the text from an API in place of the page (scout.reddit), or None for a page to fetch."""
     from scout.sources.generic import page_text
 
     def one(url: str) -> str:
+        if read is not None:
+            text = read(url)
+            if text is not None:
+                return text[:STORED_CHARS]
         got = fetch(url)
         if got.page is None:
             return ""

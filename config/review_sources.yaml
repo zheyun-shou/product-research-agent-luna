@@ -5,7 +5,7 @@ shops:  # Swedish shops and Prisjakt, for the buyer reviews (read_page reads the
   - elgiganten.se
   - netonnet.se
   - power.se
-forums:  # Flashback and Reddit block reading; their search results still give a short part
+forums:  # Flashback blocks reading: its search results give a short part. Reddit is read with its API key (scout.reddit)
   - sweclockers.com/forum
   - flashback.org
   - reddit.com

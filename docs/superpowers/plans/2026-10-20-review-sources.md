@@ -49,3 +49,9 @@ The review found 10 problems. 7 are fixed, and 3 are known limits.
 - same_product of a researcher runs only when one of the two ids is its own product, and never for one id with itself.
 - The reranker no longer loses the words "OR" and the brackets of the shopper; only the group of sites at the end is taken out.
 - Known limits: (1) the review requests of Prisjakt and Feefo are not in the fetch log; (2) a researcher reads shop pages without the browser, so a page that needs JavaScript gives only its page data (the main agent can read it again with the browser); (3) the test sites are listed by the names of the preset categories, so a drafted category with another name gets only the sites for all categories. Tavily, the second back end, may not follow "site:" with OR; SearXNG does.
+
+### Fetch log and Reddit (2026-10-21)
+
+- Known limit (1) is fixed. Each request of Prisjakt and Feefo goes to the fetch log with its status, its time and the error. An answer of status 200 that the reader cannot use is "failed" with the note "unknown answer".
+- Reddit threads are read through the official Reddit API (`scout.reddit`). The program uses the app-only grant: no Reddit account and no password. It reads the post and up to 200 comments, sorted by top, without the names of the users. One request at a time, at least 1 second apart (the free limit is 100 a minute). Each request goes to the fetch log. A thread that cannot be read stays the short part of the search result.
+- To turn it on, I make an app at https://www.reddit.com/prefs/apps and put REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET in `.env`. Without them nothing changes. Reddit may ask me to apply for API access first.

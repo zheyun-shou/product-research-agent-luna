@@ -374,6 +374,14 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
             conn, listing_id, url_ref(url), chunks, datetime.now(timezone.utc)),
     )
 
+    from scout.db.store import log_fetch
+    from scout.reddit import reddit_reader
+
+    reddit = reddit_reader(locked(lambda *row: log_fetch(conn, *row)))  # None without REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET
+
+    def extract(urls):
+        return fetch_texts(lambda u: fetcher.fetch(u, use_browser=False), urls, read=reddit)
+
     loaded_reranker: list = []
     rerank_lock = threading.Lock()  # the candidate researchers search the web at the same time
 
@@ -394,7 +402,7 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
         # take the lock, so a researcher can search the web while another one reads the database.
         store = WebStore(locked(web_store.stored), locked(web_store.save_search), locked(web_store.save_chunks))
         report = run_web_search(question, products, client, llm, store, reranker, max_pages, want=want,
-                                extract=lambda urls: fetch_texts(lambda u: fetcher.fetch(u, use_browser=False), urls))
+                                extract=extract)
         with db_lock:
             conn.commit()
         return report.text, report.pages, report.credits
@@ -404,8 +412,7 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
         todo = [(ProductRef(i, cards[i].title, cards[i].model, cards[i].brand), words) for i, words in items
                 if i in cards]
         report = run_research(todo, client, llm, web_store, reranker, max_pages, want=want,
-                              extract=lambda urls: fetch_texts(lambda u: fetcher.fetch(u, use_browser=False), urls),
-                              lock=db_lock)
+                              extract=extract, lock=db_lock)
         with db_lock:
             conn.commit()
         return report

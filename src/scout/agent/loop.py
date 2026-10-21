@@ -159,8 +159,8 @@ class SearchWeb(BaseModel):
                                       "words without the brand and the model")
     sources: Literal["any", "tests", "forums", "shops"] = Field(
         "any", description="any: the whole web. tests: the test sites of the list for the category. forums: "
-                           "SweClockers, Flashback and Reddit (only SweClockers can be read; the others give a short "
-                           "part). shops: Prisjakt and Swedish shops, for their buyer reviews (then read_page)")
+                           "SweClockers, Flashback and Reddit (SweClockers can be read, and Reddit with its key; "
+                           "Flashback gives a short part). shops: Prisjakt and Swedish shops, for their buyer reviews (then read_page)")
 
 
 class ResearchItem(BaseModel):
