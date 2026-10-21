@@ -16,3 +16,10 @@ search:
 
 general:
   instance_name: "product-scout"
+
+# One more engine, so that a captcha of one engine stops fewer searches (tested 2026-10-21). Bing gave no results,
+# Google and Qwant denied access. Mojeek and Startpage stay off: they use a proof-of-work captcha, and the program
+# does not solve captchas.
+engines:
+  - name: yahoo
+    disabled: false
