@@ -35,10 +35,12 @@ roles:
       provider: gemini
       model: gemini-3.5-flash-lite
       rpm: 15
-  researcher:  # the candidate researcher, a subagent (2026-10-20). The worker model first, because it is cheap; the
-               # evaluation shows if it is good enough.
+  researcher:  # the candidate researcher, a subagent (2026-10-20). First Gemma 4 26B, as the worker. In 2 smoke runs
+               # it said "does not fit" for a need that the shopper did not give, and "fits" for a freezer at the
+               # top. On 2026-10-21 Claude Haiku 5.5: about the same price on OpenRouter (0.10 / 0.50 USD for 1M
+               # tokens in / out, Gemma 0.09 / 0.30).
     provider: openrouter
-    model: google/gemma-4-26b-a4b-it
+    model: anthropic/claude-haiku-5.5
     rpm: 60
     fallback:
       provider: gemini
