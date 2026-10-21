@@ -100,7 +100,9 @@ class Researched:
 def facts_of(card) -> str:
     """The product line and its stored facts: a source that a point can quote."""
     return (f"Your product: id {card.listing_id}, {card.title[:200]}" + (f", model {card.model}" if card.model else "")
-            + (f", brand {card.brand}" if card.brand else "") + "\nIts stored facts: "
+            + (f", brand {card.brand}" if card.brand else "")
+            + (f", price {card.price} {card.currency or ''}".rstrip() if card.price is not None else "")
+            + "\nIts stored facts: "
             + (", ".join(f"{name} {(value or {}).get('value')}" for name, value in card.attributes.items()) or "none"))
 
 
