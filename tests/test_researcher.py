@@ -1,4 +1,5 @@
 import threading
+from types import SimpleNamespace
 
 from langgraph.checkpoint.memory import InMemorySaver
 
@@ -206,10 +207,34 @@ def test_half_of_the_web_searches_stays_for_the_main_agent():
         class Card:
             def __init__(self, i):
                 self.listing_id, self.title = i, f"Fridge {i}"
-        research_all(None, {}, "t", [Card(i) for i in range(5)], "", {})
+        research_all(SimpleNamespace(db=None), {}, "t", [Card(i) for i in range(5)], "", {})
         assert seen == [1] * 5  # 5 of the 10 searches
         seen.clear()
-        research_all(None, {}, "t", [Card(i) for i in range(2)], "", {"web_searches": 2})
+        research_all(SimpleNamespace(db=None), {}, "t", [Card(i) for i in range(2)], "", {"web_searches": 2})
         assert seen == [2, 2]  # 4 of the 8 left
     finally:
         researcher.research_one = real
+
+
+def test_with_a_pool_each_researcher_takes_its_own_connection_and_the_turn_commits_first():
+    from contextlib import contextmanager
+    shop = Shop()
+    events = []
+
+    class Pool:
+        def share(self):
+            events.append("share")
+
+        @contextmanager
+        def own(self):
+            events.append("own")
+            yield
+
+    llm = Router([[NEEDS, ResearchCandidates(ids=[2, 1])], "Done."],
+                 {2: [[file_of("fits")]], 1: [[file_of("fits")]]})
+    deps = shop.deps(llm)
+    deps.db = Pool()
+    build_agent_graph(deps, InMemorySaver()).invoke(
+        {"messages": [{"role": "user", "content": "A quiet fridge, at most 180 cm"}]},
+        {"configurable": {"thread_id": "t"}})
+    assert events == ["share", "own", "own"]

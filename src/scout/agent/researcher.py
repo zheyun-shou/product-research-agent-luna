@@ -5,6 +5,7 @@ Python keeps a point of a file only when its quote is in a tool result that this
 import contextvars
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -124,7 +125,8 @@ def research_one(deps, state: dict, thread: str, card, want: str, budget: dict) 
     box.used = dict(budget)
     history: list[dict] = []
     try:
-        steps(done, deps, box, card, context_of(state, card, want), history)
+        with deps.db.own() if deps.db is not None else nullcontext():
+            steps(done, deps, box, card, context_of(state, card, want), history)
     except Exception as exc:  # what it used still counts for the turn
         done.error = f"the researcher failed ({type(exc).__name__}: {exc})"
     if done.file is None and not done.error:
@@ -142,6 +144,8 @@ def steps(done: Researched, deps, box: Toolbox, card, context: str, history: lis
     # The needs and the wish are not a source: a point cannot quote them
     seen = [facts_of(card)]
     role = role_of(deps.llm)
+    # Without its own connection, a researcher shares the connection of the turn with the others
+    shared = deps.db_lock if deps.db is None else nullcontext()
     for step in range(MAX_STEPS):
         tools = [ResearchFile] if step == MAX_STEPS - 1 else TOOLS + [ResearchFile]
         try:
@@ -171,8 +175,8 @@ def steps(done: Researched, deps, box: Toolbox, card, context: str, history: lis
                     report = box.run(call)
             elif isinstance(call, ReadPage):
                 report = box.run(call)
-            else:  # the researchers share one database connection
-                with deps.db_lock:
+            else:
+                with shared:
                     report = box.run(call)
             report = report[:REPORT_LIMITS.get(tool_name(type(call)), MAX_REPORT_CHARS)]
             seen.append(report)
@@ -207,6 +211,8 @@ def research_all(deps, state: dict, thread: str, cards: list, want: str, used: d
               "product_pages": MAX_PRODUCT_PAGES - each_products}
     if used.get("web_unavailable"):  # the researchers do not try a back end that failed in this turn
         budget["web_unavailable"] = used["web_unavailable"]
+    if deps.db is not None:
+        deps.db.share()
     with ThreadPoolExecutor(len(cards)) as pool:
         futures = [pool.submit(contextvars.copy_context().run, research_one, deps, state, thread, card, want, budget)
                    for card in cards]

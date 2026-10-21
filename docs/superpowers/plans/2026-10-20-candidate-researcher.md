@@ -61,3 +61,7 @@ Third smoke run (Haiku 5.5 as the researcher): the target was pick 1, 0.079 USD,
 - The researchers together get half of the web searches and pages that are left, at least 1 search each. The other half stays for the main agent.
 - The prompt says to search with sources any first. The other sources are only for a search that is left.
 - Python does not try its own web search when the searches of the turn are used up.
+
+### Connection pool (2026-10-21)
+
+The known limit of the first review is fixed. The loop now uses `ThreadConnections` (db/conn.py): the main thread keeps its connection, and each researcher takes a connection of a small pool (psycopg_pool, at most 5) while it works. So summarize_reviews and find_missing of different researchers run at the same time. Before the researchers start, the main connection closes its open transaction, because its row locks could stop a researcher while the main thread waits. When a researcher ends, its transaction closes, so the main thread sees what it stored. The embedder and the indexing of search_text still run one at a time (a lock in `hybrid_search`). Without a pool (the tests with fakes), the researchers share one connection with `db_lock`, as before.

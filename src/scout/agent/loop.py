@@ -398,6 +398,9 @@ class LoopDeps:
     # The lock of the database connection. The candidate researchers run their tools that use the database with it;
     # search_web takes it inside, only for its database parts.
     db_lock: Any = field(default_factory=threading.RLock)
+    # scout.db.conn.ThreadConnections: each researcher gets its own connection; without it they share one, with
+    # db_lock
+    db: Any = None
     researchers: bool = True  # the research_candidates tool; eval-hidden compares runs with and without it
 
 

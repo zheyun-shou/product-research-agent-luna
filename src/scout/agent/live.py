@@ -197,6 +197,10 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
     from scout.extract.ondemand import fill_missing as fill
     from scout.picks.rank import Condition
     from scout.picks.wishes import judge_wishes
+    from scout.db.conn import ThreadConnections
+
+    if not isinstance(conn, ThreadConnections):  # each candidate researcher gets its own connection
+        conn = ThreadConnections(conn)
 
     screened: dict[tuple[str, int], bool] = {}
     search_text = hybrid_search(conn, make_embedder)
@@ -426,6 +430,6 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
         remember=lambda kind, text, category, thread, source="remember": add_memory(
             conn, shopper, kind, text, category, thread, source),
         forget=lambda ids: forget_memories(conn, shopper, ids),
-        say=say, tracer=tracer, db_lock=db_lock,
+        say=say, tracer=tracer, db_lock=db_lock, db=conn,
     )
     return deps

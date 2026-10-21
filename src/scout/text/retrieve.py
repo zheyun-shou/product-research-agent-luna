@@ -274,32 +274,45 @@ def hybrid_search(conn, make_embedder) -> Callable[[str, Scope, int], list[Hit]]
     multi-query method was best in eval-retrieval). The embedder loads at the first search.
     Chunks of newly stored pages get their vectors before each search. `search.similar` and `search.wishes` are
     similar_products and wish_matches with the same embedder."""
+    import functools
+    import threading
+
     from scout.text.index import index_chunks
     loaded: list = []
+    # The candidate researchers search at the same time: one embedder loads, and one indexing runs at a time
+    lock = threading.Lock()
 
+    def one_at_a_time(fn):
+        @functools.wraps(fn)
+        def run(*args, **kwargs):
+            with lock:
+                if not loaded:
+                    loaded.append(make_embedder())
+                return fn(*args, **kwargs)
+        return run
+
+    @one_at_a_time
     def search(query: str | list[str], scope: Scope, k: int = 10, index: bool = True) -> list[Hit]:
         """A list gives the same search words in more languages (MultiQueryRetriever). index=False skips the
         indexing, for the second and later searches of one step."""
-        if not loaded:
-            loaded.append(make_embedder())
         if index:
             index_chunks(conn, loaded[0])
         queries = [query] if isinstance(query, str) else query
         return MultiQueryRetriever([VectorRetriever(conn, loaded[0]), Bm25Retriever(conn, loaded[0])]).search_many(
             queries, scope, k)
 
+    @one_at_a_time
     def similar(like: list[int], wishes: list[str], scope: Scope, k: int = 10,
                 exclude: set[int] | frozenset = frozenset()) -> list[Similar]:
         """similar_products with the same embedder and the same indexing (the similar_products tool)."""
-        if not loaded:
-            loaded.append(make_embedder())
         index_chunks(conn, loaded[0])
         return similar_products(conn, loaded[0], like, wishes, scope, k, exclude)
+
+    @one_at_a_time
     def wishes(listing_ids: list[int], wishes: list[str]) -> dict[int, list[list[Hit]]]:
         """wish_matches with the same embedder and the same indexing (find_products with preferences)."""
-        if not loaded:
-            loaded.append(make_embedder())
         index_chunks(conn, loaded[0])
         return wish_matches(conn, loaded[0], listing_ids, wishes)
+
     search.similar, search.wishes = similar, wishes
     return search
