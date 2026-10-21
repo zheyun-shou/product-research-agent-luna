@@ -22,7 +22,8 @@ from scout.agent.loop import build_agent_graph, last_node
 from scout.config import ROOT, load_settings
 from scout.crawl import crawl as run_crawl
 from scout.crawl import fetch_checked
-from scout.db.conn import connect, connect_checkpoints, empty_tables, end_transaction, init_schema
+from scout.db.conn import (ThreadConnections, connect, connect_checkpoints, empty_tables, end_transaction,
+                           init_schema)
 from scout.db.store import recent_threads, save_page_text, save_record
 from scout.extract.page import enrich_record
 from scout.extract.screen import screen_titles
@@ -454,7 +455,8 @@ def chat(thread: Optional[str] = typer.Option(None, help="the ID of a conversati
     thread_id = thread or uuid.uuid4().hex[:8]
     config = {"configurable": {"thread_id": thread_id}}
     browser = LazyBrowser(settings)
-    with connect(settings.database_url) as conn, connect_checkpoints(settings.database_url) as cp_conn:
+    with connect(settings.database_url) as raw, ThreadConnections(raw) as conn, \
+            connect_checkpoints(settings.database_url) as cp_conn:
         init_schema(conn)  # new tables, for example the memory of the shopper
         saver = PostgresSaver(cp_conn)
         saver.setup()
@@ -516,7 +518,8 @@ def web(port: int = 9000, k: int = 5,
     tracer = tracer_from_env()
     llm = LLM(load_llm_config(), tracer=tracer)
     browser = LazyBrowser(settings)
-    with connect(settings.database_url) as conn, connect_checkpoints(settings.database_url) as cp_conn:
+    with connect(settings.database_url) as raw, ThreadConnections(raw) as conn, \
+            connect_checkpoints(settings.database_url) as cp_conn:
         init_schema(conn)  # new tables, for example the memory of the shopper
         saver = PostgresSaver(cp_conn)
         saver.setup()
@@ -721,7 +724,7 @@ def eval_hidden(
     embedder = cache(BgeM3Embedder)  # bge-m3 loads once for all targets
     records = []
     try:
-        with connect(settings.eval_database_url) as conn:
+        with connect(settings.eval_database_url) as raw, ThreadConnections(raw) as conn:
             init_schema(conn)
             for target in todo:
                 if not keep:

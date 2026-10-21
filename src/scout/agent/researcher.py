@@ -178,6 +178,8 @@ def steps(done: Researched, deps, box: Toolbox, card, context: str, history: lis
             else:
                 with shared:
                     report = box.run(call)
+            if deps.db is not None:
+                deps.db.end_step()
             report = report[:REPORT_LIMITS.get(tool_name(type(call)), MAX_REPORT_CHARS)]
             seen.append(report)
             history.append(result_message(call_id, report))

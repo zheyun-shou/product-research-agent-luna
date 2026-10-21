@@ -65,3 +65,14 @@ Third smoke run (Haiku 5.5 as the researcher): the target was pick 1, 0.079 USD,
 ### Connection pool (2026-10-21)
 
 The known limit of the first review is fixed. The loop now uses `ThreadConnections` (db/conn.py): the main thread keeps its connection, and each researcher takes a connection of a small pool (psycopg_pool, at most 5) while it works. So summarize_reviews and find_missing of different researchers run at the same time. Before the researchers start, the main connection closes its open transaction, because its row locks could stop a researcher while the main thread waits. When a researcher ends, its transaction closes, so the main thread sees what it stored. The embedder and the indexing of search_text still run one at a time (a lock in `hybrid_search`). Without a pool (the tests with fakes), the researchers share one connection with `db_lock`, as before.
+
+### Code review of the pool, Reddit, the fetch log and the list of the chats (2026-10-21)
+
+The review found 10 problems. All are fixed.
+
+- The pool was never closed, and eval-hidden made a new one for each target. So about 20 targets could use all connections of Postgres. Now each command (chat, web, eval-hidden) opens one `ThreadConnections` and closes its pool at the end.
+- A researcher commits after each tool, or rolls back a failed statement. Before, one failed statement stopped all later tools of that researcher, an error rolled back what it stored, and its row locks stayed while it waited for its model. Short transactions also make a deadlock between two researchers rare. If one happens, Postgres stops one statement and the researcher goes on.
+- In `hybrid_search` only the load of the embedder, the indexing and the calls of the embedder run one at a time (its tokenizer is not safe in threads). The database queries of the researchers run in parallel.
+- An error of the Python web search after the researchers no longer loses their files. Without a model, Python searches with the title, not the brand alone, because "Samsung test" would meet the web floor with tests of other products. When the search was not made, the line says so and does not tell the chat model to look for stored pages.
+- An error of the fetch log no longer loses a Reddit thread that was read.
+- The list of the chats does not take the lock of the turns, so it cannot make a message fail as busy. A turn waits up to 2 seconds for a short read. A thread with no message yet is not kept without a title.

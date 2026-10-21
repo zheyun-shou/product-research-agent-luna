@@ -112,8 +112,8 @@ class ChatService:
         return True
 
     def turn(self, thread: str, text: str) -> Iterator[dict]:
-        """Start a turn and give its events. Raises Busy at once when a turn runs."""
-        if not self._lock.acquire(blocking=False):
+        """Start a turn and give its events. Raises Busy when a turn runs (after a short wait for a short read)."""
+        if not self._lock.acquire(timeout=IDLE_WAIT):
             raise Busy
         events: queue.Queue = queue.Queue()
         self._send = events.put
@@ -174,18 +174,20 @@ class ChatService:
 
     def threads(self, limit: int = 30) -> list[dict]:
         """The newest threads for the list of the page: the start of the first message is the title. A thread
-        without a message of the shopper is left out."""
-        with self._idle():
-            found = []
-            for row in self._recent(limit):
-                thread = row["thread"]
-                if thread not in self._titles:
-                    first = next((m.get("content") for m in self._values(thread).get("messages", [])
-                                  if m.get("role") == "user"), "")
-                    self._titles[thread] = " ".join(str(first or "").split())[:TITLE_CHARS]
-                if self._titles[thread]:
-                    found.append({"thread": thread, "title": self._titles[thread], "last": row["last"]})
-            return found
+        without a message of the shopper is left out. It does not take the lock of the turns: it only reads saved
+        states, and the first message of a thread does not change."""
+        found = []
+        for row in self._recent(limit):
+            thread = row["thread"]
+            if thread not in self._titles:
+                first = next((m.get("content") for m in self._values(thread).get("messages", [])
+                              if m.get("role") == "user"), "")
+                title = " ".join(str(first or "").split())[:TITLE_CHARS]
+                if not title:  # no message yet: look again next time
+                    continue
+                self._titles[thread] = title
+            found.append({"thread": thread, "title": self._titles[thread], "last": row["last"]})
+        return found
 
     def _recent_checkpoints(self, limit: int) -> list[dict]:
         latest: dict[str, str] = {}

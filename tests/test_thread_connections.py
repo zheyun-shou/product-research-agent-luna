@@ -32,3 +32,24 @@ def test_each_thread_with_own_gets_its_own_connection_and_the_main_thread_sees_w
         assert [r["source"] for r in rows] == ["main", "main", "r1", "r2"]
     finally:
         conns.close()
+
+
+def test_a_failed_statement_of_a_researcher_does_not_stop_its_next_tool_and_the_pool_closes(db):
+    with ThreadConnections(db, size=1) as conns:
+        conns.share()
+        done = []
+
+        def researcher():
+            with conns.own():
+                with pytest.raises(Exception):
+                    conns.execute("SELECT * FROM no_such_table")
+                conns.end_step()  # the failed statement is rolled back
+                conns.execute("INSERT INTO fetch_log (source, url, status) VALUES ('r', 'u', 'ok')")
+                conns.end_step()
+                done.append(conns.execute("SELECT count(*) AS n FROM fetch_log").fetchone()["n"])
+        t = threading.Thread(target=researcher)
+        t.start()
+        t.join()
+        assert done == [1]
+        pool = conns._pool
+    assert pool.closed

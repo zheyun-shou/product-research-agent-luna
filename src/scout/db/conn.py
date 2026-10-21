@@ -54,6 +54,12 @@ class ThreadConnections:
     def __getattr__(self, name):
         return getattr(self.current(), name)
 
+    def __enter__(self) -> "ThreadConnections":
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
+
     def share(self) -> None:
         """Before the threads start: an open transaction of the main connection can lock the rows that they write,
         and the main thread waits for them."""
@@ -62,7 +68,7 @@ class ThreadConnections:
     @contextmanager
     def own(self):
         """A connection of the pool for the current thread, until the end of the block. Its transaction closes at
-        the end, so the main thread sees what it stored."""
+        the end, also after an error, so the main thread sees what it stored."""
         with self._guard:
             if self._pool is None:
                 from psycopg_pool import ConnectionPool
@@ -74,9 +80,15 @@ class ThreadConnections:
             self._local.conn = conn
             try:
                 yield conn
-                end_transaction(conn)
             finally:
                 self._local.conn = None
+                end_transaction(conn)
+
+    def end_step(self) -> None:
+        """After each tool of a researcher: commit, or roll back a failed statement. So the next tool can use the
+        connection, and no row stays locked while the researcher waits for its model."""
+        if getattr(self._local, "conn", None) is not None:
+            end_transaction(self._local.conn)
 
     def close(self) -> None:
         if self._pool is not None:

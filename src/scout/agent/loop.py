@@ -851,7 +851,10 @@ class Toolbox:
                 new = {q["id"] for q in r.update["pages_read"]}
                 read = [p for p in self.current("pages_read") if p["id"] not in new]
                 self.update["pages_read"] = read + [p for p in r.update["pages_read"] if p["id"] in new]
-        lines += self.search_the_rest(cards)
+        try:
+            lines += self.search_the_rest(cards)
+        except Exception as exc:  # the files of the researchers are paid for: they still reach the chat model
+            lines.append(f"Web search by Python for the products without one: failed ({type(exc).__name__}: {exc}).")
         self.shown(ids)
         head = (f"Research of {len(cards)} product(s), one researcher each at the same time. Python found the quote "
                 "of each point in the tool results of its researcher.")
@@ -868,10 +871,14 @@ class Toolbox:
                 break
             if c.listing_id in searched:
                 continue
-            words = " ".join(w for w in (c.brand, c.model) if w) or " ".join(c.title.split()[:6])
-            report = self.search_web(SearchWeb(question=f"{words} test", ids=[c.listing_id]))
-            lines.append(f"Web search by Python for id {c.listing_id} (its researcher made none for tests): "
-                         f"{' '.join(report.split())[:500]} Use search_text with its id for the stored pages.")
+            # The brand alone finds tests of other products, so without a model the title gives the words
+            words = f"{c.brand or ''} {c.model}".strip() if c.model else " ".join(c.title.split()[:6])
+            report = " ".join(self.search_web(SearchWeb(question=f"{words} test", ids=[c.listing_id])).split())
+            if c.listing_id in self.deps.web_searched([c.listing_id]):
+                lines.append(f"Web search by Python for id {c.listing_id} (its researcher made none for tests): "
+                             f"{report[:500]} Use search_text with its id for the stored pages.")
+            else:
+                lines.append(f"Web search by Python for id {c.listing_id}: not made ({report[:200]})")
         return lines
 
     def read_page(self, call: ReadPage) -> str:

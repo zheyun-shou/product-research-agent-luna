@@ -199,8 +199,8 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
     from scout.picks.wishes import judge_wishes
     from scout.db.conn import ThreadConnections
 
-    if not isinstance(conn, ThreadConnections):  # each candidate researcher gets its own connection
-        conn = ThreadConnections(conn)
+    if not isinstance(conn, ThreadConnections):  # each candidate researcher gets its own connection; the caller
+        conn = ThreadConnections(conn)  # gives one, so that it closes the pool at the end
 
     screened: dict[tuple[str, int], bool] = {}
     search_text = hybrid_search(conn, make_embedder)

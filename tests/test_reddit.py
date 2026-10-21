@@ -77,3 +77,16 @@ def test_a_failed_thread_gives_no_text_and_other_pages_still_load():
         page = Page()
     texts = fetch_texts(lambda u: Got(), [URL, "https://a.se/x"], read=read)
     assert URL not in texts and "hinge" in texts["https://a.se/x"]
+
+
+def test_a_failed_log_does_not_lose_the_thread():
+    def broken_log(*row):
+        raise RuntimeError("database gone")
+
+    def post(url, data, auth, headers, timeout):
+        return Response(200, {"access_token": "T", "expires_in": 3600})
+
+    def get(url, headers, timeout, params):
+        return Response(200, THREAD)
+    read = RedditReader("id", "secret", broken_log, post, get, sleep=lambda s: None)
+    assert read(URL).startswith("Sony WH-1000XM6 after a year")

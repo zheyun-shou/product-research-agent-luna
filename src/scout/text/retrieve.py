@@ -269,6 +269,23 @@ def wish_matches(conn, embedder: Embedder, listing_ids: list[int], wishes: list[
     return out
 
 
+class OneCaller:
+    """An embedder whose methods run for one caller at a time; its other attributes are the same."""
+
+    def __init__(self, inner, lock):
+        self._inner, self._lock = inner, lock
+
+    def __getattr__(self, name):
+        value = getattr(self._inner, name)
+        if not callable(value):
+            return value
+
+        def locked(*args, **kwargs):
+            with self._lock:
+                return value(*args, **kwargs)
+        return locked
+
+
 def hybrid_search(conn, make_embedder) -> Callable[[str, Scope, int], list[Hit]]:
     """The search of the search_text tool: vectors and BM25 with RRF, for each query (since 2026-10-13: the
     multi-query method was best in eval-retrieval). The embedder loads at the first search.
@@ -279,24 +296,29 @@ def hybrid_search(conn, make_embedder) -> Callable[[str, Scope, int], list[Hit]]
 
     from scout.text.index import index_chunks
     loaded: list = []
-    # The candidate researchers search at the same time: one embedder loads, and one indexing runs at a time
-    lock = threading.Lock()
+    # The candidate researchers search at the same time. One embedder loads, one indexing runs at a time, and the
+    # embedder works for one caller at a time (its tokenizer is not safe in threads). The queries run in parallel
+    lock, model_lock = threading.Lock(), threading.RLock()
 
     def one_at_a_time(fn):
         @functools.wraps(fn)
         def run(*args, **kwargs):
             with lock:
                 if not loaded:
-                    loaded.append(make_embedder())
-                return fn(*args, **kwargs)
+                    loaded.append(OneCaller(make_embedder(), model_lock))
+            return fn(*args, **kwargs)
         return run
+
+    def indexed() -> None:
+        with lock:
+            index_chunks(conn, loaded[0])
 
     @one_at_a_time
     def search(query: str | list[str], scope: Scope, k: int = 10, index: bool = True) -> list[Hit]:
         """A list gives the same search words in more languages (MultiQueryRetriever). index=False skips the
         indexing, for the second and later searches of one step."""
         if index:
-            index_chunks(conn, loaded[0])
+            indexed()
         queries = [query] if isinstance(query, str) else query
         return MultiQueryRetriever([VectorRetriever(conn, loaded[0]), Bm25Retriever(conn, loaded[0])]).search_many(
             queries, scope, k)
@@ -305,13 +327,13 @@ def hybrid_search(conn, make_embedder) -> Callable[[str, Scope, int], list[Hit]]
     def similar(like: list[int], wishes: list[str], scope: Scope, k: int = 10,
                 exclude: set[int] | frozenset = frozenset()) -> list[Similar]:
         """similar_products with the same embedder and the same indexing (the similar_products tool)."""
-        index_chunks(conn, loaded[0])
+        indexed()
         return similar_products(conn, loaded[0], like, wishes, scope, k, exclude)
 
     @one_at_a_time
     def wishes(listing_ids: list[int], wishes: list[str]) -> dict[int, list[list[Hit]]]:
         """wish_matches with the same embedder and the same indexing (find_products with preferences)."""
-        index_chunks(conn, loaded[0])
+        indexed()
         return wish_matches(conn, loaded[0], listing_ids, wishes)
 
     search.similar, search.wishes = similar, wishes

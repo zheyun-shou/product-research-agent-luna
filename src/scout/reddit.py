@@ -4,6 +4,7 @@ its pages, so without the API a web search gives only the short part of the sear
 The API needs an app of type "script" or "web app" at https://www.reddit.com/prefs/apps. I make it myself and put
 REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET in .env. The program uses the app-only grant (no Reddit account, no
 password) and reads only: the post and its comments. Each request goes to the fetch log."""
+import contextlib
 import os
 import re
 import threading
@@ -70,6 +71,10 @@ class RedditReader:
             self.sleep(GAP - (self.clock() - self._last))
         self._last = self.clock()
 
+    def _log(self, *row) -> None:
+        with contextlib.suppress(Exception):  # the log must not lose a thread that was read
+            self.log(*row)
+
     def _send(self, send, url: str, **kwargs):
         self._wait()
         start = self.clock()
@@ -77,11 +82,11 @@ class RedditReader:
             response = send(url, headers={"User-Agent": USER_AGENT, **kwargs.pop("headers", {})}, timeout=TIMEOUT,
                             **kwargs)
         except Exception as exc:
-            self.log("reddit.com", url, "failed", None, round((self.clock() - start) * 1000),
-                     f"{type(exc).__name__}: {exc}"[:300])
+            self._log("reddit.com", url, "failed", None, round((self.clock() - start) * 1000),
+                      f"{type(exc).__name__}: {exc}"[:300])
             raise
-        self.log("reddit.com", url, "ok" if response.status_code == 200 else "failed", response.status_code,
-                 round((self.clock() - start) * 1000), "")
+        self._log("reddit.com", url, "ok" if response.status_code == 200 else "failed", response.status_code,
+                  round((self.clock() - start) * 1000), "")
         return response
 
     def token(self) -> str:

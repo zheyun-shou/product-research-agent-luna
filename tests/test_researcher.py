@@ -238,3 +238,34 @@ def test_with_a_pool_each_researcher_takes_its_own_connection_and_the_turn_commi
         {"messages": [{"role": "user", "content": "A quiet fridge, at most 180 cm"}]},
         {"configurable": {"thread_id": "t"}})
     assert events == ["share", "own", "own"]
+
+
+def test_python_does_not_claim_a_web_search_that_was_not_made_and_its_error_keeps_the_files():
+    shop = Shop()
+    shop.down = "no credits"
+    llm = Router([[NEEDS, ResearchCandidates(ids=[2])], "Done."], {2: [[file_of("fits")]]})
+    run(llm, shop)
+    result = llm.requests[1][1]
+    assert "Web search by Python for id 2: not made (" in result and "Use search_text" not in result
+    assert "[id 2] Fridge 2\nFit: fits." in result
+
+    shop = Shop()
+
+    def broken(question, ids, max_pages, want=""):
+        raise RuntimeError("index broken")
+    shop.search_web = broken
+    llm = Router([[NEEDS, ResearchCandidates(ids=[2])], "Done."], {2: [[file_of("fits")]]})
+    run(llm, shop)
+    result = llm.requests[1][1]
+    assert "[id 2] Fridge 2\nFit: fits." in result
+
+
+def test_without_a_model_python_searches_with_the_title_and_not_the_brand_alone():
+    from scout.agent.loop import Toolbox
+    shop = Shop()
+    llm = Router([], {})
+    deps = shop.deps(llm)
+    box = Toolbox(deps, {"needs": {"category": "fridge"}}, "t")
+    card = SimpleNamespace(listing_id=2, brand="Samsung", model=None, title="Samsung RB34 kyl frys 185 cm vit extra")
+    box.search_the_rest([card])
+    assert shop.web_calls[0][0] == "Samsung RB34 kyl frys 185 cm test"
