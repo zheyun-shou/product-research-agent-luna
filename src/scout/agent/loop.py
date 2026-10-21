@@ -861,7 +861,9 @@ class Toolbox:
             return []
         searched, lines = self.deps.web_searched([c.listing_id for c in cards]), []
         for c in cards:
-            if c.listing_id in searched or self.used.get("web_unavailable"):
+            if self.used.get("web_unavailable") or self.used.get("web_searches", 0) >= MAX_WEB_SEARCHES:
+                break
+            if c.listing_id in searched:
                 continue
             words = " ".join(w for w in (c.brand, c.model) if w) or " ".join(c.title.split()[:6])
             report = self.search_web(SearchWeb(question=f"{words} test", ids=[c.listing_id]))

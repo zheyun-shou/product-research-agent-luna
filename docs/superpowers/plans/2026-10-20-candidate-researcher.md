@@ -55,3 +55,9 @@ One eval-hidden run with the researchers (red-bottom-freezer, Chinese): the targ
 - Five researchers searched at the same time. The DuckDuckGo and Brave engines of SearXNG asked for a captcha, and the search went to Tavily (6 credits of the free plan). Now at most 2 web searches of all researchers run at the same time.
 
 Second smoke run (same target, after the fixes): the target was pick 1, 1 shopper turn after the opening, 0.028 USD, 10 minutes, 18 researcher steps, 5 web searches (1 with sources tests), 3 Tavily credits, 0 gate stops. Four researchers said "fits" and one said "unclear", each for the recorded needs. Two said that they could not check the budget, because the price was not in their context. Now the product line of a researcher has the price. DuckDuckGo still asked for a captcha with 2 searches at the same time.
+
+Third smoke run (Haiku 5.5 as the researcher): the target was pick 1, 0.079 USD, 12 minutes, 16 main tool calls, 30 researcher steps, 2 gate stops. The fit of each researcher was right for the recorded needs. But the 5 researchers of the first research used all 10 web searches and all 120 web pages of the turn: they searched with sources tests first, found nothing, and searched again with any. So the 3 later candidates had no web search, and only 1 pick was shown. Changes:
+
+- The researchers together get half of the web searches and pages that are left, at least 1 search each. The other half stays for the main agent.
+- The prompt says to search with sources any first. The other sources are only for a search that is left.
+- Python does not try its own web search when the searches of the turn are used up.

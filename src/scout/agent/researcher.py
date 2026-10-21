@@ -49,8 +49,9 @@ SYSTEM = f"""You research one product for a shopping assistant. The assistant de
 - Check the product against each need of the shopper: read its stored page (read_product), look for a missing
   value (find_missing), and search its stored text (search_text).
 - Always search the web for tests of this model, unless the wish says not to: short words (the brand and the
-  model, and one word such as test, recension or review) with sources tests, then any when tests finds nothing. Use the sources of search_web: tests (test sites), forums
-  (owner views) and shops (Prisjakt and Swedish shops). On a shop or Prisjakt page of the same model, read_page
+  model, and one word such as test, recension or review), with sources any. Only when you have a search left, use
+  the other sources of search_web: tests (test sites), forums (owner views) and shops (Prisjakt and Swedish shops).
+  On a shop or Prisjakt page of the same model, read_page
   stores its buyer reviews. When read_page stores it as another product, and the brand and the model are the
   same, call same_product. Then sum up all the buyer reviews (summarize_reviews).
 - A test or a review counts only when it is about the same model and variant (size, colour, finish).
@@ -193,10 +194,12 @@ def file_text(r: Researched) -> str:
 
 
 def research_all(deps, state: dict, thread: str, cards: list, want: str, used: dict) -> list[Researched]:
-    """One researcher for each card, all at the same time. Each gets an equal part of the web searches and pages
-    that are left in the turn."""
+    """One researcher for each card, all at the same time. Each gets an equal part of half of the web searches and
+    pages that are left in the turn, at least 1 search. The other half stays for the main agent, for example for
+    the research of more candidates."""
     searches_left = max(0, MAX_WEB_SEARCHES - used.get("web_searches", 0))
-    pages_left = max(0, MAX_WEB_PAGES - used.get("web_pages", 0))
+    searches_left = min(searches_left, max(searches_left // 2, len(cards)))
+    pages_left = max(0, MAX_WEB_PAGES - used.get("web_pages", 0)) // 2
     each_searches = min(WEB_SEARCHES_EACH, searches_left // len(cards))
     each_pages = pages_left // len(cards)
     each_products = min(PRODUCT_PAGES_EACH, max(0, MAX_PRODUCT_PAGES - used.get("product_pages", 0)) // len(cards))

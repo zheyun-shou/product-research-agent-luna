@@ -76,8 +76,9 @@ def test_each_candidate_gets_a_researcher_and_the_main_agent_a_short_file():
     llm = Router([[NEEDS, ResearchCandidates(ids=[2, 1, 2, 9], want="is it quiet")], [picks]], steps)
     state = run(llm, shop)
     assert shop.reviews_asked == [[2, 1]]  # Python reads the reviews before the researchers start
-    # Each search is for the own product of its researcher, with half of the pages of the turn
-    assert sorted(shop.web_calls) == [("Fridge 1 test", [1], 60), ("Fridge 2 test", [2], 60)]
+    # Each search is for the own product of its researcher, with a quarter of the pages of the turn (half of the
+    # pages stays for the main agent)
+    assert sorted(shop.web_calls) == [("Fridge 1 test", [1], 30), ("Fridge 2 test", [2], 30)]
     result = llm.requests[1][1]
     assert "There is no product with id 9." in result
     assert '[id 2] Fridge 2\nFit: fits. Height 152 cm.\n- need: 38 dB. "Noise 38 dB" (page)' in result
@@ -188,3 +189,27 @@ def test_at_most_two_researchers_search_the_web_at_the_same_time():
     llm = Router([[NEEDS, ResearchCandidates(ids=[1, 2, 3])], "Done."], steps)
     run(llm, shop)
     assert len(shop.web_calls) == 3 and most[0] == WEB_AT_ONCE
+
+
+def test_half_of_the_web_searches_stays_for_the_main_agent():
+    from scout.agent.loop import MAX_WEB_SEARCHES
+    from scout.agent.researcher import research_all
+    seen = []
+
+    def fake_one(deps, state, thread, card, want, budget):
+        seen.append(MAX_WEB_SEARCHES - budget["web_searches"])
+        from scout.agent.researcher import Researched
+        return Researched(card.listing_id, card.title)
+    import scout.agent.researcher as researcher
+    real, researcher.research_one = researcher.research_one, fake_one
+    try:
+        class Card:
+            def __init__(self, i):
+                self.listing_id, self.title = i, f"Fridge {i}"
+        research_all(None, {}, "t", [Card(i) for i in range(5)], "", {})
+        assert seen == [1] * 5  # 5 of the 10 searches
+        seen.clear()
+        research_all(None, {}, "t", [Card(i) for i in range(2)], "", {"web_searches": 2})
+        assert seen == [2, 2]  # 4 of the 8 left
+    finally:
+        researcher.research_one = real
