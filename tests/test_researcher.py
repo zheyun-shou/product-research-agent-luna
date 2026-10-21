@@ -153,3 +153,38 @@ def test_a_run_without_the_researchers_has_no_tool_and_no_prompt_line_for_them()
     assert "research_candidates with them" in system_prompt() and ResearchCandidates in work_tools()
     assert "research_candidates with them" not in system_prompt(False)
     assert ResearchCandidates not in work_tools(False) and "{" not in system_prompt(False)[:40]
+
+
+def test_python_searches_the_web_for_a_candidate_whose_researcher_did_not():
+    shop = Shop()
+    steps = {2: [[ReadProduct(ids=[2], question="noise")], [file_of("fits")]],
+             1: [[SearchWeb(question="Fridge 1 test")], [file_of("unclear")]]}
+    picks = ShowPicks(picks=[Pick(id=2, text="Fits."), Pick(id=1, text="Fits.")])
+    llm = Router([[NEEDS, ResearchCandidates(ids=[2, 1])], [picks]], steps)
+    state = run(llm, shop)
+    assert [q for q, _, _ in shop.web_calls].count("Fridge 2 test") == 1  # by Python, after the researchers
+    assert "Web search by Python for id 2" in llm.requests[1][1] and "id 1 (" not in llm.requests[1][1]
+    assert [p["listing_id"] for p in state["picks"]] == [2, 1]  # no stop of the web floor
+    assert state["used"]["web_searches"] == 2
+
+
+def test_at_most_two_researchers_search_the_web_at_the_same_time():
+    import time
+    from scout.agent.researcher import WEB_AT_ONCE
+    shop = Shop()
+    now, most, lock = [0], [0], threading.Lock()
+    search = shop.search_web
+
+    def slow(question, ids, max_pages, want=""):
+        with lock:
+            now[0] += 1
+            most[0] = max(most[0], now[0])
+        time.sleep(0.05)
+        with lock:
+            now[0] -= 1
+        return search(question, ids, max_pages, want)
+    shop.search_web = slow
+    steps = {i: [[SearchWeb(question=f"Fridge {i} test")], [file_of("unclear")]] for i in (1, 2, 3)}
+    llm = Router([[NEEDS, ResearchCandidates(ids=[1, 2, 3])], "Done."], steps)
+    run(llm, shop)
+    assert len(shop.web_calls) == 3 and most[0] == WEB_AT_ONCE

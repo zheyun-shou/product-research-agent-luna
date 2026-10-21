@@ -848,10 +848,26 @@ class Toolbox:
                 new = {q["id"] for q in r.update["pages_read"]}
                 read = [p for p in self.current("pages_read") if p["id"] not in new]
                 self.update["pages_read"] = read + [p for p in r.update["pages_read"] if p["id"] in new]
+        lines += self.search_the_rest(cards)
         self.shown(ids)
         head = (f"Research of {len(cards)} product(s), one researcher each at the same time. Python found the quote "
                 "of each point in the tool results of its researcher.")
         return "\n\n".join([head + notes, *lines, *map(file_text, found)])
+
+    def search_the_rest(self, cards) -> list[str]:
+        """A web search for tests of each product whose researcher did not make one, so that the floor of the picks
+        does not stop them later. The pages are stored; the line only says that the search was made."""
+        if self.deps.search_web is None or not self.needs.web_tests:
+            return []
+        searched, lines = self.deps.web_searched([c.listing_id for c in cards]), []
+        for c in cards:
+            if c.listing_id in searched or self.used.get("web_unavailable"):
+                continue
+            words = " ".join(w for w in (c.brand, c.model) if w) or " ".join(c.title.split()[:6])
+            report = self.search_web(SearchWeb(question=f"{words} test", ids=[c.listing_id]))
+            lines.append(f"Web search by Python for id {c.listing_id} (its researcher made none for tests): "
+                         f"{' '.join(report.split())[:500]} Use search_text with its id for the stored pages.")
+        return lines
 
     def read_page(self, call: ReadPage) -> str:
         profile = self.profile()

@@ -45,3 +45,11 @@ The review found 10 problems. 9 are fixed, and 1 is a known limit.
 - When the web search is not available for a researcher, the turn knows it, so the web floor does not ask again.
 - A failed review read does not stop the research. The main agent gets the full review report.
 - A researcher that fails keeps its counts of web searches, pages and credits for the turn.
+
+### Smoke run and fixes (2026-10-21)
+
+One eval-hidden run with the researchers (red-bottom-freezer, Chinese): the target was pick 1, 2 shopper turns, 0.056 USD, 16 minutes, 21 researcher steps. Three problems:
+
+- The researcher of the target said "does not fit" because buyers said that it is loud. The shopper did not ask about noise. Another researcher said "fits" for a fridge with the freezer at the top. Now the prompt says that the fit is only about the recorded needs and the budget. A problem that is not a need is a con point.
+- The researcher of the target made no web search, so the web floor stopped the picks one time. Now the prompt says to always search for tests. Also, after the researchers, Python makes one web search ("brand model test") for each product that has no web search for tests yet.
+- Five researchers searched at the same time. The DuckDuckGo and Brave engines of SearXNG asked for a captcha, and the search went to Tavily (6 credits of the free plan). Now at most 2 web searches of all researchers run at the same time.

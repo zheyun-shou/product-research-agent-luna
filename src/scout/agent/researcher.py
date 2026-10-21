@@ -3,6 +3,7 @@ own context and gives the main agent a short file. One researcher for each produ
 
 Python keeps a point of a file only when its quote is in a tool result that this researcher got."""
 import contextvars
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Literal
@@ -21,6 +22,8 @@ MAX_POINTS = 10
 WEB_SEARCHES_EACH = 3  # at most, and less when the turn has fewer left: tests, forums and shops
 PRODUCT_PAGES_EACH = 3  # pages of other shops (read_page), at most
 ROLE = "researcher"  # config/models.yaml; without it the worker
+WEB_AT_ONCE = 2  # web searches of all researchers at the same time; more make SearXNG engines ask for a captcha
+_web_slots = threading.BoundedSemaphore(WEB_AT_ONCE)
 
 
 class FilePoint(BaseModel):
@@ -34,8 +37,9 @@ class FilePoint(BaseModel):
 
 class ResearchFile(BaseModel):
     """Finish: the file of the product for the main assistant."""
-    fit: Literal["fits", "does not fit", "unclear"] = Field(description="Does the product meet the needs?")
-    fit_reason: str = Field(description="One or two sentences: which needs it meets, fails or leaves unclear")
+    fit: Literal["fits", "does not fit", "unclear"] = Field(
+        description="Does the product meet the recorded needs and the budget? Only these count")
+    fit_reason: str = Field(description="One or two sentences: which recorded needs it meets, fails or leaves unclear")
     points: list[FilePoint] = Field(description=f"At most {MAX_POINTS}, the most useful first")
     missing: str = Field("", description="What you could not find out, in one sentence")
 
@@ -44,14 +48,17 @@ SYSTEM = f"""You research one product for a shopping assistant. The assistant de
 
 - Check the product against each need of the shopper: read its stored page (read_product), look for a missing
   value (find_missing), and search its stored text (search_text).
-- Search the web for this model with short words (the brand and the model, and for tests one word such as test,
-  recension or review), unless the wish says not to. Use the sources of search_web: tests (test sites), forums
+- Always search the web for tests of this model, unless the wish says not to: short words (the brand and the
+  model, and one word such as test, recension or review) with sources tests, then any when tests finds nothing. Use the sources of search_web: tests (test sites), forums
   (owner views) and shops (Prisjakt and Swedish shops). On a shop or Prisjakt page of the same model, read_page
   stores its buyer reviews. When read_page stores it as another product, and the brand and the model are the
   same, call same_product. Then sum up all the buyer reviews (summarize_reviews).
 - A test or a review counts only when it is about the same model and variant (size, colour, finish).
 - Finish with research_file. Each point needs its source and a quote: the exact words of a tool result that you got.
   Python removes a point whose quote is not in your tool results. Write the points in English.
+- The fit is only about the recorded needs of the shopper and the budget. A problem that is not one of the needs
+  (for example noise, when the shopper did not ask about noise) is a con point. It is not a reason for "does not
+  fit". The wish of the assistant is not a need.
 - Say "unclear" when the facts do not show if the product fits. Do not guess.
 - You have at most {MAX_STEPS} steps. Call several tools in one step when they do not depend on each other."""
 
@@ -156,7 +163,10 @@ def steps(done: Researched, deps, box: Toolbox, card, context: str, history: lis
             call = scoped(call, card.listing_id)
             if refused(call, card.listing_id):
                 report = refused(call, card.listing_id)
-            elif isinstance(call, (SearchWeb, ReadPage)):  # they take the database lock inside, only to store
+            elif isinstance(call, SearchWeb):  # it takes the database lock inside, only to store
+                with _web_slots:
+                    report = box.run(call)
+            elif isinstance(call, ReadPage):
                 report = box.run(call)
             else:  # the researchers share one database connection
                 with deps.db_lock:
