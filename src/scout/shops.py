@@ -70,17 +70,21 @@ def unique_reviews(rec: ProductRecord, known: set[str]) -> tuple[ProductRecord, 
 
 def read_page(conn: psycopg.Connection, fetch: Callable[[str], Fetched], url: str, category: str,
               enrich: Callable[[ProductRecord], tuple[ProductRecord, bool]] | None,
-              more: Callable[[str], list[dict]] = more_reviews, lock=None) -> PageRead:
-    """more(url): the reviews that the page loads apart from its page data (scout.shop_reviews). lock: the lock of
-    the database connection; the page loads and the worker reads it without the lock."""
+              more: Callable[..., list[dict]] = more_reviews, lock=None) -> PageRead:
+    """more(url, log=calls): the reviews that the page loads apart from its page data (scout.shop_reviews), and
+    its requests in calls. lock: the lock of the database connection; the page loads and the worker reads it
+    without the lock."""
     site = site_of(url)
     if is_amazon(url):
         return PageRead(AMAZON_NOTE + ".", 0)
     fetched = fetch(url)
     page = fetched.page
     rec, from_data, problem = read_record(fetched, enrich)
-    extra = more(page.final_url) if rec is not None else []
+    calls: list = []
+    extra = more(page.final_url, log=calls) if rec is not None else []
     with lock or nullcontext():
+        for c in calls:
+            log_fetch(conn, c.source, c.url, c.status, c.http_status, c.duration_ms, c.note)
         return store_page(conn, url, site, fetched, rec, from_data, problem, extra, category)
 
 

@@ -124,3 +124,27 @@ def test_the_polite_gap_waits_also_before_the_first_request():
     now[0] += 1.0
     polite("gap.test", 3.0, waits.append, lambda: now[0])
     assert waits == [3.0, 2.0]
+
+
+def test_each_request_of_a_review_service_goes_to_the_log():
+    def post(url, json, headers, timeout):
+        return Response(200, {"reviews": []})
+
+    def broken(*args, **kwargs):
+        raise httpx.ConnectError("down")
+
+    def odd(*args, **kwargs):
+        return Response(200, ["not", "a", "dict"])
+    no_wait = lambda site: None  # noqa: E731
+    log = []
+    more_reviews("https://www.prisjakt.nu/produkt.php?p=15415649", post=post, wait=no_wait, log=log)
+    more_reviews("https://www.prisjakt.nu/produkt.php?p=1", post=broken, wait=no_wait, log=log)
+    more_reviews("https://www.prisjakt.nu/produkt.php?p=1", post=odd, wait=no_wait, log=log)
+    url = "https://www.elgiganten.se/product/vitvaror/kyl-frys/kylskap/gorenje-kylskap-ri4182e1/151900"
+    more_reviews(url, get=lambda u, **kw: Response(500, {}), wait=no_wait, log=log)
+    assert [(c.source, c.status, c.http_status) for c in log] == [
+        ("prisjakt.nu", "ok", 200), ("prisjakt.nu", "failed", None), ("prisjakt.nu", "failed", 200),
+        ("api.feefo.com", "failed", 500)]
+    assert log[0].url == "https://www.prisjakt.nu/api/products/15415649/reviews"
+    assert log[1].note == "ConnectError: down" and log[2].note.startswith("unknown answer")
+    assert "product_sku=151900" in log[3].url

@@ -2,10 +2,13 @@
 review API, and Elgiganten from the Feefo widget. The other shops keep the reviews of their page data (JSON-LD).
 
 Each review has the form of ProductRecord.reviews (title, rating, date, verified, text), never the author. The
-market or the locale of a review is put in front of its title, because Prisjakt and Feefo mix the Nordic sites."""
+market or the locale of a review is put in front of its title, because Prisjakt and Feefo mix the Nordic sites.
+
+Each request of a review service goes to the fetch log, as the pages do (scout.shops.store_page)."""
 import re
 import threading
 import time
+from dataclasses import dataclass
 from typing import Callable
 from urllib.parse import parse_qs, urlparse
 
@@ -87,16 +90,47 @@ def polite(site: str, gap: float = SITE_GAP, sleep=time.sleep, clock=time.monoto
         _last[site] = clock()
 
 
-def more_reviews(url: str, get: Get = httpx.get, post: Post = httpx.post, wait=polite) -> list[dict]:
-    """The reviews that the page loads apart from its page data, for the sites that have such a reader."""
-    site = site_of(url)
+@dataclass
+class ApiCall:
+    """One request of a review service, for the fetch log."""
+    source: str
+    url: str
+    status: str
+    http_status: int | None
+    duration_ms: int
+    note: str = ""
+
+
+def logged(send, source: str, log: list[ApiCall], clock=time.monotonic):
+    """send, with each request added to log."""
+    def run(url, **kwargs):
+        address, start = str(httpx.URL(url, params=kwargs.get("params") or {})), clock()
+        try:
+            response = send(url, **kwargs)
+        except Exception as exc:
+            log.append(ApiCall(source, address, "failed", None, round((clock() - start) * 1000),
+                               f"{type(exc).__name__}: {exc}"[:300]))
+            raise
+        log.append(ApiCall(source, address, "ok" if response.status_code == 200 else "failed", response.status_code,
+                           round((clock() - start) * 1000)))
+        return response
+    return run
+
+
+def more_reviews(url: str, get: Get = httpx.get, post: Post = httpx.post, wait=polite,
+                 log: list[ApiCall] | None = None) -> list[dict]:
+    """The reviews that the page loads apart from its page data, for the sites that have such a reader. log: gets
+    the requests of the review services."""
+    site, log = site_of(url), log if log is not None else []
     try:
         if site == "prisjakt.nu":
             wait(site)
-            return prisjakt_reviews(url, post)
+            return prisjakt_reviews(url, logged(post, site, log))
         if site in FEEFO_MERCHANTS:
             wait("api.feefo.com")
-            return feefo_reviews(url, get)
-    except Exception:  # an error or an unknown answer of the review service: the page data still counts
+            return feefo_reviews(url, logged(get, "api.feefo.com", log))
+    except Exception as exc:  # an error or an unknown answer of the review service: the page data still counts
+        if log and log[-1].status == "ok":
+            log[-1].status, log[-1].note = "failed", f"unknown answer ({type(exc).__name__})"
         return []
     return []

@@ -150,6 +150,18 @@ def test_listings_of_one_shop_or_of_two_categories_are_not_joined(db):
 
 def test_reviews_that_the_page_loads_apart_are_added(db):
     extra = [{"title": "Feefo sv_SE", "rating": 2, "date": "2025-01-01", "verified": False, "text": "Låter mycket."}]
-    got = read_page(db, loaded(), URL, "fridge", None, more=lambda url: extra)
+    got = read_page(db, loaded(), URL, "fridge", None, more=lambda url, log: extra)
     assert len(page_texts(db, [got.listing_id])[got.listing_id]["reviews"]) == 3
     assert "3 buyer reviews from this page stored." in got.text
+
+
+def test_the_requests_of_a_review_service_are_in_the_fetch_log(db):
+    from scout.shop_reviews import ApiCall
+
+    def more(url, log):
+        log.append(ApiCall("api.feefo.com", "https://api.feefo.com/x", "ok", 200, 12))
+        return []
+    read_page(db, loaded(), URL, "fridge", None, more=more)
+    rows = db.execute("SELECT source, url, status, http_status FROM fetch_log ORDER BY id").fetchall()
+    assert [(r["source"], r["status"], r["http_status"]) for r in rows] == [("api.feefo.com", "ok", 200),
+                                                                         ("testbutik.se", "ok", 200)]
