@@ -67,3 +67,11 @@ Tasks 1 to 4 are done (2026-10-06, 275 tests). All turns run in one worker threa
 - More languages than English, Swedish and Chinese.
 - Accounts, more than one shopper at a time, and a public deployment.
 - Buttons for "show more" and "bring back". The shopper writes these in the chat.
+
+## The list of the chats (2026-10-21)
+
+- A list of the conversations is on the left of the page, newest first, at most 30. The title of a conversation is the start of its first message (80 characters). The date is the time of its last checkpoint. The current conversation is marked. A click opens it.
+- On a wide screen the list is open, unless I closed it (the browser keeps this choice). On a screen of 900 px or less it opens over the chat from the menu button, and it closes when I open a conversation or the picks.
+- The route `GET /api/threads` reads the newest threads from the checkpoints table (`db.store.recent_threads`, also used by `scout threads`). The titles are kept in memory, because a first message does not change.
+- A short read of the page (the history, the list, the memory) now waits up to 2 seconds for another short read. Before, two reads at the same time gave "a turn is running".
+- The hidden picks panel no longer makes the page scroll to the side.

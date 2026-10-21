@@ -210,3 +210,24 @@ def test_the_agent_loop_sends_the_language_of_the_turn():
     assert {"type": "lang", "lang": "zh"} in events
     assert chat.history("t1")["lang"] == "zh"
     assert chat.remove("t1", 2)["message"].startswith("已删除")
+
+
+def test_the_thread_list_has_the_newest_first_with_the_first_message_as_title():
+    from fastapi.testclient import TestClient
+
+    from scout.agent.loop import build_agent_graph
+    from scout.web.app import create_app
+    from tests.test_memory import deps_with_memory
+
+    def build(say, on_problem):
+        deps, _ = deps_with_memory()
+        return build_agent_graph(deps, InMemorySaver()), deps
+    service = ChatService(build)
+    service.deps.llm = FakeLLM(["First answer.", "Second answer.", "More."])
+    for thread, text in (("t1", "A quiet   fridge\nunder 180 cm"), ("t2", "Headphones " + "x" * 100), ("t1", "More?")):
+        list(service.turn(thread, text))
+    client = TestClient(create_app(service))
+    rows = client.get("/api/threads").json()
+    assert [(r["thread"], r["title"]) for r in rows] == [("t1", "A quiet fridge under 180 cm"),
+                                                         ("t2", ("Headphones " + "x" * 100)[:80])]
+    assert rows[0]["last"] > rows[1]["last"]

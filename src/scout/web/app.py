@@ -37,6 +37,13 @@ def create_app(service: ChatService) -> FastAPI:
     def index():
         return FileResponse(STATIC / "index.html")
 
+    @app.get("/api/threads")
+    def threads():
+        try:
+            return service.threads()
+        except Busy:
+            raise HTTPException(409, BUSY)
+
     @app.get("/api/threads/{thread}")
     def history(thread: str):
         try:

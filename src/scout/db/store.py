@@ -338,6 +338,14 @@ def product_review_texts(conn: psycopg.Connection, product_id: int, but: int | N
     return {normalise(r["text"] or "") for r in rows} - {""}
 
 
+def recent_threads(cp_conn: psycopg.Connection, limit: int) -> list[dict]:
+    """The newest conversations of the LangGraph checkpointer, with the time of their last checkpoint."""
+    rows = cp_conn.execute(
+        "SELECT thread_id, max(checkpoint->>'ts') AS last FROM checkpoints WHERE checkpoint_ns = '' "
+        "GROUP BY thread_id ORDER BY last DESC LIMIT %s", (limit,)).fetchall()
+    return [{"thread": r["thread_id"], "last": r["last"]} for r in rows]
+
+
 def log_fetch(
     conn: psycopg.Connection, source: str, url: str, status: str,
     http_status: int | None, duration_ms: int | None, note: str = "",

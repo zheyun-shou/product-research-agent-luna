@@ -72,6 +72,7 @@ function grow() {
 // Picks panel
 function openPanel(open) {
   document.body.classList.toggle("panel-open", open && picks.length > 0);
+  if (open && picks.length > 0 && NARROW.matches) openThreads(false);
 }
 
 function chip(attr) {
@@ -258,6 +259,59 @@ function finish(p) {
   p.box.open = false;
 }
 
+// The list of the chats on the left. It is open on a wide screen, unless the shopper closed it
+const NARROW = window.matchMedia("(max-width: 900px)");
+const LOCALES = { en: "en-GB", sv: "sv-SE", zh: "zh-CN" };
+
+function openThreads(open, keep = true) {
+  document.body.classList.toggle("threads-open", open);
+  $("threads-toggle").setAttribute("aria-expanded", String(open));
+  if (open && NARROW.matches) openPanel(false);
+  if (keep && !NARROW.matches) {
+    try { localStorage.setItem("threads-open", open ? "1" : "0"); } catch (e) { /* only a convenience */ }
+  }
+}
+
+function threadsWanted() {
+  if (NARROW.matches) return false;
+  try { return localStorage.getItem("threads-open") !== "0"; } catch (e) { return true; }
+}
+
+function when(ts) {
+  const d = new Date(ts);
+  if (isNaN(d)) return "";
+  const today = d.toDateString() === new Date().toDateString();
+  return today ? d.toLocaleTimeString(LOCALES[lang], { hour: "2-digit", minute: "2-digit" })
+    : d.toLocaleDateString(LOCALES[lang], { day: "numeric", month: "short", year: "numeric" });
+}
+
+async function loadThreads() {
+  const list = $("thread-list");
+  let rows = null;
+  try {
+    const response = await fetch("/api/threads");
+    if (response.ok) rows = await response.json();
+  } catch (e) { /* the note below */ }
+  if (!rows) {
+    if (!list.querySelector("a")) list.replaceChildren(el("li", "empty-note", tr("chats_failed")));
+    return;
+  }
+  if (!rows.length) { list.replaceChildren(el("li", "empty-note", tr("no_chats"))); return; }
+  list.replaceChildren(...rows.map((row) => {
+    const li = el("li");
+    const link = el("a", row.thread === thread ? "current" : null);
+    link.href = `#t=${row.thread}`;
+    if (row.thread === thread) link.setAttribute("aria-current", "page");
+    link.append(el("span", "t-title", row.title), el("span", "t-date", when(row.last)));
+    link.addEventListener("click", (e) => {
+      if (busy) e.preventDefault();
+      else if (NARROW.matches) openThreads(false);
+    });
+    li.append(link);
+    return li;
+  }));
+}
+
 // One turn
 async function sendMessage(text) {
   if (busy || !text.trim()) return;
@@ -296,6 +350,7 @@ async function sendMessage(text) {
     $("problem").hidden = true;
     setBusy(false);
     input.focus();
+    loadThreads();
   }
 }
 
@@ -329,9 +384,11 @@ async function load() {
   if (!thread) {
     thread = newThread();
     input.focus();
+    loadThreads();
     return;
   }
   const response = await fetch(`/api/threads/${thread}`);
+  loadThreads();
   if (!response.ok) {
     addMessage("error", await errorText(response, "not_loaded"));
     return;
@@ -353,6 +410,8 @@ $("examples").addEventListener("click", (e) => { if (e.target.tagName === "BUTTO
 $("new-chat").addEventListener("click", () => { if (!busy) { history.pushState(null, "", "/"); load(); } });
 $("brand").addEventListener("click", (e) => { e.preventDefault(); $("new-chat").click(); });
 $("picks-toggle").addEventListener("click", () => openPanel(!document.body.classList.contains("panel-open")));
+$("threads-toggle").addEventListener("click", () => openThreads(!document.body.classList.contains("threads-open")));
+$("threads-close").addEventListener("click", () => openThreads(false));
 $("panel-close").addEventListener("click", () => openPanel(false));
 // The memory of the shopper across conversations: see and delete
 async function showMemory() {
@@ -391,4 +450,5 @@ window.addEventListener("popstate", () => { if (!busy) load(); });
 window.addEventListener("hashchange", () => { if (!busy && threadFromHash() !== thread) load(); });
 setLang(lang);
 setBusy(false);
+openThreads(threadsWanted(), false);
 load();

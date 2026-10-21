@@ -23,7 +23,7 @@ from scout.config import ROOT, load_settings
 from scout.crawl import crawl as run_crawl
 from scout.crawl import fetch_checked
 from scout.db.conn import connect, connect_checkpoints, empty_tables, end_transaction, init_schema
-from scout.db.store import save_page_text, save_record
+from scout.db.store import recent_threads, save_page_text, save_record
 from scout.extract.page import enrich_record
 from scout.extract.screen import screen_titles
 from scout.eval.grade import check_grader, good_enough, grade_results, grade_turn, grades_text
@@ -528,7 +528,7 @@ def web(port: int = 9000, k: int = 5,
             deps = loop_deps(conn, llm, browser, on_problem, say, tracer)
             return build_agent_graph(deps, saver), deps
 
-        service = ChatService(build, lambda: end_transaction(conn))
+        service = ChatService(build, lambda: end_transaction(conn), lambda limit: recent_threads(cp_conn, limit))
         typer.echo(f"Open http://127.0.0.1:{port} in your browser. Press Ctrl+C to stop.")
         try:
             uvicorn.run(create_app(service), host=host, port=port, log_level="warning")
@@ -543,11 +543,9 @@ def threads(limit: int = 20) -> None:
     """List the stored conversations, newest first."""
     with connect_checkpoints(load_settings().database_url) as cp_conn:
         PostgresSaver(cp_conn).setup()
-        rows = cp_conn.execute(
-            "SELECT thread_id, max(checkpoint->>'ts') AS last FROM checkpoints "
-            "GROUP BY thread_id ORDER BY last DESC LIMIT %s", (limit,)).fetchall()
+        rows = recent_threads(cp_conn, limit)
     for row in rows:
-        typer.echo(f"{row['thread_id']}  last turn {row['last'][:16]} UTC")
+        typer.echo(f"{row['thread']}  last turn {row['last'][:16]} UTC")
 
 
 def judge_llm(judge: Optional[str], rpm: int = 60) -> LLM:

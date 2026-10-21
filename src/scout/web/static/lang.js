@@ -3,6 +3,8 @@
 const TEXT = {
   en: {
     new_chat: "New chat", memory: "Memory", picks: "Picks",
+    chats: "Chats", close_chats: "Close the chats", no_chats: "No chats yet.",
+    chats_failed: "The chats could not be loaded.",
     hero_title: "What do you want to buy?",
     hero_text: "I search amazon.se, check each number against the product pages, and show my top picks.",
     problem_default: "amazon.se needs you",
@@ -33,6 +35,8 @@ const TEXT = {
   },
   sv: {
     new_chat: "Ny chatt", memory: "Minne", picks: "Förslag",
+    chats: "Chattar", close_chats: "Stäng chattarna", no_chats: "Inga chattar än.",
+    chats_failed: "Chattarna kunde inte laddas.",
     hero_title: "Vad vill du köpa?",
     hero_text: "Jag söker på amazon.se, kontrollerar varje siffra mot produktsidorna och visar mina bästa förslag.",
     problem_default: "amazon.se behöver dig",
@@ -64,6 +68,8 @@ const TEXT = {
   },
   zh: {
     new_chat: "新对话", memory: "记忆", picks: "推荐",
+    chats: "对话", close_chats: "关闭对话列表", no_chats: "还没有对话。",
+    chats_failed: "对话列表没能加载。",
     hero_title: "你想买什么？",
     hero_text: "我在 amazon.se 上搜索，把每个数字和商品页核对一遍，然后给出我的推荐。",
     problem_default: "amazon.se 需要你操作",

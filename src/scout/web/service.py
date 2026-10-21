@@ -13,6 +13,8 @@ from scout.picks.write import attribute_text
 
 PROBLEM_WAIT = 15 * 60  # seconds a turn waits for Done or Skip, then it skips
 SHOWN_ATTRIBUTES = 4
+IDLE_WAIT = 2.0  # seconds a short read waits for another one
+TITLE_CHARS = 80  # the title of a thread in the list: the start of its first message
 
 
 class Busy(Exception):
@@ -26,7 +28,12 @@ class ChatService:
     All turns run in one worker thread, because the Playwright browser works only in the thread that opened it."""
 
     def __init__(self, build: Callable[[Callable, Callable], tuple[Any, Deps]],
-                 end_transaction: Callable[[], None] = lambda: None):
+                 end_transaction: Callable[[], None] = lambda: None,
+                 recent: Callable[[int], list[dict]] | None = None):
+        """recent(limit): the newest threads as {"thread", "last"} (db.store.recent_threads); without it the
+        checkpointer lists them."""
+        self._recent = recent or self._recent_checkpoints
+        self._titles: dict[str, str] = {}
         self._lock = threading.Lock()
         self._send: Callable[[dict], None] | None = None
         self._problem: dict | None = None
@@ -68,7 +75,9 @@ class ChatService:
 
     @contextlib.contextmanager
     def _idle(self):
-        if not self._lock.acquire(blocking=False):
+        # A short read of the page (the history, the list of the chats) waits for another short read; a turn
+        # holds the lock for minutes, so after the wait it is Busy
+        if not self._lock.acquire(timeout=IDLE_WAIT):
             raise Busy
         try:
             yield
@@ -162,6 +171,29 @@ class ChatService:
             messages = [{"role": m["role"], "content": m["content"]}
                         for m in values.get("messages", []) if m.get("role") in ("user", "assistant")]
             return {"thread": thread, "messages": messages, "lang": values.get("lang"), **self._picks(thread)}
+
+    def threads(self, limit: int = 30) -> list[dict]:
+        """The newest threads for the list of the page: the start of the first message is the title. A thread
+        without a message of the shopper is left out."""
+        with self._idle():
+            found = []
+            for row in self._recent(limit):
+                thread = row["thread"]
+                if thread not in self._titles:
+                    first = next((m.get("content") for m in self._values(thread).get("messages", [])
+                                  if m.get("role") == "user"), "")
+                    self._titles[thread] = " ".join(str(first or "").split())[:TITLE_CHARS]
+                if self._titles[thread]:
+                    found.append({"thread": thread, "title": self._titles[thread], "last": row["last"]})
+            return found
+
+    def _recent_checkpoints(self, limit: int) -> list[dict]:
+        latest: dict[str, str] = {}
+        for saved in self.graph.checkpointer.list(None):
+            thread, ts = saved.config["configurable"]["thread_id"], saved.checkpoint["ts"]
+            latest[thread] = max(ts, latest.get(thread, ""))
+        newest = sorted(latest.items(), key=lambda item: item[1], reverse=True)[:limit]
+        return [{"thread": thread, "last": ts} for thread, ts in newest]
 
     def remove(self, thread: str, product_id: int) -> dict:
         """The delete button: the same records as remove_picks, without an LLM call. The panel does not refill."""
