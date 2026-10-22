@@ -114,11 +114,11 @@ Rules:
 - Reply in the language of the shopper's last message."""
 
 
-def system_prompt(researchers: bool = True) -> str:
+def system_prompt(researchers: bool = False) -> str:
     return SYSTEM.replace("{research_candidates}", RESEARCH_CANDIDATES_TEXT if researchers else "")
 
 
-def work_tools(researchers: bool = True) -> list:
+def work_tools(researchers: bool = False) -> list:
     return [t for t in WORK_TOOLS if researchers or t is not ResearchCandidates]
 
 
@@ -401,7 +401,7 @@ class LoopDeps:
     # scout.db.conn.ThreadConnections: each researcher gets its own connection; without it they share one, with
     # db_lock
     db: Any = None
-    researchers: bool = True  # the research_candidates tool; eval-hidden compares runs with and without it
+    researchers: bool = False  # the research_candidates tool; off since the A/B of 2026-10-22 (twice the cost, no clear gain)
 
 
 # ---- text for the model ----

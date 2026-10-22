@@ -76,3 +76,28 @@ The review found 10 problems. All are fixed.
 - An error of the Python web search after the researchers no longer loses their files. Without a model, Python searches with the title, not the brand alone, because "Samsung test" would meet the web floor with tests of other products. When the search was not made, the line says so and does not tell the chat model to look for stored pages.
 - An error of the fetch log no longer loses a Reddit thread that was read.
 - The list of the chats does not take the lock of the turns, so it cannot make a message fail as busy. A turn waits up to 2 seconds for a short read. A thread with no message yet is not kept without a title.
+
+### Fourth smoke run (2026-10-21)
+
+After the review fixes, same target: the target was pick 1, 0.056 USD, 9 minutes, 15 main tool calls, 17 researcher steps, 5 web searches, 3 Tavily credits, 0 gate stops. The fit of each researcher was right for the recorded needs. Python left out 3 points whose quotes were not in the tool results. The main agent showed only 1 pick and said why: the 2 other red fridges with the freezer at the bottom had no buyer reviews and no tests.
+
+### A/B on the hidden targets (2026-10-22)
+
+eval-hidden on the 21 targets, once with the researchers and once without. Chat model and researcher Haiku 5.5, worker Gemma 4 26B, shopper DeepSeek V4 Flash. One run of each target in each group.
+
+| | With researchers | Without |
+|---|---|---|
+| Target picked | 10 of 21 | 9 of 21 |
+| Target pick 1 | 5 | 4 |
+| Cost, all targets | 1.07 USD | 0.55 USD |
+| Cost of a target (median) | 0.045 USD | 0.022 USD |
+| Time of a target (median) | 626 s | 535 s |
+| Main tool calls (median) | 9 | 10 |
+| Tavily credits, all targets | 5 | 4 |
+| Gate stops (max of a target) | 0 | 1 |
+
+- 10 targets had a different result in the two groups: 6 were picked only with the researchers, 4 only without. So a difference of 1 is in the noise of one run for each target.
+- Most misses happen before the researchers start: the target was not in the amazon.se results (6 with, 10 without).
+- I read the last reply of each target in the two groups. The replies are of the same quality: both name the sources, give the cons and say why a candidate is out. I did not find replies that are clearly better with the researchers.
+
+Decision: the researchers are off by default (`LoopDeps.researchers`, `--researchers` for eval-hidden). They cost twice as much and add no clear gain. The code stays, so a later A/B can use it.

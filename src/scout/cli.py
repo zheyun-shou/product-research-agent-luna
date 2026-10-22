@@ -681,7 +681,7 @@ def eval_hidden(
     turns: int = typer.Option(MAX_SHOPPER_TURNS, help="the most shopper messages after the first one"),
     keep: bool = typer.Option(False, help="keep the products of the earlier targets in the evaluation database"),
     yes: bool = typer.Option(False, help="start without the question"),
-    researchers: bool = typer.Option(True, help="the research_candidates tool (the candidate researchers)"),
+    researchers: bool = typer.Option(False, help="the research_candidates tool (the candidate researchers), off by default"),
 ) -> None:
     """The hidden-target test: a simulated shopper wants one real product, and the chat model must find it on amazon.se.
     Uses the evaluation database (EVAL_DATABASE_URL), which is emptied before each target. Costs money."""

@@ -150,11 +150,11 @@ def test_a_web_search_that_is_not_available_reaches_the_turn():
     assert [p["listing_id"] for p in state["picks"]] == [2]  # the web floor does not ask for it
 
 
-def test_a_run_without_the_researchers_has_no_tool_and_no_prompt_line_for_them():
-    from scout.agent.loop import system_prompt, work_tools
-    assert "research_candidates with them" in system_prompt() and ResearchCandidates in work_tools()
-    assert "research_candidates with them" not in system_prompt(False)
-    assert ResearchCandidates not in work_tools(False) and "{" not in system_prompt(False)[:40]
+def test_the_researchers_are_off_by_default_and_a_run_with_them_has_the_tool_and_the_prompt_line():
+    from scout.agent.loop import LoopDeps, system_prompt, work_tools
+    assert "research_candidates with them" in system_prompt(True) and ResearchCandidates in work_tools(True)
+    assert "research_candidates with them" not in system_prompt() and LoopDeps.researchers is False
+    assert ResearchCandidates not in work_tools() and "{" not in system_prompt()[:40]
 
 
 def test_python_searches_the_web_for_a_candidate_whose_researcher_did_not():
