@@ -28,7 +28,11 @@ The goal is one command that starts the whole app: the web page, the database an
    - Docker Desktop passes `host.docker.internal` (192.168.65.254) to 127.0.0.1 of the computer. The app read the DevTools version of Chrome, opened its own tab, loaded an amazon.se search page (status 200) and closed the tab. The window stayed open.
    - The page answered on 127.0.0.1:9000. The history and the memory routes read the database. SearXNG gave 20 results for one search.
    - bge-m3 loaded from the mounted cache without the network (`HF_HUB_OFFLINE=1`) in 63 s on the CPU, the first time in the container.
-   - Not checked yet: a full turn with the chat model. It is part of the evaluations at the end.
+   - A full conversation in the container (2026-10-23, Haiku 5.5 as the chat model, researchers off). I sent "I want to buy a cheap Diptyque Lilyphea" in Chinese.
+     - Turn 1 (5 s): the agent called no tool. It asked for the budget in SEK and for the product type and size.
+     - Turn 2 (905 s): I gave EDP, 75 ml, 1500 SEK or less, as cheap as possible. The agent recorded the needs, searched amazon.se three times (6 result pages), looked in the database three times, searched the web three times and read one shop page. That is 11 of 25 calls, 25 of 30 product pages and 3 of 10 web searches.
+     - The reply said that no Lilyphea 75 ml under 1500 SEK was found. It did not offer other brands as a substitute. It gave the Prisjakt price of Do Son 75 ml from the same brand (from 1 898 kr), and this price is in the stored search results. It offered three next steps. There were no picks.
+     - The app does not record the cost of a turn.
 
 ## Not in this plan
 
