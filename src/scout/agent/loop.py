@@ -553,8 +553,9 @@ def check_final(call: BaseModel, state: dict, deps: LoopDeps, thread: str, used:
     needs = Needs.model_validate(state.get("needs") or {})
     if deps.search_web is not None and needs.web_tests and not used.get("web_unavailable"):
         searched = deps.web_searched(ids)
-        errors += [f"id {i} had no web search for tests yet. Call research_candidates or research_products with "
-                   "its id" for i in ids if i not in searched]
+        errors += [f"id {i} had no web search for tests yet. When it is the same product as one that had one (in "
+                   "another shop), call same_product. Else call research_candidates or research_products with its "
+                   "id" for i in ids if i not in searched]
     if errors:
         return errors
     # The price and the stock now, for the picks that were not checked in this turn
