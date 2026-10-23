@@ -1,5 +1,6 @@
 import dataclasses
 import json
+import queue
 import threading
 
 import pytest
@@ -74,6 +75,16 @@ def test_the_login_pause_waits_for_done():
     assert rest[-1] == {"type": "done"} and world.crawls
     assert chat.history("t1")["picks"]  # the lock is free again
 
+
+
+def test_a_long_step_gives_alive_events(monkeypatch):
+    monkeypatch.setattr("scout.web.service.ALIVE_EVERY", 0.01)
+    events = queue.Queue()
+    stream = ChatService._events(events)
+    assert next(stream) == {"type": "alive"}  # nothing for a while
+    events.put({"type": "reply", "text": "x"})
+    events.put(None)
+    assert [e for e in stream if e["type"] != "alive"] == [{"type": "reply", "text": "x"}]
 
 def test_a_failed_turn_gives_an_error_and_the_thread_continues():
     world = World()

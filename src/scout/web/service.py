@@ -15,6 +15,7 @@ PROBLEM_WAIT = 15 * 60  # seconds a turn waits for Done or Skip, then it skips
 SHOWN_ATTRIBUTES = 4
 IDLE_WAIT = 2.0  # seconds a short read waits for another one
 TITLE_CHARS = 80  # the title of a thread in the list: the start of its first message
+ALIVE_EVERY = 20.0  # seconds without an event, then an "alive" event, so a proxy (Cloudflare: 100 s) does not close the stream
 
 
 class Busy(Exception):
@@ -127,7 +128,19 @@ class ChatService:
                 events.put(None)
 
         self._jobs.put(work)
-        return iter(events.get, None)
+        return self._events(events)
+
+    @staticmethod
+    def _events(events: queue.Queue) -> Iterator[dict]:
+        while True:
+            try:
+                event = events.get(timeout=ALIVE_EVERY)
+            except queue.Empty:
+                yield {"type": "alive"}
+                continue
+            if event is None:
+                return
+            yield event
 
     def _run(self, thread: str, text: str, send: Callable[[dict], None]) -> None:
         config = self._config(thread)

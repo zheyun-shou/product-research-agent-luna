@@ -39,3 +39,10 @@ The goal is one command that starts the whole app: the web page, the database an
 - A public deployment, accounts, HTTPS. The page has no login, so it stays on localhost.
 - The GPU in the container.
 - Chrome inside the container.
+
+## Access from my phone (2026-10-23)
+
+- A Cloudflare tunnel connects scout.example.com to the app. Cloudflare Access lets in only my email, with a one-time PIN.
+- The `tunnel` service in docker-compose.yml runs cloudflared 2026.10.0. It gets only `TUNNEL_TOKEN` from .env.
+- Start: `docker compose --profile app --profile tunnel up -d`.
+- Cloudflare closes a response after about 100 s without data. One amazon.se search takes up to 145 s without an event. So the app sends an `alive` event after each 20 s without an event. The page ignores it.
