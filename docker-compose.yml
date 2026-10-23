@@ -39,7 +39,7 @@ services:
       - "host.docker.internal:host-gateway"
     depends_on: [db, searxng]
     restart: unless-stopped
-  # Access from my phone through a Cloudflare tunnel to scout.example.com. Cloudflare Access lets in only my email.
+  # Access from my phone through a Cloudflare tunnel to luna.example.com. Cloudflare Access lets in only my email.
   # Only with: docker compose --profile app --profile tunnel up -d. It gets only TUNNEL_TOKEN from .env, no other key.
   tunnel:
     profiles: [tunnel]
