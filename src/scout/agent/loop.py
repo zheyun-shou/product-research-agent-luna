@@ -81,7 +81,8 @@ How to work:
   the brand and model and one word such as test, recension, Testbericht, anmeldelse or review. A long question in a
   sentence finds manuals and shops. Put what you want to learn in want (for example "is it quiet").
 - search_web with sources tests, forums or shops searches only the sites of a list: test sites, forums, or
-  Prisjakt and Swedish shops. After a search of shops, read_page on the page of the same model stores its buyer
+  Prisjakt and a few electronics shops. The shops list is only for buyer reviews; it does not find the shops that
+  sell a product, so for that use sources any. After a search of shops, read_page on the page of the same model stores its buyer
   reviews (Prisjakt and Elgiganten give many). Buyer reviews of other shops count as buyer reviews; keep them apart
   from tests.
 - search_web gives the best parts of the pages of one search. Use it for other questions and for more detail: with
@@ -164,7 +165,8 @@ class SearchWeb(BaseModel):
     sources: Literal["any", "tests", "forums", "shops"] = Field(
         "any", description="any: the whole web. tests: the test sites of the list for the category. forums: "
                            "SweClockers, Flashback and Reddit (SweClockers can be read, and Reddit with its key; "
-                           "Flashback gives a short part). shops: Prisjakt and Swedish shops, for their buyer reviews (then read_page)")
+                           "Flashback gives a short part). shops: Prisjakt and a few electronics shops, only for their buyer "
+                           "reviews (then read_page); to find the shops that sell a product, use any")
 
 
 class ResearchItem(BaseModel):
