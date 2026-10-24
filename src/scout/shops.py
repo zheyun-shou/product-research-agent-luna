@@ -112,7 +112,9 @@ def store_page(conn: psycopg.Connection, url: str, site: str, fetched: Fetched, 
     if maybe:
         text += ("\nStored products of the same brand in other shops: "
                  + "; ".join(f"id {m['id']} {m['title']} ({m['source']})" for m in maybe)
-                 + ". If one is the same product (the same model, written in another way), call same_product.")
+                 + ". If one is the same product, call same_product: the same model, written in another way, or for "
+                 "a product without a model number the same name, kind and size (a perfume: the same scent, "
+                 "concentration and ml).")
     return PageRead(text, 1, ids.listing_id)
 
 

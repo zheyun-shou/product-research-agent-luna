@@ -92,7 +92,8 @@ How to work:
 - read_page reads the product page of another shop (for example one that search_web found) and stores the product.
   It can be a pick. It joins the same product of amazon.se when the GTIN, or the brand and the model, are the same.
   When it lists stored products of the same brand, judge from the titles and the models if one is the same
-  product, and then call same_product. Its reviews are the ones that its page shows.
+  product, and then call same_product. A product without a model number (a perfume, a food) is the same when the
+  name, the kind and the size are the same. Joined products share their reviews and web searches. Its reviews are the ones that its page shows.
 - A test or a forum view is about a pick only when it is about the same model and variant (size, colour, finish).
   When it is about another variant, say so, or do not use it.
 - When you say how many candidates fit, count them in the tool results. Name the shop of each price that is not
