@@ -6,8 +6,8 @@ ENV PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8 UV_SYSTEM_PYTHON=1 HF_HOME=/root/.
 WORKDIR /app
 RUN pip install --no-cache-dir uv==0.12.22
 
-# torch for the CPU only: bge-m3 and the reranker run here without a GPU
-RUN uv pip install --no-cache torch==2.6.0 --index-url https://download.pytorch.org/whl/cpu
+# torch with CUDA: bge-m3 and the reranker run on the NVIDIA GPU (gpus in docker-compose.yml), else on the CPU
+RUN uv pip install --no-cache torch==2.6.0 --index-url https://download.pytorch.org/whl/cu124
 COPY pyproject.toml ./
 COPY src ./src
 RUN uv pip install --no-cache -e ".[retrieval]"
