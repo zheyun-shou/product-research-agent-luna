@@ -95,3 +95,20 @@ def test_a_product_group_gives_the_variant_of_the_address():
         {"@type": "Product", "sku": "XL9", "offers": {"price": 12, "priceCurrency": "EUR"}}]}</script>"""
     rec, _ = read_generic(page(html, "https://shop.de/p?variant=XL9"))
     assert (rec.source_id, rec.price, rec.url) == ("XL9", Decimal("12"), "https://shop.de/p?variant=XL9")
+
+
+def test_a_brand_that_the_title_does_not_name_goes_to_the_worker():
+    from scout.fetch import Fetched
+    from scout.shops import read_record
+
+    seen = []
+
+    def enrich(rec):
+        seen.append(rec.brand)
+        return rec.model_copy(update={"brand": "Gorenje", "llm_fields": ["brand"]}), True
+    shop_name = HTML.replace('"name": "Gorenje"}', '"name": "Min butik"}')
+    rec, from_data, _ = read_record(Fetched(page(shop_name)), enrich)
+    assert seen == [None] and rec.brand == "Gorenje" and "brand" not in from_data
+    seen.clear()
+    rec, from_data, _ = read_record(Fetched(page(HTML)), enrich)
+    assert seen == ["Gorenje"] and "brand" in from_data

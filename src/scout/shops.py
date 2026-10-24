@@ -36,6 +36,11 @@ def read_record(fetched: Fetched, enrich: Callable[[ProductRecord], tuple[Produc
     if is_amazon(fetched.page.final_url):  # a short link or a "go to the shop" link
         return None, [], f"the address leads to amazon.se, and {AMAZON_NOTE}"
     rec, from_data = read_generic(fetched.page)
+    # Some shops put their own name in the brand of the page data (Shopify: "Min butik"). A brand that the title
+    # does not name goes to the worker, which reads the brand from the page text
+    if enrich is not None and attributes and rec.brand and normalise(rec.brand) not in normalise(rec.title or ""):
+        rec = rec.model_copy(update={"brand": None})
+        from_data = [f for f in from_data if f != "brand"]
     if enrich is not None and (attributes or rec.price is None or rec.in_stock is None):
         rec, _ = enrich(rec)
     # A test or a blog can have product data without an offer: only a page with a price, or sold out, is a shop page
