@@ -322,6 +322,7 @@ async function sendMessage(text) {
   const p = progress();
   log.append(p.box);
   scrollDown();
+  let started = false, ended = false;
   try {
     const response = await fetch(`/api/threads/${thread}/messages`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
@@ -329,6 +330,7 @@ async function sendMessage(text) {
       addMessage("error", await errorText(response));
       return;
     }
+    started = true;
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
@@ -340,17 +342,41 @@ async function sendMessage(text) {
       while ((cut = buffer.indexOf("\n")) >= 0) {
         const line = buffer.slice(0, cut).trim();
         buffer = buffer.slice(cut + 1);
-        if (line) handle(JSON.parse(line), p);
+        if (!line) continue;
+        const event = JSON.parse(line);
+        ended = ended || event.type === "done";
+        handle(event, p);
       }
     }
   } catch (err) {
-    addMessage("error", tr("connection", { error: err.message }));
+    if (!started) addMessage("error", tr("connection", { error: err.message }));
   } finally {
     finish(p);
     $("problem").hidden = true;
     setBusy(false);
     input.focus();
     loadThreads();
+  }
+  if (started && !ended) waitForTurn();
+}
+
+// The stream broke (for example a phone that went to sleep), or the page opened while a turn ran. The turn goes on
+// in the server, so ask for the conversation until the turn is done, then show it.
+const WAIT_EVERY = 10000;  // ms
+
+async function waitForTurn() {
+  const waiting = thread;
+  setBusy(true);
+  log.append(el("div", "msg note", tr("still_working")));
+  scrollDown();
+  for (;;) {
+    await new Promise((resolve) => setTimeout(resolve, WAIT_EVERY));
+    if (thread !== waiting) return;  // the shopper opened another chat; load() of that chat shows it
+    let response;
+    try { response = await fetch(`/api/threads/${waiting}`); } catch (e) { continue; }  // still offline
+    if (response.status === 409) continue;  // the turn still runs
+    if (thread === waiting) load();
+    return;
   }
 }
 
@@ -389,6 +415,10 @@ async function load() {
   }
   const response = await fetch(`/api/threads/${thread}`);
   loadThreads();
+  if (response.status === 409) {  // a turn runs, perhaps of this chat
+    waitForTurn();
+    return;
+  }
   if (!response.ok) {
     addMessage("error", await errorText(response, "not_loaded"));
     return;
