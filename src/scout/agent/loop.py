@@ -63,9 +63,11 @@ How to work:
 - Search before you recommend, and search fully: amazon.se and the web. search_shop reads amazon.se. Use Swedish
   search words. Many products are sold in other shops, and some are not on amazon.se. So also search the web for
   shops that sell the product: search_web with sources any, with the brand or the product type and a word such
-  as köp or pris. Shops in other EU countries count; name their currency. Read their product pages with read_page;
-  they can be picks. Read more results, more pages or search with other words when the stored and the new
-  candidates are weak or too few.
+  as köp or pris. Then search again in English (buy, price) and in the words of the nearby countries (køb, kjøp,
+  kaufen): shops in other EU countries count; name their currency. Read the product page of each shop in the
+  results that sells the product with read_page, not only the first few; they can be picks. When a result is only
+  the brand page or a list of a shop, search_web with the shop name and the product to find its product page. Read
+  more results, more pages or search with other words when the stored and the new candidates are weak or too few.
 - Look things up before you guess: read_product, search_text, read_images, find_missing. find_products also lists
   candidates that do not show a value of a condition. Do not leave out such a candidate only because the value is
   missing: look for it first (find_missing, read_product).
@@ -118,7 +120,7 @@ Rules:
   of each pick were read (good and bad, or the reviews on the page of another shop), and it had a web search for
   tests (research_candidates, research_products or search_web, in the last 7 days), unless the shopper does not want
   that (update_needs with web_tests false). Python opens each pick again for the price and the stock now.
-- Reply in the language of the shopper's last message."""
+- Reply in the language of the shopper's last message. The texts of show_picks are in that language too."""
 
 
 def system_prompt(researchers: bool = False) -> str:
@@ -568,6 +570,14 @@ def check_final(call: BaseModel, state: dict, deps: LoopDeps, thread: str, used:
     return errors
 
 
+# The model sometimes ends a text with the quotes of a code block or a string
+STRAY_QUOTES = re.compile(r"\s*(?:\"{3}|'{3}|`{3})\s*$")
+
+
+def tidy(text: str) -> str:
+    return STRAY_QUOTES.sub("", text)
+
+
 def picks_text(call: ShowPicks, cards: dict[int, Card], sizes: dict[int, str] | None = None, lang: str = "en") \
         -> str:
     """sizes: listing id -> the product id of the page of the size of the needs (variants.size_page). That page
@@ -583,10 +593,10 @@ def picks_text(call: ShowPicks, cards: dict[int, Card], sizes: dict[int, str] | 
                   else t("no_ratings", lang))
         variant = f" | {size['label']}" if size and size.get("label") else ""
         url = product_url(sizes[pick.id]) if size else card.url
-        lines += [f"{n}. {card.title}", f"   {price}{variant} | {rating} | id {card.listing_id}", f"   {pick.text}",
+        lines += [f"{n}. {card.title}", f"   {price}{variant} | {rating} | id {card.listing_id}", f"   {tidy(pick.text)}",
                   f"   {url}"]
     if call.note:
-        lines += ["", call.note]
+        lines += ["", tidy(call.note)]
     return "\n".join(lines)
 
 
@@ -1238,7 +1248,7 @@ def build_agent_graph(deps: LoopDeps, checkpointer=None):
                     "messages": [assistant(t("gate_gave_up", deps.lang))]}
         # The facts of the answer are graded in the evaluation (scout grade), not here
         if isinstance(call, Reply):
-            return {"final": None, "gate_errors": [], "messages": [assistant(call.text)]}
+            return {"final": None, "gate_errors": [], "messages": [assistant(tidy(call.text))]}
         cards = {c.listing_id: c for c in deps.cards([p.id for p in call.picks])}
         needs = Needs.model_validate(state.get("needs") or {})
         profile = deps.load_profile(needs.category) if needs.category else None

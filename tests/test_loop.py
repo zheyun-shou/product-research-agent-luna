@@ -512,3 +512,10 @@ def test_python_texts_follow_the_language_of_the_shopper():
     assert "个评分）" in state["messages"][-1]["content"]
     state = run(graph, "ok")  # a message without a clear sign keeps the language of the turn before
     assert state["lang"] == "zh"
+
+
+def test_stray_quotes_at_the_end_of_a_text_are_removed():
+    from scout.agent.loop import tidy
+    assert tidy('Check the price before you buy."""') == "Check the price before you buy."
+    assert tidy("Fine.\n```\n") == "Fine."
+    assert tidy('He said "quiet".') == 'He said "quiet".'
