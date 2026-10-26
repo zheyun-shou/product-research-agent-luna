@@ -27,9 +27,11 @@ roles:
       provider: gemini
       model: gemini-3.8-flash
       rpm: 10
-  worker:  # chosen on 2026-10-06 from 7 cheap models with images and tools: all titles right, image right, fastest
+  worker:  # Gemma 4 26B was chosen on 2026-10-06 from 7 cheap models with images and tools. On 2026-10-26, Claude
+          # Haiku 5.5 judged 80 stored search pages: 77 as I labelled them (Gemma 76), slowest call 4.3 s (Gemma 3
+          # calls hung for 60 s), 0.017 USD.
     provider: openrouter
-    model: google/gemma-4-26b-a4b-it
+    model: anthropic/claude-haiku-5.5
     rpm: 300  # our own limit: OpenRouter has no request cap for paid models (2026-10-26)
     fallback:
       provider: gemini

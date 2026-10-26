@@ -293,9 +293,10 @@ short part of its text. Judge if the page is worth reading. You do not answer th
 - kind: "test" for a test or review by a magazine, a blog, a video or a test site; "forum" for a forum or a
   discussion where users write, or a page of buyer reviews; "shop" for a shop page that sells products; "other"
   for anything else.
-- relevant: true when the page will probably help to answer the search question: tests, measurements, opinions of
-  users, problems, comparisons. When products are listed, the page must be about one of them or compare it. A shop
-  page with only a product name and a price is not relevant.
+- relevant: true when the page will probably help to answer the search question. For tests, reviews or opinions:
+  tests, measurements, opinions of users, problems, comparisons. For prices or where to buy: a shop page that sells
+  a listed product, or a price comparison of it, also with only a name and a price. For other questions a shop page
+  is not relevant. When products are listed, the page must be about one of them or compare it.
 - about: the ids of the listed products that the page is about (the same model, not only the same brand).
 - reason: one short sentence."""
 
