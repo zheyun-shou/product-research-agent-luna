@@ -77,9 +77,9 @@ def test_each_candidate_gets_a_researcher_and_the_main_agent_a_short_file():
     llm = Router([[NEEDS, ResearchCandidates(ids=[2, 1, 2, 9], want="is it quiet")], [picks]], steps)
     state = run(llm, shop)
     assert shop.reviews_asked == [[2, 1]]  # Python reads the reviews before the researchers start
-    # Each search is for the own product of its researcher, with a quarter of the pages of the turn (half of the
-    # pages stays for the main agent)
-    assert sorted(shop.web_calls) == [("Fridge 1 test", [1], 30), ("Fridge 2 test", [2], 30)]
+    # Each search is for the own product of its researcher. A researcher has a quarter of the pages of the turn
+    # (half of the pages stays for the main agent), and one search judges at most the 20 results of a search
+    assert sorted(shop.web_calls) == [("Fridge 1 test", [1], 20), ("Fridge 2 test", [2], 20)]
     result = llm.requests[1][1]
     assert "There is no product with id 9." in result
     assert '[id 2] Fridge 2\nFit: fits. Height 152 cm.\n- need: 38 dB. "Noise 38 dB" (page)' in result

@@ -5,7 +5,7 @@ import httpx
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 
-from scout.agent.loop import Pick, ReadReviews, SearchWeb, ShowPicks, UpdateNeeds, build_agent_graph
+from scout.agent.loop import Pick, ReadReviews, Reply, SearchWeb, ShowPicks, UpdateNeeds, build_agent_graph
 from scout.llm.client import LLMUnavailable
 from scout.websearch import (MAX_CHAT_PARTS, PageJudgement, Part, ProductRef, TavilyClient, WebResult,
                              WebSearchUnavailable, WebStore, choose_parts, search_web, topic_question, url_ref)
@@ -246,7 +246,7 @@ def test_the_picks_wait_for_a_web_search_of_each_pick():
     state = graph.invoke({"messages": [{"role": "user", "content": "A fridge, at most 180 cm"}], "searches": {"x": {"page": 1}}},
                          {"configurable": {"thread_id": "t"}})
     assert "id 2 had no web search for tests yet" in llm.requests[2][1]
-    assert shop.web_calls == [("RK4182 test", [2], 120)]
+    assert shop.web_calls == [("RK4182 test", [2], 20)]  # the 20 results of one search
     assert [p["listing_id"] for p in state["picks"]] == [2]
     assert state["web_searches"] == ["RK4182 test"] and state["used"]["web_pages"] == 3
     assert state["used"]["gate_stops"] == ["id 2 had no web search for tests yet. When it is the same product as "
@@ -455,3 +455,37 @@ def test_a_searxng_search_costs_no_credit():
     from scout.websearch import search_web
     report = search_web("q2", PRODUCTS, client, Worker(JUDGED), store2.web_store(), rerank, extract=lambda urls: {})
     assert report.credits == 0 and "stored results" not in report.text
+
+
+def test_the_searches_of_more_and_a_page_read_run_at_the_same_time():
+    import threading
+
+    from scout.agent.loop import ReadPage
+    shop, page_read, seen = WebShop(), threading.Event(), []
+    shop.reviewed = {4}
+    plain = shop.search_web
+
+    def search_web(question, ids, max_pages, want=""):
+        # Waits for the page read: when the calls ran one after another, the page would come after the searches
+        seen.append((question, page_read.wait(5), threading.get_ident()))
+        return plain(question, ids, max_pages, want)
+
+    def read_page(url, profile):
+        seen.append(("page", True, threading.get_ident()))
+        page_read.set()
+        return "id 4: Fridge 4 (elgiganten.se) | price=400 SEK", 1, 4
+    search = SearchWeb(question="RK4182 köp", ids=[2], more=["RK4182 buy", "RK4182 køb", "RK4182 kaufen", "x y"])
+    llm = FakeLLM([[NEEDS, search, ReadPage(url="https://www.elgiganten.se/product/4")], [Reply(text="Done.")]])
+    deps = shop.deps(llm)
+    deps.search_web, deps.read_page = search_web, read_page
+    state = build_agent_graph(deps, InMemorySaver()).invoke(
+        {"messages": [{"role": "user", "content": "A fridge, at most 180 cm"}]}, {"configurable": {"thread_id": "t"}})
+    # The question and at most 3 more, each in a thread of its own; the page (the browser) in the thread of the round
+    assert sorted(s[:2] for s in seen) == [("RK4182 buy", True), ("RK4182 kaufen", True), ("RK4182 köp", True),
+                                           ("RK4182 køb", True), ("page", True)]
+    page = next(s[2] for s in seen if s[0] == "page")
+    assert page not in {s[2] for s in seen if s[0] != "page"}
+    assert sorted(state["web_searches"]) == ["RK4182 buy", "RK4182 kaufen", "RK4182 köp", "RK4182 køb"]
+    assert state["used"]["web_searches"] == 4 and state["used"]["web_pages"] == 12
+    report = llm.requests[1][1]
+    assert "Web search 'RK4182 köp'" in report and "Web search 'RK4182 kaufen'" in report

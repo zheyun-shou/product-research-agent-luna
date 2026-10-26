@@ -30,6 +30,7 @@ MAX_PRODUCT_PAGES = 30
 MAX_REVIEW_PAGES = 30
 MAX_WEB_PAGES = 120  # pages that the worker judges; a search gives up to 20, so 6 searches (5 picks and 1 more)
 MAX_WEB_SEARCHES = 10  # a new search costs one Tavily credit; SearXNG is free but asks other engines
+MAX_MORE = 3  # search_web: the same search in other languages
 MAX_RESEARCH = 5  # products in one research_products call
 MAX_GATE_ROUNDS = 3
 MAX_REPORT_CHARS = 6_000  # of one tool report in the prompt
@@ -63,8 +64,8 @@ How to work:
 - Search before you recommend, and search fully: amazon.se and the web. search_shop reads amazon.se. Use Swedish
   search words. Many products are sold in other shops, and some are not on amazon.se. So also search the web for
   shops that sell the product: search_web with sources any, with the brand or the product type and a word such
-  as köp or pris. Then search again in English (buy, price) and in the words of the nearby countries (køb, kjøp,
-  kaufen): shops in other EU countries count; name their currency. Read the product page of each shop in the
+  as köp or pris, and in more the same search in English and in the words of the nearby countries (buy, køb,
+  kjøp): shops in other EU countries count; name their currency. Read the product page of each shop in the
   results that sells the product with read_page, not only the first few; they can be picks. When a result is only
   the brand page or a list of a shop, search_web with the shop name and the product to find its product page. Read
   more results, more pages or search with other words when the stored and the new candidates are weak or too few.
@@ -171,6 +172,10 @@ class SearchWeb(BaseModel):
                            "SweClockers, Flashback and Reddit (SweClockers can be read, and Reddit with its key; "
                            "Flashback gives a short part). shops: Prisjakt and a few electronics shops, only for their buyer "
                            "reviews (then read_page); to find the shops that sell a product, use any")
+    more: list[str] = Field(default_factory=list, description=f"The same search in other languages, at most "
+                            f"{MAX_MORE}. Each is a search of its own, and they run at the same time. When you look "
+                            "for shops (sources any): English and the languages of the nearby countries, for example "
+                            "'köp' as 'buy', 'køb' and 'kjøp', so that shops in other countries are found")
 
 
 class ResearchItem(BaseModel):
@@ -694,6 +699,7 @@ class Toolbox:
         self.needs = Needs.model_validate(state.get("needs") or {})
         self.used = dict(state.get("used") or {})
         self.update: dict = {}
+        self.lock = threading.RLock()  # the web searches of one round run at the same time
 
     def current(self, key: str) -> list:
         """The value after the earlier calls of this round."""
@@ -764,40 +770,61 @@ class Toolbox:
         return report
 
     def search_web(self, call: SearchWeb) -> str:
-        from scout.websearch import EnginesBusy, WebSearchUnavailable
         if self.deps.search_web is None:
             return "not available: no web search back end is set."
-        if self.used.get("web_unavailable"):
-            return f"not available in this turn: {self.used['web_unavailable']}."
-        if self.used.get("web_searches", 0) >= MAX_WEB_SEARCHES:
-            return "the web searches of this turn are used up."
-        left = MAX_WEB_PAGES - self.used.get("web_pages", 0)
-        if left <= 0:
-            return "the web pages of this turn are used up."
         cards, unknown = self.cards(call.ids[:5])
-        from scout.review_sources import site_query
-        question = site_query(call.question, call.sources, self.needs.category)
+        ids = [c.listing_id for c in cards]
+        words = list(dict.fromkeys(w.strip() for w in [call.question, *call.more[:MAX_MORE]] if w.strip()))
         self.deps.say(t("say_search_web", self.deps.lang, question=call.question))
-        # Counted before the call: a search that fails after the back end answered can have used a credit
-        self.used["web_searches"] = self.used.get("web_searches", 0) + 1
+        if len(words) == 1:
+            reports = [self.one_web_search(words[0], call, ids)]
+        else:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(len(words)) as pool:
+                reports = list(pool.map(lambda w: self.one_web_search(w, call, ids), words))
+        return "\n\n".join(reports) + "".join(f" There is no product with id {i}." for i in unknown)
+
+    def one_web_search(self, words: str, call: SearchWeb, ids: list[int]) -> str:
+        """One search of search_web. The searches of `more`, and search_web calls of one round, run at the same
+        time, so the counts change under the lock."""
+        from scout.review_sources import site_query
+        from scout.websearch import RESULTS, EnginesBusy, WebSearchUnavailable
+        question = site_query(words, call.sources, self.needs.category)
+        with self.lock:
+            if self.used.get("web_unavailable"):
+                return f"'{words}': not available in this turn: {self.used['web_unavailable']}."
+            if self.used.get("web_searches", 0) >= MAX_WEB_SEARCHES:
+                return f"'{words}': the web searches of this turn are used up."
+            share = min(RESULTS, MAX_WEB_PAGES - self.used.get("web_pages", 0))
+            if share <= 0:
+                return f"'{words}': the web pages of this turn are used up."
+            # Counted before the call: a search that fails after the back end answered can have used a credit.
+            # The pages are kept for this search until it gives the real count
+            self.used["web_searches"] = self.used.get("web_searches", 0) + 1
+            self.used["web_pages"] = self.used.get("web_pages", 0) + share
         try:
-            report, pages, credits = self.deps.search_web(question, [c.listing_id for c in cards], left, call.want)
+            report, pages, credits = self.deps.search_web(question, ids, share, call.want)
         except EnginesBusy as exc:
-            # Busy engines can answer again later; the second time in a turn, web search stops for the turn
-            self.used["web_busy"] = self.used.get("web_busy", 0) + 1
-            if self.used["web_busy"] < 2:
-                return f"no results now: {exc}. Try other search words, or search again later."
-            self.used["web_unavailable"] = str(exc)
+            with self.lock:
+                self.used["web_pages"] -= share
+                # Busy engines can answer again later; the second time in a turn, web search stops for the turn
+                self.used["web_busy"] = self.used.get("web_busy", 0) + 1
+                if self.used["web_busy"] < 2:
+                    return f"'{words}': no results now: {exc}. Try other search words, or search again later."
+                self.used["web_unavailable"] = str(exc)
             return f"not available: {exc}. Tell the shopper that the picks have no web tests."
         except WebSearchUnavailable as exc:
-            # The floor does not ask for web searches that cannot be made now
-            self.used["web_unavailable"] = str(exc)
+            with self.lock:
+                self.used["web_pages"] -= share
+                # The floor does not ask for web searches that cannot be made now
+                self.used["web_unavailable"] = str(exc)
             return f"not available: {exc}. Tell the shopper that the picks have no web tests."
-        self.used["web_pages"] = self.used.get("web_pages", 0) + pages
-        self.used["web_credits"] = self.used.get("web_credits", 0) + credits
-        done = self.current("web_searches")
-        self.update["web_searches"] = done + ([question] if question not in done else [])
-        return report + "".join(f" There is no product with id {i}." for i in unknown)
+        with self.lock:
+            self.used["web_pages"] += pages - share
+            self.used["web_credits"] = self.used.get("web_credits", 0) + credits
+            done = self.current("web_searches")
+            self.update["web_searches"] = done + ([question] if question not in done else [])
+        return report
 
     def research_products(self, call: ResearchProducts) -> str:
         if self.deps.research_web is None:
@@ -1197,28 +1224,40 @@ def build_agent_graph(deps: LoopDeps, checkpointer=None):
     def tools_node(state, config):
         box = Toolbox(deps, state, thread_of(config))
         history = list(state.get("turn_messages") or [])
-        for item in state.get("pending") or []:
-            if box.used.get("calls", 0) >= MAX_TOOL_CALLS:
-                report = f"{item['tool']}: not run, the tool calls of this turn are used up."
-            else:
+
+        def run(item, call) -> str:
+            kind, title = step_title(call, deps.lang)
+            step = {"id": next(STEP_IDS), "kind": kind, "title": title}
+            deps.step({**step, "state": "run"})
+            began = time.monotonic()
+            try:
+                with deps.tracer.span(item["tool"]):
+                    report = box.run(call)
+            except BaseException as exc:  # the step must not stay "run" on the page
+                deps.step({**step, "state": "fail", "detail": type(exc).__name__,
+                           "seconds": round(time.monotonic() - began, 1)})
+                raise
+            done, detail = step_detail(report)
+            deps.step({**step, "state": done, "detail": detail, "seconds": round(time.monotonic() - began, 1),
+                       "used": {k: box.used.get(k, 0) for k in LIMITS}, "limits": LIMITS})
+            return report[:REPORT_LIMITS.get(item["tool"], MAX_REPORT_CHARS)]
+
+        # The web searches of the round run in threads while the other calls run here, one after another: the
+        # browser works in this thread only, and a web search reads its pages without it
+        from concurrent.futures import ThreadPoolExecutor
+        reports: dict[str, Any] = {}
+        with ThreadPoolExecutor(max(1, MAX_MORE)) as pool:
+            for item in state.get("pending") or []:
+                if box.used.get("calls", 0) >= MAX_TOOL_CALLS:
+                    reports[item["id"]] = f"{item['tool']}: not run, the tool calls of this turn are used up."
+                    continue
                 box.used["calls"] = box.used.get("calls", 0) + 1
                 call = from_state(item)
-                kind, title = step_title(call, deps.lang)
-                step = {"id": next(STEP_IDS), "kind": kind, "title": title}
-                deps.step({**step, "state": "run"})
-                began = time.monotonic()
-                try:
-                    with deps.tracer.span(item["tool"]):
-                        report = box.run(call)
-                except BaseException as exc:  # the step must not stay "run" on the page
-                    deps.step({**step, "state": "fail", "detail": type(exc).__name__,
-                               "seconds": round(time.monotonic() - began, 1)})
-                    raise
-                done, detail = step_detail(report)
-                deps.step({**step, "state": done, "detail": detail, "seconds": round(time.monotonic() - began, 1),
-                           "used": {k: box.used.get(k, 0) for k in LIMITS}, "limits": LIMITS})
-                report = report[:REPORT_LIMITS.get(item["tool"], MAX_REPORT_CHARS)]
-            history.append(result_message(item["id"], report))
+                reports[item["id"]] = (pool.submit(run, item, call) if isinstance(call, SearchWeb)
+                                       else run(item, call))
+            for item in state.get("pending") or []:
+                report = reports[item["id"]]
+                history.append(result_message(item["id"], report if isinstance(report, str) else report.result()))
         return {**box.update, "turn_messages": history, "used": box.used, "pending": []}
 
     def gate_node(state, config):
