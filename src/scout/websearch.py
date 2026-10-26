@@ -128,6 +128,9 @@ class SearxngClient:
 
     def __init__(self, url: str = "http://127.0.0.1:8888", http: httpx.Client | None = None, timeout: float = 15.0):
         self.url, self.http = url.rstrip("/"), http or httpx.Client(timeout=timeout)
+        # One search at a time: on 2026-10-26 four searches at the same time gave 7 results in place of 20, because
+        # the engines answer fewer requests. The pages of the results still load and get judged in parallel
+        self._one = threading.Lock()
 
     def _page(self, query: str, pageno: int) -> dict:
         try:
@@ -148,7 +151,8 @@ class SearxngClient:
         found: list[WebResult] = []
         busy: list = []
         for pageno in (1, 2):
-            data = self._page(query, pageno)
+            with self._one:
+                data = self._page(query, pageno)
             busy = data.get("unresponsive_engines") or busy
             page = [WebResult(r["url"], r.get("title") or "", r.get("content") or "", "",
                               (r.get("publishedDate") or "")[:10] or None)

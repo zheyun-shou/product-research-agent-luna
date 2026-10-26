@@ -29,6 +29,7 @@ services:
       DATABASE_URL: postgresql://scout:scout@db:5432/product_scout
       SEARXNG_URL: http://searxng:8080
       BROWSER_CDP_URL: http://host.docker.internal:9222
+      PYTHONFAULTHANDLER: "1"  # a crash in native code prints the Python stack of each thread
     ports:
       - "127.0.0.1:9000:9000"
     volumes:
