@@ -1,9 +1,14 @@
 """Vectors and tokens for the chunks (spec 4.6). bge-m3 runs on the local computer."""
 import re
+import threading
 from dataclasses import dataclass
 from typing import Protocol
 
 BGE_M3 = "BAAI/bge-m3"
+
+# bge-m3 and the reranker load and run one at a time. On 2026-10-26 the app stopped with "double free or
+# corruption" while search_text and search_web started the two models at the same time
+MODELS = threading.RLock()
 
 # A model number has letters and digits, for example RB38C7B5D22/EF. Subword tokens break it into parts, so BM25
 # also gets it as one token.

@@ -383,12 +383,12 @@ def loop_deps(conn, llm, browser: LazyBrowser, on_problem, say, tracer, make_emb
         return fetch_texts(lambda u: fetcher.fetch(u, use_browser=False), urls, read=reddit)
 
     loaded_reranker: list = []
-    rerank_lock = threading.Lock()  # the candidate researchers search the web at the same time
 
     def reranker(question, texts):  # loads at the first web search that has text to score
         if not texts:
             return []
-        with rerank_lock:
+        from scout.text.embed import MODELS
+        with MODELS:  # the candidate researchers search the web at the same time
             if not loaded_reranker:
                 from scout.text.rerank import BgeReranker
                 loaded_reranker.append(BgeReranker())

@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable, Protocol
 
-from scout.text.embed import Embedder, bm25_tokens
+from scout.text.embed import MODELS, Embedder, bm25_tokens
 
 RRF_K = 60
 
@@ -298,14 +298,15 @@ def hybrid_search(conn, make_embedder) -> Callable[[str, Scope, int], list[Hit]]
     loaded: list = []
     # The candidate researchers search at the same time. One embedder loads, one indexing runs at a time, and the
     # embedder works for one caller at a time (its tokenizer is not safe in threads). The queries run in parallel
-    lock, model_lock = threading.Lock(), threading.RLock()
+    lock = threading.Lock()
 
     def one_at_a_time(fn):
         @functools.wraps(fn)
         def run(*args, **kwargs):
             with lock:
                 if not loaded:
-                    loaded.append(OneCaller(make_embedder(), model_lock))
+                    with MODELS:
+                        loaded.append(OneCaller(make_embedder(), MODELS))
             return fn(*args, **kwargs)
         return run
 
