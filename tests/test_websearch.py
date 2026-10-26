@@ -34,7 +34,7 @@ class Worker:
     def __init__(self, by_url, default=NOT):
         self.by_url, self.default, self.prompts = by_url, default, []
 
-    def structured(self, role, system, user, schema, images=()):
+    def structured(self, role, system, user, schema, images=(), deadline=None):
         assert role == "worker" and schema is PageJudgement
         self.prompts.append(user)
         reply = next((r for url, r in self.by_url.items() if f"URL: {url}\n" in user), self.default)

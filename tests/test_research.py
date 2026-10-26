@@ -32,7 +32,7 @@ class Worker:
     def __init__(self, briefs):
         self.briefs, self.prompts = briefs, []
 
-    def structured(self, role, system, user, schema, images=()):
+    def structured(self, role, system, user, schema, images=(), deadline=None):
         assert role == "worker"
         if schema is PageJudgement:
             return next((r for url, r in JUDGED.items() if f"URL: {url}\n" in user),

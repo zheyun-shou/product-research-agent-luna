@@ -30,7 +30,7 @@ roles:
   worker:  # chosen on 2026-10-06 from 7 cheap models with images and tools: all titles right, image right, fastest
     provider: openrouter
     model: google/gemma-4-26b-a4b-it
-    rpm: 60
+    rpm: 300  # our own limit: OpenRouter has no request cap for paid models (2026-10-26)
     fallback:
       provider: gemini
       model: gemini-3.5-flash-lite

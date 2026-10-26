@@ -351,9 +351,14 @@ def judge_prompt(question: str, result: WebResult, products: list[ProductRef]) -
     return "\n".join(lines)
 
 
+# Seconds for one page judgement. On 2026-10-26, 90% of 80 calls took 3.8 s or less, and 3 hung for 60 s.
+JUDGE_DEADLINE = 15.0
+
+
 def judge_page(llm, question: str, result: WebResult, products: list[ProductRef]) -> Finding:
     try:
-        judged = llm.structured("worker", JUDGE_SYSTEM, judge_prompt(question, result, products), PageJudgement)
+        judged = llm.structured("worker", JUDGE_SYSTEM, judge_prompt(question, result, products), PageJudgement,
+                                deadline=JUDGE_DEADLINE)
     except LLMOutputError as exc:
         return Finding(result, error=f"the worker gave no usable reply ({exc})")
     known = {p.listing_id for p in products}

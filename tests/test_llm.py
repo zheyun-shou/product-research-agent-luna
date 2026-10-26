@@ -269,7 +269,7 @@ def test_fallback_provider_must_exist():
             "worker": {"provider": "gemini", "model": "m", "rpm": 1}}})
 
 
-def slow_llm(slow_requests):
+def slow_llm(slow_requests, deadline=0.1):
     import time as real_time
 
     class Slow(FakeCompletions):
@@ -282,7 +282,7 @@ def slow_llm(slow_requests):
                                    usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5))
 
     config = FALLBACK_CONFIG.model_copy(deep=True)
-    config.roles["chat"].deadline = 0.1
+    config.roles["chat"].deadline = deadline
     main, backup, clock = FakeOpenAI([]), FakeOpenAI([]), FakeClock()
     main.chat.completions = Slow([])
     llm = LLM(config, clients={"gemini": main, "groq": backup}, sleep=clock.sleep, clock=clock.clock)
@@ -301,6 +301,12 @@ def test_two_calls_past_the_deadline_raise_a_timeout_and_keep_the_main_model():
     with pytest.raises(LLMTimeout):
         llm.structured("chat", "sys", "user", Answer)
     assert "chat" not in llm.fallbacks and backup.chat.completions.requests == []
+
+
+def test_a_call_can_have_a_shorter_deadline_than_its_role():
+    llm, main, backup = slow_llm(1, deadline=None)
+    assert llm.structured("chat", "sys", "user", Answer, deadline=0.1).answer == "ok"
+    assert [c.output for c in llm.calls][0] == "timed out" and len(main.chat.completions.requests) == 2
 
 
 def test_each_role_has_a_deadline():

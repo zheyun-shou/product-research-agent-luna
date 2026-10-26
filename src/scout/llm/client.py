@@ -202,9 +202,13 @@ class LLM:
                                              max_retries=0)
         return self._clients[provider]
 
-    def structured(self, role: Role, system: str, user: str, schema: type[T], images: list[str] = ()) -> T:
-        """images are data URIs (data:image/jpeg;base64,...) that the model reads with the text."""
-        return self._with_fallback(role, lambda cfg: self._structured(role, cfg, system, user, schema, images))
+    def structured(self, role: Role, system: str, user: str, schema: type[T], images: list[str] = (),
+                   deadline: float | None = None) -> T:
+        """images are data URIs (data:image/jpeg;base64,...) that the model reads with the text.
+
+        deadline: seconds for this call in place of the deadline of the role, for a short task."""
+        return self._with_fallback(role, lambda cfg: self._structured(role, cfg, system, user, schema, images,
+                                                                      deadline))
 
     def tools(self, role: Role, system: str, user: str, tools: list[type[BaseModel]], name: str = "tools",
               text_reply: type[BaseModel] | None = None, history: list[dict] = ()) -> list:
@@ -235,7 +239,7 @@ class LLM:
         return call(fallback)
 
     def _structured(self, role: Role, role_cfg: ModelConfig, system: str, user: str, schema: type[T],
-                    images: list[str] = ()) -> T:
+                    images: list[str] = (), deadline: float | None = None) -> T:
         client = self.client(role_cfg.provider)
         limiter = self._limiters.setdefault(
             (role_cfg.provider, role_cfg.model), RateLimiter(role_cfg.rpm, self._sleep, self._clock))
@@ -252,7 +256,8 @@ class LLM:
                     f"{role} {schema.__name__}", role_cfg.model, input=messages,
                     metadata={"provider": role_cfg.provider, "attempt": attempt},
                 ) as gen:
-                    response = within(self._deadline(role, role_cfg), lambda: client.chat.completions.create(
+                    seconds = deadline or self._deadline(role, role_cfg)
+                    response = within(seconds, lambda: client.chat.completions.create(
                         model=role_cfg.model, messages=messages, response_format=response_format,
                         **self._extra(role_cfg)
                     ))
