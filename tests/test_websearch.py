@@ -474,18 +474,21 @@ def test_the_searches_of_more_and_a_page_read_run_at_the_same_time():
         seen.append(("page", True, threading.get_ident()))
         page_read.set()
         return "id 4: Fridge 4 (elgiganten.se) | price=400 SEK", 1, 4
-    search = SearchWeb(question="RK4182 köp", ids=[2], more=["RK4182 buy", "RK4182 køb", "RK4182 kaufen", "x y"])
+    search = SearchWeb(question="RK4182 köp", ids=[2], more=["RK4182 buy", "RK4182 køb", "RK4182 kaufen", "RK4182 acheter",
+                                                             "RK4182 购买", "x y"])
     llm = FakeLLM([[NEEDS, search, ReadPage(url="https://www.elgiganten.se/product/4")], [Reply(text="Done.")]])
     deps = shop.deps(llm)
     deps.search_web, deps.read_page = search_web, read_page
     state = build_agent_graph(deps, InMemorySaver()).invoke(
         {"messages": [{"role": "user", "content": "A fridge, at most 180 cm"}]}, {"configurable": {"thread_id": "t"}})
-    # The question and at most 3 more, each in a thread of its own; the page (the browser) in the thread of the round
-    assert sorted(s[:2] for s in seen) == [("RK4182 buy", True), ("RK4182 kaufen", True), ("RK4182 köp", True),
-                                           ("RK4182 køb", True), ("page", True)]
+    # The question and at most 5 more, each in a thread of its own; the page (the browser) in the thread of the round
+    assert sorted(s[:2] for s in seen) == [("RK4182 acheter", True), ("RK4182 buy", True), ("RK4182 kaufen", True),
+                                           ("RK4182 köp", True), ("RK4182 køb", True), ("RK4182 购买", True),
+                                           ("page", True)]
     page = next(s[2] for s in seen if s[0] == "page")
     assert page not in {s[2] for s in seen if s[0] != "page"}
-    assert sorted(state["web_searches"]) == ["RK4182 buy", "RK4182 kaufen", "RK4182 köp", "RK4182 køb"]
-    assert state["used"]["web_searches"] == 4 and state["used"]["web_pages"] == 12
+    assert sorted(state["web_searches"]) == ["RK4182 acheter", "RK4182 buy", "RK4182 kaufen", "RK4182 köp", "RK4182 køb",
+                                            "RK4182 购买"]
+    assert state["used"]["web_searches"] == 6 and state["used"]["web_pages"] == 18
     report = llm.requests[1][1]
     assert "Web search 'RK4182 köp'" in report and "Web search 'RK4182 kaufen'" in report

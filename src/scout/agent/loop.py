@@ -30,7 +30,7 @@ MAX_PRODUCT_PAGES = 30
 MAX_REVIEW_PAGES = 30
 MAX_WEB_PAGES = 120  # pages that the worker judges; a search gives up to 20, so 6 searches (5 picks and 1 more)
 MAX_WEB_SEARCHES = 10  # a new search costs one Tavily credit; SearXNG is free but asks other engines
-MAX_MORE = 3  # search_web: the same search in other languages
+MAX_MORE = 5  # search_web: the same search in other languages
 MAX_RESEARCH = 5  # products in one research_products call
 MAX_GATE_ROUNDS = 3
 MAX_REPORT_CHARS = 6_000  # of one tool report in the prompt
@@ -174,8 +174,9 @@ class SearchWeb(BaseModel):
                            "reviews (then read_page); to find the shops that sell a product, use any")
     more: list[str] = Field(default_factory=list, description=f"The same search in other languages, at most "
                             f"{MAX_MORE}. Each is a search of its own, and they run at the same time. When you look "
-                            "for shops (sources any): English and the languages of the nearby countries, for example "
-                            "'köp' as 'buy', 'køb' and 'kjøp', so that shops in other countries are found")
+                            "for shops (sources any): English, German, French, Chinese and the Nordic languages, for "
+                            "example 'köp' as 'buy', 'kaufen', 'acheter', '购买', 'køb' and 'kjøp', so that shops in "
+                            "other countries are found")
 
 
 class ResearchItem(BaseModel):
