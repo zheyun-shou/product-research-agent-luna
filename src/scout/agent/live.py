@@ -27,7 +27,7 @@ from scout.text.retrieve import Scope, hybrid_search
 
 
 class LazyBrowser:
-    """Opens the product-scout Chrome profile only when a step needs amazon.se."""
+    """Opens the Luna Chrome profile only when a step needs amazon.se."""
 
     def __init__(self, settings):
         self._settings, self._session, self._adapter = settings, None, None

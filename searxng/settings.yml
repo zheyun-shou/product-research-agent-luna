@@ -1,4 +1,4 @@
-# SearXNG for product-scout: a local search back end (decided 2026-10-07). Only this computer can reach it.
+# SearXNG for Luna: a local search back end (decided 2026-10-07). Only this computer can reach it.
 use_default_settings: true
 
 server:
@@ -15,7 +15,7 @@ search:
     - json
 
 general:
-  instance_name: "product-scout"
+  instance_name: "Luna"
 
 # One more engine, so that a captcha of one engine stops fewer searches (tested 2026-10-21). Bing gave no results,
 # Google and Qwant denied access. Mojeek and Startpage stay off: they use a proof-of-work captcha, and the program

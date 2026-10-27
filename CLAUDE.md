@@ -1,10 +1,10 @@
-# product-scout
+# product-research-agent-luna
 
-product-scout is a conversational agent. It helps to select products in any category. Two uses are my own purchases and the selection of incense for a possible shop in Sweden. It is also a CV project for AI Engineer roles. Thus it must be real, measured and deployable.
+Luna (product-research-agent-luna, formerly product-scout) is a conversational agent. It helps to select products in any category. Two uses are my own purchases and the selection of incense for a possible shop in Sweden. It is also a CV project for AI Engineer roles. Thus it must be real, measured and deployable.
 
 - Design: `docs/superpowers/specs/2026-10-02-product-scout-design.md`
 - Plans: `docs/superpowers/plans/`
-- Flowcharts: https://claude.ai/artifact/4jJqCkVudUFU24kTyXsiqZ
+- Flowcharts: `docs/architecture.md` (also https://claude.ai/artifact/4jJqCkVudUFU24kTyXsiqZ)
 - Overview for other people (one page): https://claude.ai/artifact/7Ziif9J3KUFYnLyDmLaP1B
 
 ## v1 in short
@@ -29,4 +29,4 @@ product-scout is a conversational agent. It helps to select products in any cate
 - I log in and solve captchas myself. The program never types passwords and never bypasses captchas.
 - Fetched pages, snapshots, labels and the browser profile stay out of Git.
 - Do not fork or copy code from other people.
-- The repository stays private until I say otherwise.
+- The repository is public since 2026-10-27. Keep keys, personal data, domains and fetched data out of it. Private rules go in `CLAUDE.local.md` (not in Git).

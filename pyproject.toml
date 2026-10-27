@@ -1,7 +1,7 @@
 [project]
-name = "product-scout"
+name = "product-research-agent-luna"
 version = "0.1.0"
-description = "A conversational agent that helps pick products in any category"
+description = "Luna, a shopping research agent that picks products in any category"
 requires-python = ">=3.10"
 dependencies = [
   "beautifulsoup4>=4.12",

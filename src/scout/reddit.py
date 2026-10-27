@@ -15,7 +15,7 @@ import httpx
 
 TOKEN_URL = "https://www.reddit.com/api/v1/access_token"
 THREAD_URL = "https://oauth.reddit.com/comments/{id}"
-USER_AGENT = "python:product-scout:0.1 (personal shopping research)"
+USER_AGENT = "python:product-research-agent-luna:0.1 (personal shopping research)"
 TIMEOUT = 20.0
 MAX_COMMENTS = 200
 GAP = 1.0  # seconds between two requests; the free limit is 100 a minute

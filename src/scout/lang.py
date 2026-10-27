@@ -95,10 +95,10 @@ TEXTS: dict[str, dict[str, str]] = {
     "say_read_page": {"en": "Reading {url}", "sv": "Läser {url}", "zh": "正在读取 {url}"},
     "say_reviews": {
         "en": "Reading the positive and the critical shop reviews of the picks on amazon.se. This needs the login "
-              "in the product-scout Chrome window.",
+              "in the Luna Chrome window.",
         "sv": "Läser de positiva och de kritiska recensionerna av förslagen på amazon.se. Det kräver inloggningen "
-              "i Chrome-fönstret för product-scout.",
-        "zh": "正在读取推荐商品在 amazon.se 上的好评和差评。需要在 product-scout 的 Chrome 窗口里登录。"},
+              "i Chrome-fönstret för Luna.",
+        "zh": "正在读取推荐商品在 amazon.se 上的好评和差评。需要在 Luna 的 Chrome 窗口里登录。"},
     # The steps of a turn on the web page
     "step_plan_first": {"en": "Read the message and plan the work", "sv": "Läs meddelandet och planera arbetet",
                         "zh": "阅读消息，规划工作"},

@@ -1,4 +1,4 @@
-"""Command line for product-scout."""
+"""Command line for Luna (product-research-agent-luna)."""
 import contextlib
 import json
 import re
@@ -55,7 +55,7 @@ app = typer.Typer(no_args_is_help=True)
 
 @app.callback()
 def main() -> None:
-    """product-scout command line."""
+    """Luna command line."""
     # The Windows console defaults to GBK here and cannot print Swedish letters.
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
@@ -65,7 +65,7 @@ def main() -> None:
 @app.command()
 def version() -> None:
     """Print the version."""
-    typer.echo("product-scout 0.1.0")
+    typer.echo("product-research-agent-luna 0.1.0")
 
 
 @app.command("db-init")
@@ -205,7 +205,7 @@ def eval_retrieval(k: int = 10) -> None:
 
 @app.command()
 def browser(url: str = typer.Argument(BASE_URL + "/")) -> None:
-    """Open the product-scout Chrome profile to set cookies, the delivery address or log in."""
+    """Open the Luna Chrome profile to set cookies, the delivery address or log in."""
     settings = load_settings()
     with BrowserSession(settings.browser_profile_dir) as session:
         session.show(url)
@@ -257,7 +257,7 @@ def parse_reviews_cmd(path: Path) -> None:
 def ask_user(status: SessionStatus, url: str) -> bool:
     """Pause until the user has dealt with a captcha or sign-in in the browser window."""
     typer.echo(f"\n{status.detail} at {url}")
-    typer.echo("Solve it or log in in the product-scout browser window.")
+    typer.echo("Solve it or log in in the Luna browser window.")
     answer = typer.prompt("Press Enter when done, or type s and Enter to skip", default="", show_default=False)
     return answer.strip().lower() != "s"
 
@@ -717,7 +717,7 @@ def eval_hidden(
         raise typer.Exit(1)
     todo = [t for t in all_targets if only is None or t.id in only.split(",")]
     typer.echo(f"{len(todo)} targets, chat {llm.model_for('chat')}, shopper {llm.model_for('shopper')}. Each target "
-               f"opens amazon.se in the product-scout browser and costs money.")
+               f"opens amazon.se in the Luna browser and costs money.")
     if not yes and not typer.confirm("Start?"):
         raise typer.Exit(0)
     browser = LazyBrowser(settings)

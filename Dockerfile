@@ -1,4 +1,4 @@
-# The product-scout web app (phase 7). The database and SearXNG run in their own containers (docker-compose.yml).
+# The Luna web app (phase 7). The database and SearXNG run in their own containers (docker-compose.yml).
 # Chrome runs on the computer, not here: I log in and solve captchas in its window (scripts/start-browser.ps1).
 FROM python:3.10-slim
 

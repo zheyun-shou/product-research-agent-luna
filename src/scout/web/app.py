@@ -30,7 +30,7 @@ def checked(thread: str) -> str:
 
 
 def create_app(service: ChatService) -> FastAPI:
-    app = FastAPI(title="product-scout", docs_url=None, redoc_url=None)
+    app = FastAPI(title="Luna", docs_url=None, redoc_url=None)
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
     @app.get("/")

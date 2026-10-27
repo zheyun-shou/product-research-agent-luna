@@ -55,7 +55,7 @@ def cdp_endpoint(url: str) -> str:
 
 
 class BrowserSession:
-    """Opens the product-scout Chrome profile in a visible window.
+    """Opens the Luna Chrome profile in a visible window.
 
     The profile lives in browser-profile/, separate from the everyday Chrome profile,
     because Chrome locks a profile that is in use and refuses automation on the default one.
