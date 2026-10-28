@@ -128,3 +128,7 @@ docs/                the architecture, the design and the plans of each phase
 - Luna fetches at a low rate (about 5 s between amazon.se pages, 3 s per site on the web) and logs every request.
 - Fetched pages, snapshots, evaluation results and the browser profile stay on the computer. They are not in this repository.
 - Reviews are stored without the names of their authors.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
